@@ -30,10 +30,11 @@ export async function createEmployeeAction(
     emp_code,
     full_name,
     nickname: str(form, "nickname") || null,
-    department: str(form, "department") || null,
-    position: str(form, "position") || null,
+    phone: str(form, "phone") || null,
     hire_date: str(form, "hire_date") || null,
     branch_id: str(form, "branch_id") || null,
+    department_id: str(form, "department_id") || null,
+    position_id: str(form, "position_id") || null,
     role: str(form, "role") === "admin" ? "admin" : "employee",
     pin_hash: await hashPin(pin),
   };
@@ -69,9 +70,10 @@ export async function updateEmployeeAction(
   const patch = {
     full_name: str(form, "full_name"),
     nickname: str(form, "nickname") || null,
-    department: str(form, "department") || null,
-    position: str(form, "position") || null,
+    phone: str(form, "phone") || null,
     branch_id: str(form, "branch_id") || null,
+    department_id: str(form, "department_id") || null,
+    position_id: str(form, "position_id") || null,
     role: str(form, "role") === "admin" ? "admin" : "employee",
     is_active: form.get("is_active") === "on",
   };

@@ -1,20 +1,14 @@
 import "server-only";
-import {
-  computeDaySummary,
-  effectiveSettings,
-  summarizePeriod,
-  type PeriodTotals,
-} from "./attendance";
+import { computeDaySummary, summarizePeriod, type PeriodTotals } from "./attendance";
 import { dateRange, monthBounds } from "./datetime";
 import {
   getDayRows,
   getEmployeeById,
   getHolidaySet,
-  getWorkSettings,
-  listBranches,
+  getSettingsResolver,
   listEmployees,
 } from "./db";
-import type { AttendanceDayRow, Branch, DaySummary, Employee, WorkSettings } from "./types";
+import type { AttendanceDayRow, DaySummary, Employee, WorkSettings } from "./types";
 
 export type ReportRow = {
   employeeId: string;
@@ -37,7 +31,7 @@ function emptyDayRow(emp: Employee, workDate: string, branchName: string | null)
     employee_id: emp.id,
     emp_code: emp.emp_code,
     full_name: emp.full_name,
-    department: emp.department,
+    department: emp.department_name ?? null,
     work_date: workDate,
     check_in_at: null,
     break_out_at: null,
@@ -59,20 +53,14 @@ function toReportRow(
   row: AttendanceDayRow,
   settings: WorkSettings,
   holidays: Set<string>,
-  branches: Map<string, Branch>,
 ): ReportRow {
-  const branch = row.branch_id ? (branches.get(row.branch_id) ?? null) : null;
   return {
     employeeId: row.employee_id,
     empCode: row.emp_code,
     fullName: row.full_name,
     department: row.department,
-    branchName: row.branch_name ?? branch?.name ?? null,
-    summary: computeDaySummary(
-      row,
-      effectiveSettings(settings, branch),
-      holidays.has(row.work_date),
-    ),
+    branchName: row.branch_name,
+    summary: computeDaySummary(row, settings, holidays.has(row.work_date)),
     photos: {
       check_in: row.check_in_photo,
       break_out: row.break_out_photo,
@@ -81,11 +69,6 @@ function toReportRow(
     },
     hasManual: row.has_manual,
   };
-}
-
-async function branchMap(): Promise<Map<string, Branch>> {
-  const branches = await listBranches();
-  return new Map(branches.map((b) => [b.id, b]));
 }
 
 /** รายงานรายบุคคล: ทุกวันในช่วงที่เลือก (เติมวันที่ไม่มีการลงเวลาให้ครบ) */
@@ -99,24 +82,24 @@ export async function buildEmployeeReport(params: {
   rows: ReportRow[];
   totals: PeriodTotals;
 }> {
-  const [employee, settings, holidays, dayRows, branches] = await Promise.all([
+  const [employee, holidays, dayRows, resolver] = await Promise.all([
     getEmployeeById(params.employeeId),
-    getWorkSettings(),
     getHolidaySet(params.from, params.to),
     getDayRows({ from: params.from, to: params.to, employeeId: params.employeeId }),
-    branchMap(),
+    getSettingsResolver(),
   ]);
 
   const byDate = new Map(dayRows.map((r) => [r.work_date, r]));
   const rows: ReportRow[] = [];
+  const settings = resolver.resolve(employee?.branch_id);
 
   if (employee) {
     const branchName = employee.branch_id
-      ? (branches.get(employee.branch_id)?.name ?? null)
+      ? (resolver.branches.get(employee.branch_id)?.name ?? null)
       : null;
     for (const date of dateRange(params.from, params.to)) {
       const row = byDate.get(date) ?? emptyDayRow(employee, date, branchName);
-      rows.push(toReportRow(row, settings, holidays, branches));
+      rows.push(toReportRow(row, resolver.resolve(row.branch_id), holidays));
     }
   }
 
@@ -132,26 +115,30 @@ export async function buildDailyReport(
   rows: ReportRow[];
   totals: PeriodTotals;
 }> {
-  const [employees, settings, holidays, dayRows, branches] = await Promise.all([
+  const [employees, holidays, dayRows, resolver] = await Promise.all([
     listEmployees({ activeOnly: true, branchId }),
-    getWorkSettings(),
     getHolidaySet(date, date),
     getDayRows({ from: date, to: date, branchId }),
-    branchMap(),
+    getSettingsResolver(),
   ]);
 
   const byEmployee = new Map(dayRows.map((r) => [r.employee_id, r]));
-  const rows = employees.map((emp) =>
-    toReportRow(
+  const rows = employees.map((emp) => {
+    const row =
       byEmployee.get(emp.id) ??
-        emptyDayRow(emp, date, emp.branch_id ? (branches.get(emp.branch_id)?.name ?? null) : null),
-      settings,
-      holidays,
-      branches,
-    ),
-  );
+      emptyDayRow(
+        emp,
+        date,
+        emp.branch_id ? (resolver.branches.get(emp.branch_id)?.name ?? null) : null,
+      );
+    return toReportRow(row, resolver.resolve(row.branch_id), holidays);
+  });
 
-  return { settings, rows, totals: summarizePeriod(rows.map((r) => r.summary)) };
+  return {
+    settings: resolver.resolve(branchId),
+    rows,
+    totals: summarizePeriod(rows.map((r) => r.summary)),
+  };
 }
 
 export type MonthlyEmployeeRow = {
@@ -172,12 +159,11 @@ export async function buildMonthlyReport(
   employees: MonthlyEmployeeRow[];
 }> {
   const { from, to } = monthBounds(year, month);
-  const [employees, settings, holidays, dayRows, branches] = await Promise.all([
+  const [employees, holidays, dayRows, resolver] = await Promise.all([
     listEmployees({ activeOnly: true, branchId }),
-    getWorkSettings(),
     getHolidaySet(from, to),
     getDayRows({ from, to, branchId }),
-    branchMap(),
+    getSettingsResolver(),
   ]);
 
   const dates = dateRange(from, to);
@@ -188,10 +174,7 @@ export async function buildMonthlyReport(
   }
 
   const result: MonthlyEmployeeRow[] = employees.map((emp) => {
-    const empSettings = effectiveSettings(
-      settings,
-      emp.branch_id ? (branches.get(emp.branch_id) ?? null) : null,
-    );
+    const empSettings = resolver.resolve(emp.branch_id);
     const byDate = new Map<string, DaySummary>();
     for (const date of dates) {
       const row = rowsByEmp.get(emp.id)?.get(date) ?? emptyDayRow(emp, date, null);
@@ -200,5 +183,10 @@ export async function buildMonthlyReport(
     return { employee: emp, byDate, totals: summarizePeriod([...byDate.values()]) };
   });
 
-  return { settings, dates, holidays, employees: result };
+  return {
+    settings: resolver.resolve(branchId),
+    dates,
+    holidays,
+    employees: result,
+  };
 }

@@ -1,4 +1,5 @@
-import { listBranches, listEmployees } from "@/lib/db";
+import Link from "next/link";
+import { listBranches, listEmployees, listSchedules } from "@/lib/db";
 import { createBranchForm, deleteBranchForm, updateBranchForm } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,12 @@ export default async function BranchesPage({
   searchParams: Promise<{ msg?: string; err?: string }>;
 }) {
   const params = await searchParams;
-  const [branches, employees] = await Promise.all([listBranches(), listEmployees()]);
+  const [branches, employees, schedules] = await Promise.all([
+    listBranches(),
+    listEmployees(),
+    listSchedules(),
+  ]);
+  const defaultSchedule = schedules.find((s) => s.is_default);
 
   const countByBranch = new Map<string, number>();
   for (const e of employees) {
@@ -21,7 +27,10 @@ export default async function BranchesPage({
       <div>
         <h1 className="text-xl font-bold text-slate-800">จัดการสาขา</h1>
         <p className="text-sm text-slate-500">
-          แต่ละสาขาตั้งเวลาทำงานและพิกัดของตัวเองได้ — ช่องที่เว้นว่างจะใช้ค่ากลางจากหน้าตั้งค่า
+          รหัสสาขา ชื่อสาขา พิกัด และกะทำงานที่ใช้ — เวลาเข้า-ออกงานแก้ที่{" "}
+          <Link href="/admin/setup" className="text-brand-600 hover:underline">
+            ตั้งค่าข้อมูลหลัก → กะทำงาน
+          </Link>
         </p>
       </div>
 
@@ -51,13 +60,18 @@ export default async function BranchesPage({
             <label className="label">ที่อยู่</label>
             <input name="address" className="input" />
           </div>
-          <div>
-            <label className="label">เข้างาน (เว้นว่าง = ค่ากลาง)</label>
-            <input name="work_start" type="time" className="input" />
-          </div>
-          <div>
-            <label className="label">เลิกงาน</label>
-            <input name="work_end" type="time" className="input" />
+          <div className="sm:col-span-2">
+            <label className="label">กะทำงาน (เว้นว่าง = ใช้กะเริ่มต้น)</label>
+            <select name="schedule_id" defaultValue="" className="input">
+              <option value="">
+                — ใช้กะเริ่มต้น{defaultSchedule ? ` (${defaultSchedule.name})` : ""} —
+              </option>
+              {schedules.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.work_start}-{s.work_end})
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="label">ละติจูด</label>
@@ -100,13 +114,18 @@ export default async function BranchesPage({
                 <label className="label">ที่อยู่</label>
                 <input name="address" defaultValue={b.address ?? ""} className="input" />
               </div>
-              <div>
-                <label className="label">เข้างาน</label>
-                <input name="work_start" type="time" defaultValue={b.work_start ?? ""} className="input" />
-              </div>
-              <div>
-                <label className="label">เลิกงาน</label>
-                <input name="work_end" type="time" defaultValue={b.work_end ?? ""} className="input" />
+              <div className="sm:col-span-2">
+                <label className="label">กะทำงาน</label>
+                <select name="schedule_id" defaultValue={b.schedule_id ?? ""} className="input">
+                  <option value="">
+                    — ใช้กะเริ่มต้น{defaultSchedule ? ` (${defaultSchedule.name})` : ""} —
+                  </option>
+                  {schedules.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.work_start}-{s.work_end})
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="label">ละติจูด</label>

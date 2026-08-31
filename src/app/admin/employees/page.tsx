@@ -1,5 +1,5 @@
 import CreateEmployeeForm from "@/components/CreateEmployeeForm";
-import { listBranches, listEmployees } from "@/lib/db";
+import { listBranches, listDepartments, listEmployees, listPositions } from "@/lib/db";
 import { deleteEmployeeForm, resetPinForm, updateEmployeeForm } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +11,11 @@ export default async function EmployeesPage({
 }) {
   const params = await searchParams;
   const branchId = params.branch || undefined;
-  const [employees, branches] = await Promise.all([
+  const [employees, branches, departments, positions] = await Promise.all([
     listEmployees({ branchId }),
     listBranches(),
+    listDepartments(),
+    listPositions(),
   ]);
 
   return (
@@ -51,7 +53,7 @@ export default async function EmployeesPage({
         <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{params.err}</p>
       )}
 
-      <CreateEmployeeForm branches={branches} />
+      <CreateEmployeeForm branches={branches} departments={departments} positions={positions} />
 
       <section className="card space-y-4">
         <h2 className="font-semibold text-slate-800">รายชื่อพนักงาน ({employees.length} คน)</h2>
@@ -74,6 +76,10 @@ export default async function EmployeesPage({
                 <input name="nickname" defaultValue={emp.nickname ?? ""} className="input" />
               </div>
               <div>
+                <label className="label">เบอร์โทร</label>
+                <input name="phone" defaultValue={emp.phone ?? ""} className="input" inputMode="tel" />
+              </div>
+              <div>
                 <label className="label">สาขา</label>
                 <select name="branch_id" defaultValue={emp.branch_id ?? ""} className="input">
                   <option value="">— ไม่ระบุ —</option>
@@ -86,11 +92,25 @@ export default async function EmployeesPage({
               </div>
               <div>
                 <label className="label">แผนก</label>
-                <input name="department" defaultValue={emp.department ?? ""} className="input" />
+                <select name="department_id" defaultValue={emp.department_id ?? ""} className="input">
+                  <option value="">— ไม่ระบุ —</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="label">ตำแหน่ง</label>
-                <input name="position" defaultValue={emp.position ?? ""} className="input" />
+                <select name="position_id" defaultValue={emp.position_id ?? ""} className="input">
+                  <option value="">— ไม่ระบุ —</option>
+                  {positions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="label">สิทธิ์</label>

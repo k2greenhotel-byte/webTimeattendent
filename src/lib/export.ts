@@ -93,7 +93,7 @@ export function monthlyToTable(title: string, employees: MonthlyEmployeeRow[]): 
     e.employee.emp_code,
     e.employee.full_name,
     e.employee.branch_name ?? "-",
-    e.employee.department ?? "-",
+    e.employee.department_name ?? "-",
     e.totals.workedDays,
     e.totals.completeDays,
     e.totals.incompleteDays,

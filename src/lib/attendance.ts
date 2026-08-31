@@ -9,26 +9,43 @@ import {
   type Branch,
   type DayStatus,
   type DaySummary,
+  type OrgSettings,
   type PunchType,
+  type WorkSchedule,
   type WorkSettings,
 } from "./types";
 
 /**
- * รวมค่าตั้งค่ากลางเข้ากับค่าเฉพาะสาขา
- * สาขาที่เว้นช่องไว้ = ใช้ค่ากลาง (work_settings)
+ * ประกอบค่าที่ใช้คำนวณจริงจาก 3 แหล่ง (แต่ละค่าเก็บอยู่ที่เดียว ไม่ซ้ำซ้อน)
+ *   - work_settings   : ค่าระดับองค์กร (ชื่อร้าน, บังคับ GPS, รัศมีเริ่มต้น)
+ *   - work_schedules  : เวลาเข้า-ออก และกฎการคำนวณ (กะของสาขา หรือกะเริ่มต้น)
+ *   - branches        : พิกัดและรัศมีเฉพาะสาขา
  */
-export function effectiveSettings(
-  settings: WorkSettings,
+export function resolveSettings(
+  org: OrgSettings,
+  schedule: WorkSchedule,
   branch?: Branch | null,
 ): WorkSettings {
-  if (!branch) return settings;
   return {
-    ...settings,
-    work_start: branch.work_start ?? settings.work_start,
-    work_end: branch.work_end ?? settings.work_end,
-    site_lat: branch.site_lat ?? settings.site_lat,
-    site_lng: branch.site_lng ?? settings.site_lng,
-    radius_m: branch.radius_m ?? settings.radius_m,
+    id: org.id,
+    org_name: org.org_name,
+    timezone: org.timezone,
+    require_gps: org.require_gps,
+    site_lat: branch?.site_lat ?? null,
+    site_lng: branch?.site_lng ?? null,
+    radius_m: branch?.radius_m ?? org.radius_m,
+    schedule_name: schedule.name,
+    work_start: schedule.work_start,
+    break_start: schedule.break_start,
+    break_end: schedule.break_end,
+    work_end: schedule.work_end,
+    break_allow_minutes: schedule.break_allow_minutes,
+    break_policy: schedule.break_policy,
+    late_grace_min: schedule.late_grace_min,
+    early_leave_grace_min: schedule.early_leave_grace_min,
+    count_ot: schedule.count_ot,
+    ot_grace_min: schedule.ot_grace_min,
+    workdays: schedule.workdays,
   };
 }
 

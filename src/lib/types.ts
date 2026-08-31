@@ -18,19 +18,50 @@ export const PUNCH_SHORT_LABEL: Record<PunchType, string> = {
   check_out: "ออกงาน",
 };
 
+/** ตารางกะทำงาน — เวลาเข้า/ออกพัก/เข้าบ่าย/เลิกงาน เก็บที่นี่ที่เดียว */
+export type WorkSchedule = {
+  id: string;
+  name: string;
+  work_start: string;
+  break_start: string;
+  break_end: string;
+  work_end: string;
+  break_allow_minutes: number;
+  break_policy: "actual" | "fixed";
+  late_grace_min: number;
+  early_leave_grace_min: number;
+  count_ot: boolean;
+  ot_grace_min: number;
+  workdays: number[];
+  is_default: boolean;
+};
+
 export type Branch = {
   id: string;
   code: string;
   name: string;
   address: string | null;
   phone: string | null;
-  /** ถ้าเป็น null = ใช้ค่ากลางจาก work_settings */
-  work_start: string | null;
-  work_end: string | null;
   site_lat: number | null;
   site_lng: number | null;
+  /** null = ใช้รัศมีเริ่มต้นขององค์กร */
   radius_m: number | null;
+  /** null = ใช้กะเริ่มต้น */
+  schedule_id: string | null;
   is_active: boolean;
+};
+
+export type Department = { id: string; name: string };
+export type Position = { id: string; name: string };
+
+/** ค่าระดับองค์กร (แถวเดียว) — ไม่มีเวลาทำงาน เพราะอยู่ในกะแล้ว */
+export type OrgSettings = {
+  id: number;
+  org_name: string;
+  timezone: string;
+  require_gps: boolean;
+  radius_m: number;
+  default_schedule_id: string | null;
 };
 
 export type Employee = {
@@ -38,20 +69,26 @@ export type Employee = {
   emp_code: string;
   full_name: string;
   nickname: string | null;
-  department: string | null;
-  position: string | null;
+  phone: string | null;
   role: UserRole;
   is_active: boolean;
   hire_date: string | null;
   branch_id: string | null;
+  department_id: string | null;
+  position_id: string | null;
+  /** ชื่อที่ resolve มาจากตารางอ้างอิง (ไม่ได้เก็บซ้ำในฐานข้อมูล) */
   branch_name?: string | null;
+  department_name?: string | null;
+  position_name?: string | null;
   failed_attempts?: number;
   locked_until?: string | null;
 };
 
+/** ค่าที่ resolve แล้วสำหรับใช้คำนวณ (องค์กร + กะ + สาขา) — ไม่ใช่ตารางในฐานข้อมูล */
 export type WorkSettings = {
   id: number;
   org_name: string;
+  schedule_name: string;
   work_start: string;
   work_end: string;
   break_start: string;

@@ -31,11 +31,10 @@ function readForm(form: FormData): Omit<Branch, "id"> {
     name: str(form, "name"),
     address: optText(form, "address"),
     phone: optText(form, "phone"),
-    work_start: optText(form, "work_start"),
-    work_end: optText(form, "work_end"),
     site_lat: optNum(form, "site_lat"),
     site_lng: optNum(form, "site_lng"),
     radius_m: optNum(form, "radius_m"),
+    schedule_id: optText(form, "schedule_id"),
     is_active: form.get("is_active") === "on",
   };
 }

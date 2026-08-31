@@ -2,15 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   canPunch,
   computeDaySummary,
-  effectiveSettings,
   nextPunchType,
+  resolveSettings,
   summarizePeriod,
 } from "../src/lib/attendance";
-import type { Branch, WorkSettings } from "../src/lib/types";
+import type { Branch, OrgSettings, WorkSchedule, WorkSettings } from "../src/lib/types";
 
 const settings: WorkSettings = {
   id: 1,
   org_name: "ทดสอบ",
+  schedule_name: "กะมาตรฐาน",
   work_start: "08:00",
   work_end: "17:00",
   break_start: "12:00",
@@ -212,39 +213,68 @@ describe("ลำดับการลงเวลา", () => {
   });
 });
 
-describe("effectiveSettings (หลายสาขา)", () => {
+describe("resolveSettings (องค์กร + กะ + สาขา)", () => {
+  const org: OrgSettings = {
+    id: 1,
+    org_name: "ทดสอบ",
+    timezone: "Asia/Bangkok",
+    require_gps: true,
+    radius_m: 200,
+    default_schedule_id: "s1",
+  };
+
+  const morning: WorkSchedule = {
+    id: "s1",
+    name: "กะมาตรฐาน",
+    work_start: "08:00",
+    break_start: "12:00",
+    break_end: "13:00",
+    work_end: "17:00",
+    break_allow_minutes: 60,
+    break_policy: "actual",
+    late_grace_min: 5,
+    early_leave_grace_min: 5,
+    count_ot: true,
+    ot_grace_min: 30,
+    workdays: [1, 2, 3, 4, 5, 6],
+    is_default: true,
+  };
+
+  const afternoon: WorkSchedule = { ...morning, id: "s2", name: "กะสาย", work_start: "09:00", is_default: false };
+
   const branch: Branch = {
     id: "b1",
     code: "BKK01",
     name: "สาขาสยาม",
     address: null,
     phone: null,
-    work_start: "09:00",
-    work_end: null,
     site_lat: 13.7,
     site_lng: 100.5,
     radius_m: 150,
+    schedule_id: "s2",
     is_active: true,
   };
 
-  it("ไม่มีสาขา = ใช้ค่ากลางทั้งหมด", () => {
-    expect(effectiveSettings(settings, null)).toEqual(settings);
+  it("ไม่มีสาขา: ใช้เวลาจากกะ และรัศมีจากค่าองค์กร", () => {
+    const s = resolveSettings(org, morning, null);
+    expect(s.work_start).toBe("08:00");
+    expect(s.radius_m).toBe(200);
+    expect(s.site_lat).toBeNull();
+    expect(s.require_gps).toBe(true);
   });
 
-  it("ค่าของสาขาทับค่ากลาง ส่วนช่องที่เว้นว่างยังใช้ค่ากลาง", () => {
-    const merged = effectiveSettings(settings, branch);
-    expect(merged.work_start).toBe("09:00");
-    expect(merged.work_end).toBe("17:00");
-    expect(merged.radius_m).toBe(150);
-    expect(merged.break_allow_minutes).toBe(60);
+  it("มีสาขา: พิกัด/รัศมีมาจากสาขา เวลามาจากกะของสาขา", () => {
+    const s = resolveSettings(org, afternoon, branch);
+    expect(s.work_start).toBe("09:00");
+    expect(s.work_end).toBe("17:00");
+    expect(s.radius_m).toBe(150);
+    expect(s.site_lat).toBe(13.7);
+    expect(s.schedule_name).toBe("กะสาย");
   });
 
-  it("สาขาที่เข้างาน 09:00 → มา 09:20 สายแค่ 15 นาที (ไม่ใช่ 75)", () => {
-    const merged = effectiveSettings(settings, branch);
-    const s = computeDaySummary(
-      { work_date: D, check_in_at: at(D, "09:20"), check_out_at: at(D, "17:00") },
-      merged,
-    );
-    expect(s.lateMinutes).toBe(15);
+  it("พนักงานคนละกะ ลงเวลา 09:20 เท่ากัน แต่คิดสายต่างกัน", () => {
+    const punches = { work_date: D, check_in_at: at(D, "09:20"), check_out_at: at(D, "17:00") };
+    expect(computeDaySummary(punches, resolveSettings(org, morning, null)).lateMinutes).toBe(75);
+    expect(computeDaySummary(punches, resolveSettings(org, afternoon, branch)).lateMinutes).toBe(15);
   });
 });

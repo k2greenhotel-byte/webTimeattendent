@@ -1,25 +1,42 @@
 -- ============================================================
--- ข้อมูลตั้งต้น : รันหลังจาก 0001_init.sql
+-- ข้อมูลตั้งต้น : รันหลัง migration ทั้งหมด
 -- PIN เริ่มต้นของทุกบัญชีในไฟล์นี้คือ 1234  (เปลี่ยนทันทีหลัง login ครั้งแรก)
 -- ============================================================
 
--- ตั้งค่าเวลาทำงานมาตรฐาน
-insert into public.work_settings (id, org_name, work_start, work_end, break_start, break_end)
-values (1, 'ร้านของฉัน', '08:00', '17:00', '12:00', '13:00')
+-- ค่าระดับองค์กร (เวลาทำงานอยู่ในตาราง work_schedules)
+insert into public.work_settings (id, org_name)
+values (1, 'ร้านของฉัน')
 on conflict (id) do nothing;
 
--- แอดมิน + พนักงานตัวอย่าง (bcrypt hash สร้างด้วย pgcrypto)
-insert into public.employees (emp_code, full_name, nickname, department, position, pin_hash, role)
+-- แผนก / ตำแหน่ง
+insert into public.departments (name) values ('สำนักงาน'), ('หน้าร้าน')
+on conflict (name) do nothing;
+
+insert into public.positions (name) values ('ผู้จัดการ'), ('พนักงานขาย')
+on conflict (name) do nothing;
+
+-- พนักงานตัวอย่าง (ผูกสาขาหลัก + แผนก + ตำแหน่ง)
+insert into public.employees
+  (emp_code, full_name, nickname, phone, branch_id, department_id, position_id, pin_hash, role)
 values
-  ('admin', 'ผู้ดูแลระบบ',      'แอดมิน', 'สำนักงาน', 'ผู้จัดการ',
-     extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'admin'),
-  ('EMP001', 'สมชาย ใจดี',      'ชาย',    'หน้าร้าน',  'พนักงานขาย',
-     extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'employee'),
-  ('EMP002', 'สมหญิง รักงาน',   'หญิง',   'หน้าร้าน',  'พนักงานขาย',
-     extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'employee')
+  ('admin', 'ผู้ดูแลระบบ', 'แอดมิน', '080-000-0000',
+   (select id from public.branches where code = 'MAIN'),
+   (select id from public.departments where name = 'สำนักงาน'),
+   (select id from public.positions where name = 'ผู้จัดการ'),
+   extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'admin'),
+  ('EMP001', 'สมชาย ใจดี', 'ชาย', '081-111-1111',
+   (select id from public.branches where code = 'MAIN'),
+   (select id from public.departments where name = 'หน้าร้าน'),
+   (select id from public.positions where name = 'พนักงานขาย'),
+   extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'employee'),
+  ('EMP002', 'สมหญิง รักงาน', 'หญิง', '082-222-2222',
+   (select id from public.branches where code = 'MAIN'),
+   (select id from public.departments where name = 'หน้าร้าน'),
+   (select id from public.positions where name = 'พนักงานขาย'),
+   extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'employee')
 on conflict (emp_code) do nothing;
 
--- ตัวอย่างวันหยุด (แก้ไข/เพิ่มได้ตามจริง)
+-- ตัวอย่างวันหยุด (แก้ไข/เพิ่มได้ในหน้าหลังบ้าน)
 insert into public.holidays (holiday_date, name) values
   ('2026-01-01', 'วันขึ้นปีใหม่'),
   ('2026-04-13', 'วันสงกรานต์'),

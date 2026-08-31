@@ -1,9 +1,9 @@
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import Clock from "@/components/Clock";
-import { computeDaySummary, effectiveSettings, nextPunchType } from "@/lib/attendance";
+import { computeDaySummary, nextPunchType } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
-import { getBranchById, getEmployeeById, getPunchesOfDay, getWorkSettings } from "@/lib/db";
+import { getBranchById, getEmployeeById, getPunchesOfDay, getResolvedSettings } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { PUNCH_LABEL, PUNCH_ORDER, type PunchType } from "@/lib/types";
 
@@ -18,14 +18,13 @@ export default async function PunchPage({
   const user = await requireUser();
   const workDate = workDateOf();
 
-  const [globalSettings, punches, employee] = await Promise.all([
-    getWorkSettings(),
+  const [punches, employee] = await Promise.all([
     getPunchesOfDay(user.id, workDate),
     getEmployeeById(user.id),
   ]);
 
   const branch = await getBranchById(employee?.branch_id ?? null);
-  const settings = effectiveSettings(globalSettings, branch);
+  const settings = await getResolvedSettings(branch?.id ?? null);
 
   const byType = new Map(punches.map((p) => [p.punch_type, p]));
   const done = punches.map((p) => p.punch_type);

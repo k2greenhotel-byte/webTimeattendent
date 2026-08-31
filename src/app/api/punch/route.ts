@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { canPunch, effectiveSettings } from "@/lib/attendance";
+import { canPunch } from "@/lib/attendance";
 import {
   getBranchById,
   getEmployeeById,
   getPunchesOfDay,
-  getWorkSettings,
+  getResolvedSettings,
   insertPunch,
   uploadPhoto,
 } from "@/lib/db";
@@ -45,15 +45,14 @@ export async function POST(req: Request) {
   const now = new Date();
   const workDate = workDateOf(now);
 
-  const [globalSettings, todayPunches, employee] = await Promise.all([
-    getWorkSettings(),
+  const [todayPunches, employee] = await Promise.all([
     getPunchesOfDay(user.id, workDate),
     getEmployeeById(user.id),
   ]);
 
-  // ใช้ค่าของสาขาที่พนักงานสังกัด (ถ้ามี) แทนค่ากลาง
+  // ใช้กะและพิกัดของสาขาที่พนักงานสังกัด (ถ้าไม่มีสาขาจะใช้กะเริ่มต้น)
   const branch = await getBranchById(employee?.branch_id ?? null);
-  const settings = effectiveSettings(globalSettings, branch);
+  const settings = await getResolvedSettings(branch?.id ?? null);
 
   const done = todayPunches.map((p) => p.punch_type);
   const check = canPunch(type, done);

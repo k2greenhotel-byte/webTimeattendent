@@ -13,3 +13,7 @@ next-env.d.ts
 # Cloudflare
 .open-next/
 .wrangler/
+
+# ไฟล์ที่มีคีย์/ความลับ ห้าม commit เด็ดขาด
+token.txt
+*token*.txt

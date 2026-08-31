@@ -128,7 +128,9 @@ create trigger trg_att_updated before update on public.attendance_records
   for each row execute function public.set_updated_at();
 
 -- ---------- View: รวม 4 punch ของแต่ละวันเป็นแถวเดียว ----------
-create or replace view public.v_attendance_days as
+drop view if exists public.v_attendance_days;
+
+create view public.v_attendance_days as
 select
   a.employee_id,
   e.emp_code,

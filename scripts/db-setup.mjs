@@ -48,11 +48,32 @@ async function main() {
 
   await client.connect();
   try {
+    // จำว่า migration ไหนรันไปแล้ว จะได้ไม่รันซ้ำโดยไม่จำเป็น
+    await client.query(`
+      create table if not exists public.schema_migrations (
+        filename   text primary key,
+        applied_at timestamptz not null default now()
+      )
+    `);
+
+    const force = process.argv.includes("--force");
+    const { rows: applied } = await client.query("select filename from public.schema_migrations");
+    const done = new Set(applied.map((r) => r.filename));
+
     const migrations = readdirSync(join(root, "supabase/migrations"))
       .filter((f) => f.endsWith(".sql"))
       .sort();
+
     for (const file of migrations) {
+      if (done.has(file) && !force) {
+        console.log(`• ข้าม ${file} (รันไปแล้ว)`);
+        continue;
+      }
       await run(client, "รัน migration", `supabase/migrations/${file}`);
+      await client.query(
+        "insert into public.schema_migrations (filename) values ($1) on conflict do nothing",
+        [file],
+      );
     }
     if (!process.argv.includes("--skip-seed")) {
       await run(client, "ใส่ข้อมูลตั้งต้น", "supabase/seed.sql");

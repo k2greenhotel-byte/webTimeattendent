@@ -54,24 +54,30 @@
 
 ## 5. Data model (Postgres)
 
-**`branches`** (รองรับหลายสาขา)
-`id uuid pk`, `code text unique`, `name`, `address`, `phone`,
-`work_start time null`, `work_end time null` (null = ใช้ค่ากลาง),
-`site_lat`, `site_lng`, `radius_m`, `is_active`
-→ เวลาที่ใช้คำนวณจริง = ค่าของสาขา ถ้าสาขาไม่กำหนดจึงใช้ `work_settings`
+ออกแบบแบบ normalize: แต่ละประเภทข้อมูลแยกตาราง ผูกด้วย foreign key ค่าหนึ่งค่าเก็บที่เดียวเท่านั้น
 
-**`employees`**
-`id uuid pk`, `emp_code text unique`, `full_name`, `nickname`, `department`, `position`, `branch_id fk`,
-`pin_hash`, `role ('employee'|'admin')`, `is_active bool`, `hire_date`,
-`failed_attempts int`, `locked_until timestamptz`, `created_at`
+**`employees`** (ข้อมูลพนักงาน)
+`id uuid pk`, `emp_code text unique` (ID พนักงาน), `full_name`, `nickname`, `phone` (เบอร์โทร),
+`pin_hash` (PIN เข้าระบบ, bcrypt), `role ('employee'|'admin')`, `is_active`, `hire_date`,
+`branch_id fk → branches`, `department_id fk → departments`, `position_id fk → positions`,
+`failed_attempts`, `locked_until`
 
-**`work_settings`** (แถวเดียว, แอดมินแก้ไขได้)
-`work_start time` (เช่น 08:00), `work_end time` (เช่น 17:00),
-`break_start time`, `break_end time` (เวลาพักอ้างอิงสำหรับแสดงผล),
-`break_allow_minutes int default 60` (โควตาพักกลางวัน),
-`break_policy ('actual'|'fixed')`, `late_grace_min int`, `early_leave_grace_min int`,
-`count_ot bool`, `workdays int[]` (0=อาทิตย์...6=เสาร์),
-`require_gps bool`, `site_lat`, `site_lng`, `radius_m`, `timezone default 'Asia/Bangkok'`
+**`branches`** (ข้อมูลสาขา)
+`id uuid pk`, `code text unique` (รหัสสาขา), `name` (ชื่อสาขา), `address`, `phone`,
+`site_lat`, `site_lng` (พิกัดสาขา), `radius_m` (null = ใช้รัศมีเริ่มต้น),
+`schedule_id fk → work_schedules` (null = ใช้กะเริ่มต้น), `is_active`
+
+**`work_schedules`** (ตารางค่าเริ่มต้นของเวลาทำงาน — ปรับได้จากหน้า setup)
+`id uuid pk`, `name text unique`,
+`work_start` (เวลาเข้างาน), `break_start` (เวลาออกพักเที่ยง),
+`break_end` (เวลาเข้างานช่วงบ่าย), `work_end` (เวลาออกงาน),
+`break_allow_minutes`, `break_policy ('actual'|'fixed')`, `late_grace_min`, `early_leave_grace_min`,
+`count_ot`, `ot_grace_min`, `workdays int[]`, `is_default bool` (มีได้กะเดียว)
+
+**`departments`** / **`positions`**: `id uuid pk`, `name text unique` — กันข้อความแผนก/ตำแหน่งซ้ำซ้อน
+
+**`work_settings`** (ค่าระดับองค์กร แถวเดียว)
+`org_name`, `timezone`, `require_gps`, `radius_m` (รัศมีเริ่มต้น), `default_schedule_id fk → work_schedules`
 
 **`attendance_records`**
 `id uuid pk`, `employee_id fk`, `work_date date`,
@@ -105,9 +111,11 @@ path = `{emp_code}/{YYYY-MM}/{YYYY-MM-DD}_{punch_type}_{uuid}.jpg`
 
 **ฝั่งแอดมิน (หลังบ้าน — ต้องผ่าน PIN 6 หลักก่อน)**
 - `/admin` — จอกรอก PIN ถ้ายังไม่ผ่าน / dashboard วันนี้ถ้าผ่านแล้ว: มาแล้ว / สาย / ลงไม่ครบ / ขาดงาน (กรองตามสาขาได้)
-- `/admin/branches` — เพิ่ม-แก้-ลบสาขา พร้อมเวลาทำงานและพิกัด GPS เฉพาะสาขา
+- `/admin/setup` — **หน้าตั้งค่าข้อมูลหลัก**: กะทำงาน (เวลาเข้า/ออกพัก/เข้าบ่าย/เลิกงาน), แผนก, ตำแหน่ง
+  พร้อมตารางสรุปว่าข้อมูลหลักแต่ละชุดอยู่ตารางไหนและถูกใช้อยู่กี่รายการ (ลบไม่ได้ถ้ายังมีคนใช้)
+- `/admin/branches` — เพิ่ม-แก้-ลบสาขา (รหัส, ชื่อ, พิกัด, รัศมี) และเลือกกะทำงานที่สาขาใช้
 - `/admin/holidays` — เพิ่ม-ลบวันหยุดประจำปี
-- `/admin/employees` — เพิ่ม-แก้-ปิดใช้งาน-**ลบ**พนักงาน, ย้ายสาขา, ตั้ง/รีเซ็ต PIN
+- `/admin/employees` — เพิ่ม-แก้-ปิดใช้งาน-**ลบ**พนักงาน (ID, ชื่อ, เบอร์โทร, PIN), ย้ายสาขา/แผนก/ตำแหน่ง
 - `/admin/settings` — เวลามาตรฐาน, นาทีผ่อนผัน, โควตาพัก, นโยบายหักพัก, วันทำงาน, GPS/รัศมี
 - `/admin/reports/employee` — **รายบุคคล**: เลือกพนักงาน + ช่วงวันที่ → ตารางรายวัน + รูป 4 ใบ/วัน (คลิกขยาย) + สรุปรวม
 - `/admin/reports/daily` — **รายวัน**: พนักงานทุกคนของวันที่เลือก + สถานะ

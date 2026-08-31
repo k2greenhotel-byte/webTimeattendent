@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { computeDaySummary, effectiveSettings } from "@/lib/attendance";
+import { computeDaySummary } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime } from "@/lib/datetime";
-import { getBranchById, getEmployeeById, getPunchesOfDay, getWorkSettings } from "@/lib/db";
+import { getBranchById, getEmployeeById, getPunchesOfDay, getResolvedSettings } from "@/lib/db";
 import { PUNCH_LABEL, PUNCH_ORDER } from "@/lib/types";
 import { deletePunchForm, savePunchForm } from "./actions";
 
@@ -20,16 +20,15 @@ export default async function EditRecordPage({
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
 
-  const [employee, globalSettings, punches] = await Promise.all([
+  const [employee, punches] = await Promise.all([
     getEmployeeById(employeeId),
-    getWorkSettings(),
     getPunchesOfDay(employeeId, date),
   ]);
 
   if (!employee) notFound();
 
   const branch = await getBranchById(employee.branch_id);
-  const settings = effectiveSettings(globalSettings, branch);
+  const settings = await getResolvedSettings(branch?.id ?? null);
 
   const byType = new Map(punches.map((p) => [p.punch_type, p]));
   const summary = computeDaySummary(

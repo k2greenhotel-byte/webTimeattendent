@@ -2,11 +2,19 @@
 
 import { useActionState } from "react";
 import { createEmployeeAction, type ActionState } from "@/app/admin/employees/actions";
-import type { Branch } from "@/lib/types";
+import type { Branch, Department, Position } from "@/lib/types";
 
 const initial: ActionState = { error: null, success: null };
 
-export default function CreateEmployeeForm({ branches }: { branches: Branch[] }) {
+export default function CreateEmployeeForm({
+  branches,
+  departments,
+  positions,
+}: {
+  branches: Branch[];
+  departments: Department[];
+  positions: Position[];
+}) {
   const [state, action, pending] = useActionState(createEmployeeAction, initial);
 
   return (
@@ -46,16 +54,36 @@ export default function CreateEmployeeForm({ branches }: { branches: Branch[] })
           </select>
         </div>
         <div>
+          <label className="label" htmlFor="new_phone">
+            เบอร์โทร
+          </label>
+          <input id="new_phone" name="phone" className="input" inputMode="tel" placeholder="08x-xxx-xxxx" />
+        </div>
+        <div>
           <label className="label" htmlFor="new_department">
             แผนก
           </label>
-          <input id="new_department" name="department" className="input" />
+          <select id="new_department" name="department_id" className="input" defaultValue="">
+            <option value="">— ไม่ระบุ —</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="label" htmlFor="new_position">
             ตำแหน่ง
           </label>
-          <input id="new_position" name="position" className="input" />
+          <select id="new_position" name="position_id" className="input" defaultValue="">
+            <option value="">— ไม่ระบุ —</option>
+            {positions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="label" htmlFor="new_hire_date">
