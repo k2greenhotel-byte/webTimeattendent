@@ -4,44 +4,48 @@ import { useActionState, useState } from "react";
 import { loginAction, type LoginState } from "@/app/login/actions";
 
 const initialState: LoginState = { error: null };
+const PIN_MIN = 4;
+const PIN_MAX = 8;
 
 export default function LoginForm() {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
-  const [empCode, setEmpCode] = useState("");
+  const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
 
   const press = (digit: string) => {
-    if (pin.length < 4) setPin(pin + digit);
+    if (pin.length < PIN_MAX) setPin(pin + digit);
   };
+
+  const digitsOnly = phone.replace(/\D/g, "");
 
   return (
     <form action={formAction} className="card space-y-4">
       <input type="hidden" name="pin" value={pin} />
 
       <div>
-        <label className="label" htmlFor="emp_code">
-          รหัสพนักงาน
+        <label className="label" htmlFor="phone">
+          เบอร์มือถือ
         </label>
         <input
-          id="emp_code"
-          name="emp_code"
-          className="input text-center text-lg tracking-wide"
-          autoComplete="username"
-          inputMode="text"
-          placeholder="เช่น EMP001"
-          value={empCode}
-          onChange={(e) => setEmpCode(e.target.value)}
+          id="phone"
+          name="phone"
+          className="input text-center text-lg tracking-widest"
+          autoComplete="tel"
+          inputMode="numeric"
+          placeholder="08x-xxx-xxxx"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
           required
         />
       </div>
 
       <div>
-        <span className="label">PIN 4 หลัก</span>
-        <div className="mb-3 flex justify-center gap-3">
-          {[0, 1, 2, 3].map((i) => (
+        <span className="label">รหัสผ่าน ({PIN_MIN}-{PIN_MAX} หลัก)</span>
+        <div className="mb-3 flex min-h-11 flex-wrap justify-center gap-2">
+          {(pin.length === 0 ? [0] : Array.from({ length: pin.length })).map((_, i) => (
             <span
               key={i}
-              className={`h-11 w-11 rounded-xl border text-center text-2xl leading-10 ${
+              className={`h-11 w-9 rounded-xl border text-center text-2xl leading-10 ${
                 pin.length > i ? "border-brand-500 bg-brand-50" : "border-slate-300 bg-white"
               }`}
             >
@@ -92,10 +96,14 @@ export default function LoginForm() {
       <button
         type="submit"
         className="btn-primary w-full py-3 text-base"
-        disabled={pending || pin.length !== 4 || empCode.trim() === ""}
+        disabled={pending || pin.length < PIN_MIN || digitsOnly.length < 9}
       >
         {pending ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
       </button>
+
+      <p className="text-center text-xs text-slate-500">
+        ใช้เบอร์มือถือที่แจ้งไว้กับผู้ดูแลระบบ · ลืมรหัสผ่านให้ติดต่อผู้ดูแลเพื่อรีเซ็ต
+      </p>
     </form>
   );
 }

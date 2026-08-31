@@ -23,7 +23,10 @@ export default async function EmployeesPage({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800">จัดการพนักงาน</h1>
-          <p className="text-sm text-slate-500">เพิ่ม แก้ไข ย้ายสาขา ตั้ง PIN ใหม่ และลบพนักงาน</p>
+          <p className="text-sm text-slate-500">
+            พนักงานเข้าระบบด้วย <strong>เบอร์มือถือ + รหัสผ่าน</strong> (เบอร์ห้ามซ้ำกัน) ·
+            พนักงานเปลี่ยนรหัสผ่านเองได้ที่หน้า &quot;ประวัติของฉัน&quot;
+          </p>
         </div>
 
         <form method="get" className="flex items-end gap-2">
@@ -76,8 +79,15 @@ export default async function EmployeesPage({
                 <input name="nickname" defaultValue={emp.nickname ?? ""} className="input" />
               </div>
               <div>
-                <label className="label">เบอร์โทร</label>
-                <input name="phone" defaultValue={emp.phone ?? ""} className="input" inputMode="tel" />
+                <label className="label">เบอร์มือถือ (ใช้เข้าระบบ)</label>
+                <input
+                  name="phone"
+                  defaultValue={emp.phone ?? ""}
+                  className="input"
+                  inputMode="numeric"
+                  placeholder="08xxxxxxxx"
+                  required
+                />
               </div>
               <div>
                 <label className="label">สาขา</label>
@@ -132,19 +142,19 @@ export default async function EmployeesPage({
               <form action={resetPinForm} className="flex flex-wrap items-end gap-2">
                 <input type="hidden" name="id" value={emp.id} />
                 <div>
-                  <label className="label">ตั้ง PIN ใหม่</label>
+                  <label className="label">รีเซ็ตรหัสผ่าน (4-8 หลัก)</label>
                   <input
                     name="pin"
-                    className="input w-32"
+                    className="input w-40"
                     inputMode="numeric"
-                    pattern="\d{4}"
-                    maxLength={4}
+                    pattern="\d{4,8}"
+                    maxLength={8}
                     placeholder="1234"
                     required
                   />
                 </div>
                 <button type="submit" className="btn-secondary">
-                  ตั้ง PIN ใหม่
+                  ตั้งรหัสผ่านใหม่
                 </button>
               </form>
 

@@ -19,22 +19,24 @@ on conflict (name) do nothing;
 insert into public.employees
   (emp_code, full_name, nickname, phone, branch_id, department_id, position_id, pin_hash, role)
 values
-  ('admin', 'ผู้ดูแลระบบ', 'แอดมิน', '080-000-0000',
+  ('admin', 'ผู้ดูแลระบบ', 'แอดมิน', '0800000000',
    (select id from public.branches where code = 'MAIN'),
    (select id from public.departments where name = 'สำนักงาน'),
    (select id from public.positions where name = 'ผู้จัดการ'),
    extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'admin'),
-  ('EMP001', 'สมชาย ใจดี', 'ชาย', '081-111-1111',
+  ('EMP001', 'สมชาย ใจดี', 'ชาย', '0811111111',
    (select id from public.branches where code = 'MAIN'),
    (select id from public.departments where name = 'หน้าร้าน'),
    (select id from public.positions where name = 'พนักงานขาย'),
    extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'employee'),
-  ('EMP002', 'สมหญิง รักงาน', 'หญิง', '082-222-2222',
+  ('EMP002', 'สมหญิง รักงาน', 'หญิง', '0822222222',
    (select id from public.branches where code = 'MAIN'),
    (select id from public.departments where name = 'หน้าร้าน'),
    (select id from public.positions where name = 'พนักงานขาย'),
    extensions.crypt('1234', extensions.gen_salt('bf', 10)), 'employee')
-on conflict (emp_code) do nothing;
+on conflict (emp_code) do update
+  -- เติมเบอร์ให้บัญชีเดิมที่ยังไม่มี (เบอร์ใช้เป็นรหัสเข้าระบบ)
+  set phone = coalesce(public.employees.phone, excluded.phone);
 
 -- ตัวอย่างวันหยุด (แก้ไข/เพิ่มได้ในหน้าหลังบ้าน)
 insert into public.holidays (holiday_date, name) values

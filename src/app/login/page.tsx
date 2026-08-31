@@ -14,7 +14,7 @@ export default async function LoginPage() {
             ⏱
           </div>
           <h1 className="text-xl font-bold text-slate-800">ระบบลงเวลาเข้า-ออกงาน</h1>
-          <p className="mt-1 text-sm text-slate-500">กรอกรหัสพนักงานและ PIN 4 หลัก</p>
+          <p className="mt-1 text-sm text-slate-500">เข้าสู่ระบบด้วยเบอร์มือถือและรหัสผ่าน</p>
         </div>
         <LoginForm />
       </div>

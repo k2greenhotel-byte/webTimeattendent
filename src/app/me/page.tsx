@@ -1,4 +1,5 @@
 import AppHeader from "@/components/AppHeader";
+import ChangePinForm from "@/components/ChangePinForm";
 import ExportButtons from "@/components/ExportButtons";
 import ReportTable from "@/components/ReportTable";
 import TotalsCards from "@/components/TotalsCards";
@@ -66,6 +67,8 @@ export default async function MyHistoryPage({
         <section className="card">
           <ReportTable rows={rows} />
         </section>
+
+        <ChangePinForm />
       </main>
     </div>
   );

@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { hashPin, isValidPin } from "@/lib/auth";
+import { hashPin, isValidPin, PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/lib/auth";
 import { deleteEmployee, logAudit } from "@/lib/db";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { requireAdmin } from "@/lib/session";
 import { getSupabase } from "@/lib/supabase-server";
 
@@ -11,6 +12,14 @@ export type ActionState = { error: string | null; success: string | null };
 
 function str(form: FormData, key: string): string {
   return String(form.get(key) ?? "").trim();
+}
+
+/** แปลง error ซ้ำค่า (unique) เป็นข้อความที่บอกได้ว่าซ้ำที่ช่องไหน */
+function duplicateMessage(error: { code?: string; message: string }, prefix: string): string {
+  if (error.code !== "23505") return `${prefix}: ${error.message}`;
+  return error.message.includes("phone")
+    ? "เบอร์มือถือนี้ถูกใช้กับพนักงานคนอื่นแล้ว"
+    : "รหัสพนักงานนี้ถูกใช้แล้ว";
 }
 
 export async function createEmployeeAction(
@@ -22,15 +31,24 @@ export async function createEmployeeAction(
   const emp_code = str(form, "emp_code");
   const full_name = str(form, "full_name");
   const pin = str(form, "pin");
+  const phone = normalizePhone(str(form, "phone"));
 
   if (!emp_code || !full_name) return { error: "กรุณากรอกรหัสพนักงานและชื่อ-สกุล", success: null };
-  if (!isValidPin(pin)) return { error: "PIN ต้องเป็นตัวเลข 4 หลัก", success: null };
+  if (!isValidPhone(phone)) {
+    return { error: "กรุณากรอกเบอร์มือถือให้ถูกต้อง (ใช้เป็นรหัสเข้าระบบ)", success: null };
+  }
+  if (!isValidPin(pin)) {
+    return {
+      error: `รหัสผ่านต้องเป็นตัวเลข ${PIN_MIN_LENGTH}-${PIN_MAX_LENGTH} หลัก`,
+      success: null,
+    };
+  }
 
   const row = {
     emp_code,
     full_name,
     nickname: str(form, "nickname") || null,
-    phone: str(form, "phone") || null,
+    phone,
     hire_date: str(form, "hire_date") || null,
     branch_id: str(form, "branch_id") || null,
     department_id: str(form, "department_id") || null,
@@ -41,10 +59,7 @@ export async function createEmployeeAction(
 
   const { data, error } = await getSupabase().from("employees").insert(row).select("id").single();
   if (error) {
-    return {
-      error: error.code === "23505" ? "รหัสพนักงานนี้ถูกใช้แล้ว" : `เพิ่มพนักงานไม่สำเร็จ: ${error.message}`,
-      success: null,
-    };
+    return { error: duplicateMessage(error, "เพิ่มพนักงานไม่สำเร็จ"), success: null };
   }
 
   await logAudit({
@@ -67,10 +82,15 @@ export async function updateEmployeeAction(
   const id = str(form, "id");
   if (!id) return { error: "ไม่พบพนักงาน", success: null };
 
+  const phone = normalizePhone(str(form, "phone"));
+  if (phone && !isValidPhone(phone)) {
+    return { error: "เบอร์มือถือไม่ถูกต้อง (ใช้เป็นรหัสเข้าระบบ)", success: null };
+  }
+
   const patch = {
     full_name: str(form, "full_name"),
     nickname: str(form, "nickname") || null,
-    phone: str(form, "phone") || null,
+    phone: phone || null,
     branch_id: str(form, "branch_id") || null,
     department_id: str(form, "department_id") || null,
     position_id: str(form, "position_id") || null,
@@ -79,7 +99,7 @@ export async function updateEmployeeAction(
   };
 
   const { error } = await getSupabase().from("employees").update(patch).eq("id", id);
-  if (error) return { error: `บันทึกไม่สำเร็จ: ${error.message}`, success: null };
+  if (error) return { error: duplicateMessage(error, "บันทึกไม่สำเร็จ"), success: null };
 
   await logAudit({
     actor_id: null,
@@ -98,7 +118,12 @@ export async function resetPinAction(_prev: ActionState, form: FormData): Promis
   const id = str(form, "id");
   const pin = str(form, "pin");
 
-  if (!isValidPin(pin)) return { error: "PIN ต้องเป็นตัวเลข 4 หลัก", success: null };
+  if (!isValidPin(pin)) {
+    return {
+      error: `รหัสผ่านต้องเป็นตัวเลข ${PIN_MIN_LENGTH}-${PIN_MAX_LENGTH} หลัก`,
+      success: null,
+    };
+  }
 
   const { error } = await getSupabase()
     .from("employees")

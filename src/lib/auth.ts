@@ -1,17 +1,22 @@
 import "server-only";
 import bcrypt from "bcryptjs";
+import { normalizePhone } from "./phone";
 import { getSupabase } from "./supabase-server";
 import type { SessionUser } from "./types";
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 5;
 
+/** รหัสผ่านพนักงาน = ตัวเลข 4-8 หลัก (พิมพ์บนแป้นตัวเลขได้สะดวก) */
+export const PIN_MIN_LENGTH = 4;
+export const PIN_MAX_LENGTH = 8;
+
 export async function hashPin(pin: string): Promise<string> {
   return bcrypt.hash(pin, 10);
 }
 
 export function isValidPin(pin: string): boolean {
-  return /^\d{4}$/.test(pin);
+  return new RegExp(`^\\d{${PIN_MIN_LENGTH},${PIN_MAX_LENGTH}}$`).test(pin);
 }
 
 /** PIN 6 หลักของหน้าหลังบ้าน /admin (ตั้งค่าได้ที่ ADMIN_PIN ใน .env.local) */
@@ -31,22 +36,25 @@ export function verifyAdminPin(pin: string): boolean {
 
 type LoginResult = { ok: true; user: SessionUser } | { ok: false; error: string };
 
-/** ตรวจรหัสพนักงาน + PIN พร้อมกลไกล็อกบัญชีเมื่อกรอกผิดหลายครั้ง */
-export async function loginWithPin(empCode: string, pin: string): Promise<LoginResult> {
-  const code = empCode.trim();
-  if (!code || !isValidPin(pin)) {
-    return { ok: false, error: "กรุณากรอกรหัสพนักงานและ PIN 4 หลักให้ถูกต้อง" };
+/** ตรวจเบอร์มือถือ + รหัสผ่าน พร้อมกลไกล็อกบัญชีเมื่อกรอกผิดหลายครั้ง */
+export async function loginWithPhone(phoneInput: string, pin: string): Promise<LoginResult> {
+  const phone = normalizePhone(phoneInput);
+  if (!phone || !isValidPin(pin)) {
+    return {
+      ok: false,
+      error: `กรุณากรอกเบอร์มือถือและรหัสผ่าน ${PIN_MIN_LENGTH}-${PIN_MAX_LENGTH} หลักให้ถูกต้อง`,
+    };
   }
 
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("employees")
     .select("id, emp_code, full_name, role, is_active, pin_hash, failed_attempts, locked_until")
-    .eq("emp_code", code)
+    .eq("phone", phone)
     .maybeSingle();
 
   if (error) return { ok: false, error: `เข้าสู่ระบบไม่สำเร็จ: ${error.message}` };
-  if (!data) return { ok: false, error: "ไม่พบรหัสพนักงานนี้" };
+  if (!data) return { ok: false, error: "ไม่พบเบอร์มือถือนี้ในระบบ กรุณาติดต่อผู้ดูแล" };
   if (!data.is_active) return { ok: false, error: "บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ" };
 
   if (data.locked_until && new Date(data.locked_until).getTime() > Date.now()) {
@@ -89,4 +97,39 @@ export async function loginWithPin(empCode: string, pin: string): Promise<LoginR
       role: data.role === "admin" ? "admin" : "employee",
     },
   };
+}
+
+/** พนักงานเปลี่ยนรหัสผ่านของตัวเอง (ต้องยืนยันรหัสเดิมก่อน) */
+export async function changeOwnPin(
+  employeeId: string,
+  currentPin: string,
+  newPin: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isValidPin(newPin)) {
+    return { ok: false, error: `รหัสผ่านใหม่ต้องเป็นตัวเลข ${PIN_MIN_LENGTH}-${PIN_MAX_LENGTH} หลัก` };
+  }
+  if (currentPin === newPin) {
+    return { ok: false, error: "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม" };
+  }
+
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id, pin_hash, is_active")
+    .eq("id", employeeId)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: `เปลี่ยนรหัสผ่านไม่สำเร็จ: ${error.message}` };
+  if (!data || !data.is_active) return { ok: false, error: "ไม่พบบัญชีนี้" };
+
+  const match = await bcrypt.compare(currentPin, data.pin_hash);
+  if (!match) return { ok: false, error: "รหัสผ่านเดิมไม่ถูกต้อง" };
+
+  const { error: updateError } = await supabase
+    .from("employees")
+    .update({ pin_hash: await hashPin(newPin), failed_attempts: 0, locked_until: null })
+    .eq("id", employeeId);
+
+  if (updateError) return { ok: false, error: `เปลี่ยนรหัสผ่านไม่สำเร็จ: ${updateError.message}` };
+  return { ok: true };
 }

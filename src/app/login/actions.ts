@@ -1,18 +1,18 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { loginWithPin } from "@/lib/auth";
+import { loginWithPhone } from "@/lib/auth";
 import { clearSession, createSession } from "@/lib/session";
 
 export type LoginState = { error: string | null };
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const empCode = String(formData.get("emp_code") ?? "");
+  const phone = String(formData.get("phone") ?? "");
   const pin = String(formData.get("pin") ?? "");
 
   let target = "/punch";
   try {
-    const result = await loginWithPin(empCode, pin);
+    const result = await loginWithPhone(phone, pin);
     if (!result.ok) return { error: result.error };
     await createSession(result.user);
     target = result.user.role === "admin" ? "/admin" : "/punch";

@@ -55,9 +55,16 @@ export default function CreateEmployeeForm({
         </div>
         <div>
           <label className="label" htmlFor="new_phone">
-            เบอร์โทร
+            เบอร์มือถือ * (ใช้เข้าระบบ)
           </label>
-          <input id="new_phone" name="phone" className="input" inputMode="tel" placeholder="08x-xxx-xxxx" />
+          <input
+            id="new_phone"
+            name="phone"
+            className="input"
+            inputMode="numeric"
+            placeholder="08xxxxxxxx"
+            required
+          />
         </div>
         <div>
           <label className="label" htmlFor="new_department">
@@ -93,15 +100,15 @@ export default function CreateEmployeeForm({
         </div>
         <div>
           <label className="label" htmlFor="new_pin">
-            PIN 4 หลัก *
+            รหัสผ่านเริ่มต้น * (4-8 หลัก)
           </label>
           <input
             id="new_pin"
             name="pin"
             className="input"
             inputMode="numeric"
-            pattern="\d{4}"
-            maxLength={4}
+            pattern="\d{4,8}"
+            maxLength={8}
             placeholder="1234"
             required
           />
