@@ -116,7 +116,7 @@ export async function setDefaultSchedule(id: string): Promise<void> {
   await updateOrgSettings({ default_schedule_id: id });
 }
 
-export async function deleteSchedule(id: string): Promise<void> {
+export async function deleteSchedule(id: string, force = false): Promise<{ affected: number }> {
   const supabase = getSupabase();
 
   const { data: schedule } = await supabase
@@ -131,10 +131,16 @@ export async function deleteSchedule(id: string): Promise<void> {
     .select("id", { count: "exact", head: true })
     .eq("schedule_id", id);
   if (countError) throw new Error(`ตรวจสอบสาขาที่ใช้กะนี้ไม่สำเร็จ: ${countError.message}`);
-  if ((count ?? 0) > 0) throw new Error(`ลบไม่ได้ มี ${count} สาขาใช้กะนี้อยู่`);
 
+  const used = count ?? 0;
+  if (used > 0 && !force) {
+    throw new Error(`ลบไม่ได้ มี ${used} สาขาใช้กะนี้อยู่ — ติ๊กยืนยันถ้าต้องการลบจริง`);
+  }
+
+  // สาขาที่ใช้กะนี้จะกลับไปใช้กะเริ่มต้นโดยอัตโนมัติ (schedule_id = null)
   const { error } = await supabase.from("work_schedules").delete().eq("id", id);
   if (error) throw new Error(`ลบกะทำงานไม่สำเร็จ: ${error.message}`);
+  return { affected: used };
 }
 
 /**
@@ -231,9 +237,25 @@ export async function getEmployeeById(id: string): Promise<Employee | null> {
   return (data as Employee) ?? null;
 }
 
-export async function deleteEmployee(id: string): Promise<void> {
-  const { error } = await getSupabase().from("employees").delete().eq("id", id);
+/** ลบพนักงาน พร้อมลบรูปการลงเวลาทั้งหมดของคนนั้นออกจาก storage ด้วย */
+export async function deleteEmployee(id: string): Promise<{ photosDeleted: number }> {
+  const supabase = getSupabase();
+
+  const { data: rows } = await supabase
+    .from("attendance_records")
+    .select("photo_path")
+    .eq("employee_id", id);
+
+  const paths = (rows ?? [])
+    .map((r: { photo_path: string | null }) => r.photo_path)
+    .filter((p): p is string => Boolean(p));
+  await removePhotos(paths);
+
+  // attendance_records ถูกลบตามด้วย on delete cascade
+  const { error } = await supabase.from("employees").delete().eq("id", id);
   if (error) throw new Error(`ลบพนักงานไม่สำเร็จ: ${error.message}`);
+
+  return { photosDeleted: paths.length };
 }
 
 // ---------- สาขา ----------
@@ -276,18 +298,27 @@ export async function updateBranch(id: string, patch: Partial<Branch>): Promise<
   }
 }
 
-export async function deleteBranch(id: string): Promise<void> {
+/**
+ * ลบสาขา — ปกติจะไม่ยอมลบถ้ายังมีพนักงานสังกัดอยู่
+ * ถ้าแอดมินยืนยัน (force) จะลบให้ และพนักงานในสาขานั้นจะกลายเป็น "ไม่ระบุสาขา"
+ */
+export async function deleteBranch(id: string, force = false): Promise<{ affected: number }> {
   const { count, error: countError } = await getSupabase()
     .from("employees")
     .select("id", { count: "exact", head: true })
     .eq("branch_id", id);
   if (countError) throw new Error(`ตรวจสอบพนักงานในสาขาไม่สำเร็จ: ${countError.message}`);
-  if ((count ?? 0) > 0) {
-    throw new Error(`ลบไม่ได้ ยังมีพนักงาน ${count} คนอยู่ในสาขานี้ — ย้ายพนักงานออกก่อน`);
+
+  const employees = count ?? 0;
+  if (employees > 0 && !force) {
+    throw new Error(
+      `ลบไม่ได้ ยังมีพนักงาน ${employees} คนอยู่ในสาขานี้ — ย้ายพนักงานออกก่อน หรือติ๊ก "ยืนยันลบทั้งที่ยังมีการใช้งาน"`,
+    );
   }
 
   const { error } = await getSupabase().from("branches").delete().eq("id", id);
   if (error) throw new Error(`ลบสาขาไม่สำเร็จ: ${error.message}`);
+  return { affected: employees };
 }
 
 // ---------- แผนก / ตำแหน่ง ----------
@@ -327,19 +358,28 @@ export async function updateLookup(table: LookupTable, id: string, name: string)
   if (error) throw new Error(`บันทึก${LOOKUP_LABEL[table]}ไม่สำเร็จ: ${error.message}`);
 }
 
-export async function deleteLookup(table: LookupTable, id: string): Promise<void> {
+export async function deleteLookup(
+  table: LookupTable,
+  id: string,
+  force = false,
+): Promise<{ affected: number }> {
   const column = table === "departments" ? "department_id" : "position_id";
   const { count, error: countError } = await getSupabase()
     .from("employees")
     .select("id", { count: "exact", head: true })
     .eq(column, id);
   if (countError) throw new Error(`ตรวจสอบข้อมูลที่ใช้งานอยู่ไม่สำเร็จ: ${countError.message}`);
-  if ((count ?? 0) > 0) {
-    throw new Error(`ลบไม่ได้ มีพนักงาน ${count} คนใช้${LOOKUP_LABEL[table]}นี้อยู่`);
+
+  const used = count ?? 0;
+  if (used > 0 && !force) {
+    throw new Error(
+      `ลบไม่ได้ มีพนักงาน ${used} คนใช้${LOOKUP_LABEL[table]}นี้อยู่ — ติ๊กยืนยันถ้าต้องการลบจริง`,
+    );
   }
 
   const { error } = await getSupabase().from(table).delete().eq("id", id);
   if (error) throw new Error(`ลบ${LOOKUP_LABEL[table]}ไม่สำเร็จ: ${error.message}`);
+  return { affected: used };
 }
 
 // ---------- วันหยุด ----------
@@ -465,8 +505,83 @@ export async function updatePunchTime(
 }
 
 export async function deletePunch(id: string): Promise<void> {
-  const { error } = await getSupabase().from("attendance_records").delete().eq("id", id);
+  const supabase = getSupabase();
+
+  const { data } = await supabase
+    .from("attendance_records")
+    .select("photo_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (data?.photo_path) await removePhotos([data.photo_path]);
+
+  const { error } = await supabase.from("attendance_records").delete().eq("id", id);
   if (error) throw new Error(`ลบรายการไม่สำเร็จ: ${error.message}`);
+}
+
+export type AttendanceFilter = {
+  from: string;
+  to: string;
+  employeeId?: string;
+  branchId?: string;
+};
+
+/** นับจำนวนรายการลงเวลาที่ตรงเงื่อนไข (ใช้แสดงก่อนยืนยันลบ) */
+export async function countAttendance(filter: AttendanceFilter): Promise<number> {
+  let query = getSupabase()
+    .from("attendance_records")
+    .select("id", { count: "exact", head: true })
+    .gte("work_date", filter.from)
+    .lte("work_date", filter.to);
+  if (filter.employeeId) query = query.eq("employee_id", filter.employeeId);
+  if (filter.branchId) query = query.eq("branch_id", filter.branchId);
+
+  const { count, error } = await query;
+  if (error) throw new Error(`นับข้อมูลการลงเวลาไม่สำเร็จ: ${error.message}`);
+  return count ?? 0;
+}
+
+/** ลบข้อมูลการลงเวลาตามเงื่อนไข พร้อมลบรูปใน storage ทิ้งด้วย */
+export async function deleteAttendanceRange(
+  filter: AttendanceFilter,
+): Promise<{ deleted: number; photosDeleted: number }> {
+  const supabase = getSupabase();
+
+  let query = supabase
+    .from("attendance_records")
+    .select("id, photo_path")
+    .gte("work_date", filter.from)
+    .lte("work_date", filter.to);
+  if (filter.employeeId) query = query.eq("employee_id", filter.employeeId);
+  if (filter.branchId) query = query.eq("branch_id", filter.branchId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านข้อมูลการลงเวลาไม่สำเร็จ: ${error.message}`);
+
+  const rows = (data ?? []) as { id: string; photo_path: string | null }[];
+  if (rows.length === 0) return { deleted: 0, photosDeleted: 0 };
+
+  const paths = rows.map((r) => r.photo_path).filter((p): p is string => Boolean(p));
+  await removePhotos(paths);
+
+  // ลบทีละก้อน กัน URL ยาวเกินไปเมื่อมีรายการเยอะ
+  const ids = rows.map((r) => r.id);
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error: deleteError } = await supabase
+      .from("attendance_records")
+      .delete()
+      .in("id", ids.slice(i, i + 200));
+    if (deleteError) throw new Error(`ลบข้อมูลการลงเวลาไม่สำเร็จ: ${deleteError.message}`);
+  }
+
+  return { deleted: rows.length, photosDeleted: paths.length };
+}
+
+/** ลบการลงเวลาทั้งวันของพนักงานหนึ่งคน */
+export async function deleteDayPunches(
+  employeeId: string,
+  workDate: string,
+): Promise<{ deleted: number; photosDeleted: number }> {
+  return deleteAttendanceRange({ from: workDate, to: workDate, employeeId });
 }
 
 // ---------- รูปภาพ ----------
@@ -476,6 +591,19 @@ export async function uploadPhoto(path: string, bytes: ArrayBuffer): Promise<voi
     .storage.from(PHOTO_BUCKET)
     .upload(path, bytes, { contentType: "image/jpeg", upsert: false });
   if (error) throw new Error(`อัปโหลดรูปไม่สำเร็จ: ${error.message}`);
+}
+
+/** ลบรูปออกจาก storage (ทีละก้อน) — เรียกก่อนลบแถวในฐานข้อมูลเสมอ */
+export async function removePhotos(paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+
+  for (let i = 0; i < paths.length; i += 100) {
+    const { error } = await getSupabase()
+      .storage.from(PHOTO_BUCKET)
+      .remove(paths.slice(i, i + 100));
+    // ลบรูปไม่สำเร็จไม่ควรบล็อกการลบข้อมูล แค่บันทึกไว้
+    if (error) console.error("ลบรูปใน storage ไม่สำเร็จ:", error.message);
+  }
 }
 
 export async function signedPhotoUrl(

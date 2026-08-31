@@ -95,19 +95,26 @@ export async function updateBranchForm(form: FormData): Promise<void> {
 export async function deleteBranchForm(form: FormData): Promise<void> {
   await requireAdmin();
   const id = str(form, "id");
+  const force = form.get("force") === "on";
 
+  let affected = 0;
   try {
-    await deleteBranch(id);
+    ({ affected } = await deleteBranch(id, force));
     await logAudit({
       actor_id: null,
       action: "delete_branch",
       target_table: "branches",
       target_id: id,
+      after: { forced: force, employeesUnassigned: affected },
     });
   } catch (err) {
     back(err instanceof Error ? err.message : "ลบสาขาไม่สำเร็จ", true);
   }
 
   revalidatePath("/admin/branches");
-  back("ลบสาขาเรียบร้อยแล้ว");
+  back(
+    affected > 0
+      ? `ลบสาขาเรียบร้อยแล้ว · พนักงาน ${affected} คนกลายเป็นไม่ระบุสาขา`
+      : "ลบสาขาเรียบร้อยแล้ว",
+  );
 }

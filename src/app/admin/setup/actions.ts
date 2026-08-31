@@ -79,16 +79,24 @@ export async function deleteLookupForm(form: FormData): Promise<void> {
   await requireAdmin();
   const table = lookupTable(form);
   const id = str(form, "id");
+  const force = form.get("force") === "on";
 
+  let affected = 0;
   try {
-    await deleteLookup(table, id);
-    await logAudit({ actor_id: null, action: `delete_${table}`, target_table: table, target_id: id });
+    ({ affected } = await deleteLookup(table, id, force));
+    await logAudit({
+      actor_id: null,
+      action: `delete_${table}`,
+      target_table: table,
+      target_id: id,
+      after: { forced: force, employeesAffected: affected },
+    });
   } catch (err) {
     back(err instanceof Error ? err.message : "ลบไม่สำเร็จ", true);
   }
 
   revalidatePath("/admin/setup");
-  back("ลบเรียบร้อยแล้ว");
+  back(affected > 0 ? `ลบเรียบร้อยแล้ว · พนักงาน ${affected} คนถูกล้างค่านี้` : "ลบเรียบร้อยแล้ว");
 }
 
 // ---------- กะทำงาน (เวลาเข้า-ออก) ----------
@@ -180,9 +188,10 @@ export async function setDefaultScheduleForm(form: FormData): Promise<void> {
 export async function deleteScheduleForm(form: FormData): Promise<void> {
   await requireAdmin();
   const id = str(form, "id");
+  const force = form.get("force") === "on";
 
   try {
-    await deleteSchedule(id);
+    await deleteSchedule(id, force);
     await logAudit({
       actor_id: null,
       action: "delete_schedule",

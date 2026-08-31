@@ -4,7 +4,7 @@ import { computeDaySummary } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime } from "@/lib/datetime";
 import { getBranchById, getEmployeeById, getPunchesOfDay, getResolvedSettings } from "@/lib/db";
 import { PUNCH_LABEL, PUNCH_ORDER } from "@/lib/types";
-import { deletePunchForm, savePunchForm } from "./actions";
+import { deleteDayForm, deletePunchForm, savePunchForm } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +130,26 @@ export default async function EditRecordPage({
           </section>
         );
       })}
+
+      {punches.length > 0 && (
+        <form action={deleteDayForm} className="card space-y-3 border-rose-200">
+          <div>
+            <h2 className="font-semibold text-rose-700">ลบการลงเวลาทั้งวันนี้</h2>
+            <p className="text-xs text-slate-500">
+              ลบทั้ง {punches.length} รายการของวันนี้พร้อมรูปถ่าย — กู้คืนไม่ได้
+            </p>
+          </div>
+          <input type="hidden" name="employee_id" value={employeeId} />
+          <input type="hidden" name="work_date" value={date} />
+          <label className="flex items-center gap-2 text-sm text-rose-700">
+            <input type="checkbox" name="confirm" />
+            ยืนยันลบข้อมูลทั้งวันของ {employee.full_name}
+          </label>
+          <button type="submit" className="btn-danger">
+            ลบทั้งวัน
+          </button>
+        </form>
+      )}
 
       <Link href="/admin" className="btn-secondary">
         ← กลับหน้าภาพรวม

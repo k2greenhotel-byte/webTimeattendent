@@ -161,13 +161,15 @@ export async function deleteEmployeeForm(form: FormData): Promise<void> {
   await requireAdmin();
   const id = String(form.get("id") ?? "").trim();
 
+  let photosDeleted = 0;
   try {
-    await deleteEmployee(id);
+    ({ photosDeleted } = await deleteEmployee(id));
     await logAudit({
       actor_id: null,
       action: "delete_employee",
       target_table: "employees",
       target_id: id,
+      after: { photosDeleted },
     });
   } catch (err) {
     backWith({
@@ -177,5 +179,8 @@ export async function deleteEmployeeForm(form: FormData): Promise<void> {
   }
 
   revalidatePath("/admin/employees");
-  backWith({ error: null, success: "ลบพนักงานเรียบร้อยแล้ว" });
+  backWith({
+    error: null,
+    success: `ลบพนักงานเรียบร้อยแล้ว (ลบประวัติการลงเวลาและรูป ${photosDeleted} ไฟล์ด้วย)`,
+  });
 }

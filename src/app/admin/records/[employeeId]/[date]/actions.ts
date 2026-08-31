@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  deleteDayPunches,
   deletePunch,
   getEmployeeById,
   getRecordById,
@@ -108,4 +109,39 @@ export async function deletePunchForm(form: FormData): Promise<void> {
 
   revalidatePath(`/admin/records/${employeeId}/${date}`);
   back(employeeId, date, "ลบรายการเรียบร้อยแล้ว");
+}
+
+/** ลบการลงเวลาทั้งวันของพนักงานคนนี้ (พร้อมรูปทั้งหมดของวันนั้น) */
+export async function deleteDayForm(form: FormData): Promise<void> {
+  await requireAdmin();
+  const employeeId = String(form.get("employee_id") ?? "");
+  const date = String(form.get("work_date") ?? "");
+
+  if (form.get("confirm") !== "on") {
+    back(employeeId, date, "กรุณาติ๊กยืนยันก่อนลบทั้งวัน", true);
+  }
+
+  let result = { deleted: 0, photosDeleted: 0 };
+  try {
+    result = await deleteDayPunches(employeeId, date);
+    await logAudit({
+      actor_id: null,
+      action: "delete_attendance_day",
+      target_table: "attendance_records",
+      target_id: `${employeeId}/${date}`,
+      after: result,
+    });
+  } catch (err) {
+    // redirect() ของ Next โยน error ออกมาเช่นกัน จึงต้องเรียก back() นอก try เสมอ
+    back(employeeId, date, err instanceof Error ? err.message : "ลบไม่สำเร็จ", true);
+  }
+
+  revalidatePath(`/admin/records/${employeeId}/${date}`);
+  back(
+    employeeId,
+    date,
+    result.deleted === 0
+      ? "วันนี้ไม่มีข้อมูลให้ลบ"
+      : `ลบการลงเวลาทั้งวัน ${result.deleted} รายการ และรูป ${result.photosDeleted} ไฟล์แล้ว`,
+  );
 }

@@ -165,11 +165,18 @@ export default async function BranchesPage({
               </button>
             </form>
 
-            <form action={deleteBranchForm} className="mt-2 border-t border-dashed border-slate-200 pt-2">
+            <form
+              action={deleteBranchForm}
+              className="mt-2 flex flex-wrap items-center gap-3 border-t border-dashed border-slate-200 pt-2"
+            >
               <input type="hidden" name="id" value={b.id} />
               <button type="submit" className="text-xs text-rose-600 hover:underline">
-                ลบสาขานี้ (ต้องไม่มีพนักงานอยู่)
+                ลบสาขานี้
               </button>
+              <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                <input type="checkbox" name="force" />
+                ยืนยันลบทั้งที่ยังมีพนักงานอยู่ ({countByBranch.get(b.id) ?? 0} คน จะกลายเป็นไม่ระบุสาขา)
+              </label>
             </form>
           </div>
         ))}

@@ -59,10 +59,14 @@ function LookupSection({
                 บันทึก
               </button>
             </form>
-            <span className="w-20 text-xs text-slate-500">{usage.get(item.id) ?? 0} คน</span>
-            <form action={deleteLookupForm}>
+            <span className="w-16 text-xs text-slate-500">{usage.get(item.id) ?? 0} คน</span>
+            <form action={deleteLookupForm} className="flex items-center gap-2">
               <input type="hidden" name="table" value={table} />
               <input type="hidden" name="id" value={item.id} />
+              <label className="flex items-center gap-1 text-xs text-slate-400" title="ลบแม้ยังมีคนใช้อยู่">
+                <input type="checkbox" name="force" />
+                บังคับ
+              </label>
               <button type="submit" className="text-xs text-rose-600 hover:underline">
                 ลบ
               </button>
@@ -302,8 +306,12 @@ export default async function SetupPage({
                       ตั้งเป็นกะเริ่มต้น
                     </button>
                   </form>
-                  <form action={deleteScheduleForm}>
+                  <form action={deleteScheduleForm} className="flex items-center gap-2">
                     <input type="hidden" name="id" value={s.id} />
+                    <label className="flex items-center gap-1 text-xs text-slate-400">
+                      <input type="checkbox" name="force" />
+                      บังคับ (สาขาที่ใช้อยู่จะกลับไปใช้กะเริ่มต้น)
+                    </label>
                     <button type="submit" className="text-xs text-rose-600 hover:underline">
                       ลบกะนี้
                     </button>

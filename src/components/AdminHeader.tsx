@@ -11,6 +11,7 @@ const NAV = [
   { href: "/admin/holidays", label: "วันหยุด" },
   { href: "/admin/setup", label: "ตั้งค่าข้อมูลหลัก" },
   { href: "/admin/settings", label: "ตั้งค่าองค์กร" },
+  { href: "/admin/data", label: "ลบข้อมูล" },
 ];
 
 export default function AdminHeader() {
