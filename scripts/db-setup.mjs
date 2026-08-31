@@ -6,7 +6,7 @@
  *
  * ต้องมี SUPABASE_DB_URL ในไฟล์ .env.local
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -77,6 +77,9 @@ async function main() {
     }
     if (!process.argv.includes("--skip-seed")) {
       await run(client, "ใส่ข้อมูลตั้งต้น", "supabase/seed.sql");
+      if (existsSync(join(root, "supabase/seed_master_data.sql"))) {
+        await run(client, "ใส่ข้อมูลหลักของกิจการ", "supabase/seed_master_data.sql");
+      }
     }
 
     const { rows } = await client.query(

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { deleteBranch, insertBranch, logAudit, updateBranch } from "@/lib/db";
+import { parseLatLng } from "@/lib/geo";
 import { requireAdmin } from "@/lib/session";
 import type { Branch } from "@/lib/types";
 
@@ -26,13 +27,23 @@ function back(message: string, isError = false): never {
 }
 
 function readForm(form: FormData): Omit<Branch, "id"> {
+  // ช่องเดียว รับได้ทั้งลิงก์ Google Maps และพิกัด "lat, lng"
+  const rawCoords = str(form, "coords");
+  const coords = rawCoords ? parseLatLng(rawCoords) : null;
+  if (rawCoords && !coords) {
+    back(
+      "อ่านพิกัดไม่ออก — วางเป็น \"13.7563, 100.5018\" หรือลิงก์ Google Maps แบบเต็ม (ลิงก์ย่อ maps.app.goo.gl ให้เปิดก่อนแล้วคัดลอกพิกัดมา)",
+      true,
+    );
+  }
+
   return {
     code: str(form, "code").toUpperCase(),
     name: str(form, "name"),
     address: optText(form, "address"),
     phone: optText(form, "phone"),
-    site_lat: optNum(form, "site_lat"),
-    site_lng: optNum(form, "site_lng"),
+    site_lat: coords?.lat ?? null,
+    site_lng: coords?.lng ?? null,
     radius_m: optNum(form, "radius_m"),
     schedule_id: optText(form, "schedule_id"),
     is_active: form.get("is_active") === "on",

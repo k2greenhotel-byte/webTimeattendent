@@ -67,7 +67,8 @@
 
 **`branches`** (ข้อมูลสาขา)
 `id uuid pk`, `code text unique` (รหัสสาขา), `name` (ชื่อสาขา), `address`, `phone`,
-`site_lat`, `site_lng` (พิกัดสาขา), `radius_m` (null = ใช้รัศมีเริ่มต้น),
+`site_lat`, `site_lng` (พิกัดสาขา — หน้าจอรับได้ทั้งพิกัด "lat, lng" และลิงก์ Google Maps แบบเต็ม
+โดยอ่านค่า `!3d`/`!4d` เป็นอันดับแรกเพราะเป็นตำแหน่งหมุดจริง), `radius_m` (null = ใช้รัศมีเริ่มต้น),
 `schedule_id fk → work_schedules` (null = ใช้กะเริ่มต้น), `is_active`
 
 **`work_schedules`** (ตารางค่าเริ่มต้นของเวลาทำงาน — ปรับได้จากหน้า setup)

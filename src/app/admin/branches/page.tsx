@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listBranches, listEmployees, listSchedules } from "@/lib/db";
+import { formatLatLng, googleMapsUrl } from "@/lib/geo";
 import { createBranchForm, deleteBranchForm, updateBranchForm } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -73,13 +74,13 @@ export default async function BranchesPage({
               ))}
             </select>
           </div>
-          <div>
-            <label className="label">ละติจูด</label>
-            <input name="site_lat" className="input" placeholder="13.7563" />
-          </div>
-          <div>
-            <label className="label">ลองจิจูด</label>
-            <input name="site_lng" className="input" placeholder="100.5018" />
+          <div className="sm:col-span-3">
+            <label className="label">พิกัดสาขา (วางจาก Google Maps)</label>
+            <input
+              name="coords"
+              className="input"
+              placeholder="13.7563, 100.5018 หรือวางลิงก์ Google Maps"
+            />
           </div>
           <div>
             <label className="label">รัศมี (เมตร)</label>
@@ -127,13 +128,26 @@ export default async function BranchesPage({
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="label">ละติจูด</label>
-                <input name="site_lat" defaultValue={b.site_lat ?? ""} className="input" />
-              </div>
-              <div>
-                <label className="label">ลองจิจูด</label>
-                <input name="site_lng" defaultValue={b.site_lng ?? ""} className="input" />
+              <div className="sm:col-span-3">
+                <label className="label">
+                  พิกัดสาขา (วางจาก Google Maps){" "}
+                  {b.site_lat !== null && b.site_lng !== null && (
+                    <a
+                      href={googleMapsUrl(b.site_lat, b.site_lng)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-1 text-xs text-brand-600 hover:underline"
+                    >
+                      📍 เปิดแผนที่
+                    </a>
+                  )}
+                </label>
+                <input
+                  name="coords"
+                  defaultValue={formatLatLng(b.site_lat, b.site_lng)}
+                  className="input"
+                  placeholder="13.7563, 100.5018 หรือวางลิงก์ Google Maps"
+                />
               </div>
               <div>
                 <label className="label">รัศมี (เมตร)</label>
