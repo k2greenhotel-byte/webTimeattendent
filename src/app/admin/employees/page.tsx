@@ -1,0 +1,143 @@
+import CreateEmployeeForm from "@/components/CreateEmployeeForm";
+import { listBranches, listEmployees } from "@/lib/db";
+import { deleteEmployeeForm, resetPinForm, updateEmployeeForm } from "./actions";
+
+export const dynamic = "force-dynamic";
+
+export default async function EmployeesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ msg?: string; err?: string; branch?: string }>;
+}) {
+  const params = await searchParams;
+  const branchId = params.branch || undefined;
+  const [employees, branches] = await Promise.all([
+    listEmployees({ branchId }),
+    listBranches(),
+  ]);
+
+  return (
+    <main className="mx-auto max-w-6xl space-y-4 p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">จัดการพนักงาน</h1>
+          <p className="text-sm text-slate-500">เพิ่ม แก้ไข ย้ายสาขา ตั้ง PIN ใหม่ และลบพนักงาน</p>
+        </div>
+
+        <form method="get" className="flex items-end gap-2">
+          <div>
+            <label className="label" htmlFor="branch">
+              กรองตามสาขา
+            </label>
+            <select id="branch" name="branch" defaultValue={branchId ?? ""} className="input">
+              <option value="">ทุกสาขา</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.code} · {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="submit" className="btn-secondary">
+            กรอง
+          </button>
+        </form>
+      </div>
+
+      {params.msg && (
+        <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{params.msg}</p>
+      )}
+      {params.err && (
+        <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{params.err}</p>
+      )}
+
+      <CreateEmployeeForm branches={branches} />
+
+      <section className="card space-y-4">
+        <h2 className="font-semibold text-slate-800">รายชื่อพนักงาน ({employees.length} คน)</h2>
+
+        {employees.map((emp) => (
+          <div key={emp.id} className="rounded-xl border border-slate-200 p-3">
+            <form action={updateEmployeeForm} className="grid items-end gap-3 sm:grid-cols-6">
+              <input type="hidden" name="id" value={emp.id} />
+
+              <div>
+                <span className="label">รหัส</span>
+                <p className="pt-2 font-mono text-sm">{emp.emp_code}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">ชื่อ-สกุล</label>
+                <input name="full_name" defaultValue={emp.full_name} className="input" required />
+              </div>
+              <div>
+                <label className="label">ชื่อเล่น</label>
+                <input name="nickname" defaultValue={emp.nickname ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">สาขา</label>
+                <select name="branch_id" defaultValue={emp.branch_id ?? ""} className="input">
+                  <option value="">— ไม่ระบุ —</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.code} · {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">แผนก</label>
+                <input name="department" defaultValue={emp.department ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">ตำแหน่ง</label>
+                <input name="position" defaultValue={emp.position ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">สิทธิ์</label>
+                <select name="role" defaultValue={emp.role} className="input">
+                  <option value="employee">พนักงาน</option>
+                  <option value="admin">ผู้ดูแลระบบ</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
+                <input type="checkbox" name="is_active" defaultChecked={emp.is_active} />
+                ใช้งานอยู่
+              </label>
+              <button type="submit" className="btn-secondary">
+                บันทึก
+              </button>
+            </form>
+
+            <div className="mt-2 flex flex-wrap items-end justify-between gap-3 border-t border-dashed border-slate-200 pt-2">
+              <form action={resetPinForm} className="flex flex-wrap items-end gap-2">
+                <input type="hidden" name="id" value={emp.id} />
+                <div>
+                  <label className="label">ตั้ง PIN ใหม่</label>
+                  <input
+                    name="pin"
+                    className="input w-32"
+                    inputMode="numeric"
+                    pattern="\d{4}"
+                    maxLength={4}
+                    placeholder="1234"
+                    required
+                  />
+                </div>
+                <button type="submit" className="btn-secondary">
+                  ตั้ง PIN ใหม่
+                </button>
+              </form>
+
+              <form action={deleteEmployeeForm}>
+                <input type="hidden" name="id" value={emp.id} />
+                <button type="submit" className="text-xs text-rose-600 hover:underline">
+                  ลบพนักงานถาวร (ลบประวัติการลงเวลาทั้งหมดด้วย)
+                </button>
+              </form>
+            </div>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}

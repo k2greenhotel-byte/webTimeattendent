@@ -1,0 +1,101 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import { loginAction, type LoginState } from "@/app/login/actions";
+
+const initialState: LoginState = { error: null };
+
+export default function LoginForm() {
+  const [state, formAction, pending] = useActionState(loginAction, initialState);
+  const [empCode, setEmpCode] = useState("");
+  const [pin, setPin] = useState("");
+
+  const press = (digit: string) => {
+    if (pin.length < 4) setPin(pin + digit);
+  };
+
+  return (
+    <form action={formAction} className="card space-y-4">
+      <input type="hidden" name="pin" value={pin} />
+
+      <div>
+        <label className="label" htmlFor="emp_code">
+          รหัสพนักงาน
+        </label>
+        <input
+          id="emp_code"
+          name="emp_code"
+          className="input text-center text-lg tracking-wide"
+          autoComplete="username"
+          inputMode="text"
+          placeholder="เช่น EMP001"
+          value={empCode}
+          onChange={(e) => setEmpCode(e.target.value)}
+          required
+        />
+      </div>
+
+      <div>
+        <span className="label">PIN 4 หลัก</span>
+        <div className="mb-3 flex justify-center gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <span
+              key={i}
+              className={`h-11 w-11 rounded-xl border text-center text-2xl leading-10 ${
+                pin.length > i ? "border-brand-500 bg-brand-50" : "border-slate-300 bg-white"
+              }`}
+            >
+              {pin.length > i ? "•" : ""}
+            </span>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => press(d)}
+              className="rounded-xl border border-slate-300 bg-white py-3 text-xl font-semibold text-slate-700 active:bg-slate-100"
+            >
+              {d}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPin("")}
+            className="rounded-xl border border-slate-300 bg-white py-3 text-sm text-slate-500 active:bg-slate-100"
+          >
+            ล้าง
+          </button>
+          <button
+            type="button"
+            onClick={() => press("0")}
+            className="rounded-xl border border-slate-300 bg-white py-3 text-xl font-semibold text-slate-700 active:bg-slate-100"
+          >
+            0
+          </button>
+          <button
+            type="button"
+            onClick={() => setPin(pin.slice(0, -1))}
+            className="rounded-xl border border-slate-300 bg-white py-3 text-sm text-slate-500 active:bg-slate-100"
+          >
+            ลบ
+          </button>
+        </div>
+      </div>
+
+      {state.error && (
+        <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
+      )}
+
+      <button
+        type="submit"
+        className="btn-primary w-full py-3 text-base"
+        disabled={pending || pin.length !== 4 || empCode.trim() === ""}
+      >
+        {pending ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
+      </button>
+    </form>
+  );
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "web-time-attendance",
+  "account_id": "14edd7c56967df9e007e7a3daf5be9ea",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // ค่าที่ไม่ใช่ความลับ — ส่วนที่เป็นความลับตั้งด้วย `wrangler secret put`
+  // (SUPABASE_SERVICE_ROLE_KEY, SESSION_SECRET, ADMIN_PIN)
+  "vars": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://riqolnbcolvgfxkmgyzn.supabase.co",
+    "SUPABASE_PHOTO_BUCKET": "attendance-photos",
+    "TZ": "Asia/Bangkok"
+  }
+}

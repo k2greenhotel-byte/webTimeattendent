@@ -1,0 +1,146 @@
+import { listBranches, listEmployees } from "@/lib/db";
+import { createBranchForm, deleteBranchForm, updateBranchForm } from "./actions";
+
+export const dynamic = "force-dynamic";
+
+export default async function BranchesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ msg?: string; err?: string }>;
+}) {
+  const params = await searchParams;
+  const [branches, employees] = await Promise.all([listBranches(), listEmployees()]);
+
+  const countByBranch = new Map<string, number>();
+  for (const e of employees) {
+    if (e.branch_id) countByBranch.set(e.branch_id, (countByBranch.get(e.branch_id) ?? 0) + 1);
+  }
+
+  return (
+    <main className="mx-auto max-w-5xl space-y-4 p-4">
+      <div>
+        <h1 className="text-xl font-bold text-slate-800">จัดการสาขา</h1>
+        <p className="text-sm text-slate-500">
+          แต่ละสาขาตั้งเวลาทำงานและพิกัดของตัวเองได้ — ช่องที่เว้นว่างจะใช้ค่ากลางจากหน้าตั้งค่า
+        </p>
+      </div>
+
+      {params.msg && (
+        <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{params.msg}</p>
+      )}
+      {params.err && (
+        <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{params.err}</p>
+      )}
+
+      <form action={createBranchForm} className="card space-y-3">
+        <h2 className="font-semibold text-slate-800">เพิ่มสาขาใหม่</h2>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div>
+            <label className="label">รหัสสาขา *</label>
+            <input name="code" className="input" placeholder="BKK01" required />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">ชื่อสาขา *</label>
+            <input name="name" className="input" placeholder="สาขาสยาม" required />
+          </div>
+          <div>
+            <label className="label">เบอร์โทร</label>
+            <input name="phone" className="input" />
+          </div>
+          <div className="sm:col-span-4">
+            <label className="label">ที่อยู่</label>
+            <input name="address" className="input" />
+          </div>
+          <div>
+            <label className="label">เข้างาน (เว้นว่าง = ค่ากลาง)</label>
+            <input name="work_start" type="time" className="input" />
+          </div>
+          <div>
+            <label className="label">เลิกงาน</label>
+            <input name="work_end" type="time" className="input" />
+          </div>
+          <div>
+            <label className="label">ละติจูด</label>
+            <input name="site_lat" className="input" placeholder="13.7563" />
+          </div>
+          <div>
+            <label className="label">ลองจิจูด</label>
+            <input name="site_lng" className="input" placeholder="100.5018" />
+          </div>
+          <div>
+            <label className="label">รัศมี (เมตร)</label>
+            <input name="radius_m" type="number" className="input" placeholder="200" />
+          </div>
+        </div>
+        <button type="submit" className="btn-primary">
+          เพิ่มสาขา
+        </button>
+      </form>
+
+      <section className="card space-y-4">
+        <h2 className="font-semibold text-slate-800">สาขาทั้งหมด ({branches.length})</h2>
+
+        {branches.map((b) => (
+          <div key={b.id} className="rounded-xl border border-slate-200 p-3">
+            <form action={updateBranchForm} className="grid items-end gap-3 sm:grid-cols-4">
+              <input type="hidden" name="id" value={b.id} />
+              <div>
+                <label className="label">รหัสสาขา</label>
+                <input name="code" defaultValue={b.code} className="input" required />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">ชื่อสาขา</label>
+                <input name="name" defaultValue={b.name} className="input" required />
+              </div>
+              <div>
+                <label className="label">เบอร์โทร</label>
+                <input name="phone" defaultValue={b.phone ?? ""} className="input" />
+              </div>
+              <div className="sm:col-span-4">
+                <label className="label">ที่อยู่</label>
+                <input name="address" defaultValue={b.address ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">เข้างาน</label>
+                <input name="work_start" type="time" defaultValue={b.work_start ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">เลิกงาน</label>
+                <input name="work_end" type="time" defaultValue={b.work_end ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">ละติจูด</label>
+                <input name="site_lat" defaultValue={b.site_lat ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">ลองจิจูด</label>
+                <input name="site_lng" defaultValue={b.site_lng ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">รัศมี (เมตร)</label>
+                <input name="radius_m" type="number" defaultValue={b.radius_m ?? ""} className="input" />
+              </div>
+              <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
+                <input type="checkbox" name="is_active" defaultChecked={b.is_active} />
+                เปิดใช้งาน
+              </label>
+              <p className="pb-2 text-sm text-slate-500">
+                พนักงาน {countByBranch.get(b.id) ?? 0} คน
+              </p>
+              <button type="submit" className="btn-secondary">
+                บันทึก
+              </button>
+            </form>
+
+            <form action={deleteBranchForm} className="mt-2 border-t border-dashed border-slate-200 pt-2">
+              <input type="hidden" name="id" value={b.id} />
+              <button type="submit" className="text-xs text-rose-600 hover:underline">
+                ลบสาขานี้ (ต้องไม่มีพนักงานอยู่)
+              </button>
+            </form>
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
