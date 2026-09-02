@@ -109,6 +109,11 @@ export function dayOfWeek(dateStr: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
+/** ชื่อเดือนแบบย่อไทย เช่น 8 -> "ส.ค." */
+export function thaiMonthShort(month1to12: number): string {
+  return THAI_MONTHS_SHORT[month1to12 - 1] ?? "";
+}
+
 /** รายการวันที่ทั้งหมดระหว่าง from ถึง to (รวมปลายทั้งสองด้าน) */
 export function dateRange(from: string, to: string): string[] {
   const out: string[] = [];

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import LoginForm from "@/components/LoginForm";
 import { getSessionUser } from "@/lib/session";
@@ -17,6 +18,12 @@ export default async function LoginPage() {
           <p className="mt-1 text-sm text-slate-500">เข้าสู่ระบบด้วยเบอร์มือถือและรหัสผ่าน</p>
         </div>
         <LoginForm />
+
+        <p className="mt-6 text-center text-sm text-slate-500">
+          <Link href="/marketing" className="text-brand-600 hover:underline">
+            ระบบกิจกรรมการตลาด →
+          </Link>
+        </p>
       </div>
     </main>
   );

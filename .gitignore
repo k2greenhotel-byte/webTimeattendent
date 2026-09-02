@@ -17,3 +17,6 @@ next-env.d.ts
 # ไฟล์ที่มีคีย์/ความลับ ห้าม commit เด็ดขาด
 token.txt
 *token*.txt
+
+# ไฟล์ cache ของ TypeScript
+tsconfig.tsbuildinfo
