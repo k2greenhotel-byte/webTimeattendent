@@ -89,6 +89,16 @@ export default async function EmployeesPage({
                   required
                 />
               </div>
+              <div className="sm:col-span-2">
+                <label className="label">อีเมล</label>
+                <input
+                  name="email"
+                  type="email"
+                  defaultValue={emp.email ?? ""}
+                  className="input"
+                  placeholder="name@example.com"
+                />
+              </div>
               <div>
                 <label className="label">สาขา</label>
                 <select name="branch_id" defaultValue={emp.branch_id ?? ""} className="input">

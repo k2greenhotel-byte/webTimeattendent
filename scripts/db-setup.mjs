@@ -75,10 +75,22 @@ async function main() {
         [file],
       );
     }
+    // seed รันครั้งเดียวเหมือน migration — ไม่งั้นบัญชี/ข้อมูลตัวอย่างที่ลบไปแล้วจะกลับมาทุกครั้งที่ตั้งค่าใหม่
     if (!process.argv.includes("--skip-seed")) {
-      await run(client, "ใส่ข้อมูลตั้งต้น", "supabase/seed.sql");
-      if (existsSync(join(root, "supabase/seed_master_data.sql"))) {
-        await run(client, "ใส่ข้อมูลหลักของกิจการ", "supabase/seed_master_data.sql");
+      for (const [label, file] of [
+        ["ใส่ข้อมูลตั้งต้น", "supabase/seed.sql"],
+        ["ใส่ข้อมูลหลักของกิจการ", "supabase/seed_master_data.sql"],
+      ]) {
+        if (!existsSync(join(root, file))) continue;
+        if (done.has(file) && !force) {
+          console.log(`• ข้าม ${file} (รันไปแล้ว)`);
+          continue;
+        }
+        await run(client, label, file);
+        await client.query(
+          "insert into public.schema_migrations (filename) values ($1) on conflict do nothing",
+          [file],
+        );
       }
     }
 

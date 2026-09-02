@@ -41,6 +41,12 @@ export default function CreateEmployeeForm({
           <input id="new_nickname" name="nickname" className="input" />
         </div>
         <div>
+          <label className="label" htmlFor="new_email">
+            อีเมล
+          </label>
+          <input id="new_email" name="email" type="email" className="input" placeholder="name@example.com" />
+        </div>
+        <div>
           <label className="label" htmlFor="new_branch">
             สาขา
           </label>

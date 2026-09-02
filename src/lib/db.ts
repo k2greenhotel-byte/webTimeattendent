@@ -16,7 +16,7 @@ import type {
 } from "./types";
 
 const EMPLOYEE_COLUMNS =
-  "id, emp_code, full_name, nickname, phone, role, is_active, hire_date, branch_id, department_id, position_id";
+  "id, emp_code, full_name, nickname, phone, email, role, is_active, hire_date, branch_id, department_id, position_id";
 
 const DEFAULT_ORG: OrgSettings = {
   id: 1,

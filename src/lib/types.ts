@@ -70,6 +70,7 @@ export type Employee = {
   full_name: string;
   nickname: string | null;
   phone: string | null;
+  email: string | null;
   role: UserRole;
   is_active: boolean;
   hire_date: string | null;
