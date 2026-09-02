@@ -109,7 +109,15 @@ npm run cf:build
 npm run cf:deploy
 ```
 
-ต้องมี `CLOUDFLARE_API_TOKEN` ใน environment ตอนสั่ง deploy
+`npm run cf:deploy` เรียก [`scripts/cf-deploy.mjs`](scripts/cf-deploy.mjs) ซึ่งหา Cloudflare API token
+ให้เองตามลำดับนี้ ไม่ต้องตั้ง environment variable เองทุกครั้ง
+
+1. ตัวแปรสภาพแวดล้อม `CLOUDFLARE_API_TOKEN` (ถ้ามี ใช้ตัวนี้ก่อน)
+2. บรรทัด `CLOUDFLARE_API_TOKEN=...` ในไฟล์ `.env.local`
+3. ไฟล์ `token.txt` (ในโปรเจกต์ หรือโฟลเดอร์แม่) — บรรทัดที่ขึ้นต้นด้วย `cfut_`
+
+สคริปต์ไม่พิมพ์ค่า token ออกหน้าจอและไม่คัดลอกไปเก็บที่อื่น
+ถ้าหา token ไม่เจอจะบอกวิธีแก้เป็นภาษาไทยแล้วหยุด
 
 **ค่า config:** ไม่ลับอยู่ใน [`wrangler.jsonc`](wrangler.jsonc) (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_PHOTO_BUCKET`, `TZ`)
 ส่วนที่เป็นความลับตั้งเป็น secret (ตั้งไว้แล้ว ไม่ต้องทำซ้ำ):

@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "cf:build": "opennextjs-cloudflare build",
-    "cf:deploy": "opennextjs-cloudflare deploy",
+    "cf:deploy": "node scripts/cf-deploy.mjs",
     "cf:preview": "opennextjs-cloudflare preview"
   },
   "dependencies": {

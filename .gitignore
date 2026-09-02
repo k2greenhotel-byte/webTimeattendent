@@ -20,3 +20,6 @@ token.txt
 
 # ไฟล์ cache ของ TypeScript
 tsconfig.tsbuildinfo
+
+# การตั้งค่า Claude Code เฉพาะเครื่องนี้ (มีสิทธิ์ deploy อยู่ข้างใน)
+.claude/settings.local.json
