@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { deleteBranch, insertBranch, logAudit, updateBranch } from "@/lib/db";
-import { parseLatLng } from "@/lib/geo";
+import { isMapsShortLink, parseLatLng, resolveMapsShortLink } from "@/lib/geo";
 import { requireAdmin } from "@/lib/session";
 import type { Branch } from "@/lib/types";
 
@@ -26,16 +26,29 @@ function back(message: string, isError = false): never {
   redirect(`/admin/branches?${isError ? "err" : "msg"}=${encodeURIComponent(message)}`);
 }
 
-function readForm(form: FormData): Omit<Branch, "id"> {
-  // ช่องเดียว รับได้ทั้งลิงก์ Google Maps และพิกัด "lat, lng"
-  const rawCoords = str(form, "coords");
-  const coords = rawCoords ? parseLatLng(rawCoords) : null;
-  if (rawCoords && !coords) {
-    back(
-      "อ่านพิกัดไม่ออก — วางเป็น \"13.7563, 100.5018\" หรือลิงก์ Google Maps แบบเต็ม (ลิงก์ย่อ maps.app.goo.gl ให้เปิดก่อนแล้วคัดลอกพิกัดมา)",
-      true,
-    );
+const COORDS_HELP =
+  'อ่านพิกัดไม่ออก — วางเป็น "13.7563, 100.5018" หรือลิงก์ Google Maps ก็ได้ ' +
+  "ถ้าเป็นลิงก์ของร้านค้า Google จะไม่ส่งตัวเลขพิกัดมาด้วย ให้เปิดลิงก์ในแอป Google Maps " +
+  "→ กดค้างที่หมุดจนขึ้นหมุดสีแดง → แตะแถบด้านล่างจะเห็นตัวเลขพิกัด → คัดลอกมาวาง";
+
+/** ช่องเดียว รับได้ทั้งพิกัด "lat, lng", ลิงก์เต็ม และลิงก์ย่อ (ตามรีไดเรกต์ให้) */
+async function readCoords(form: FormData) {
+  const raw = str(form, "coords");
+  if (!raw) return null;
+
+  const direct = parseLatLng(raw);
+  if (direct) return direct;
+
+  if (isMapsShortLink(raw)) {
+    const resolved = await resolveMapsShortLink(raw);
+    if (resolved) return resolved;
   }
+
+  back(COORDS_HELP, true);
+}
+
+async function readForm(form: FormData): Promise<Omit<Branch, "id">> {
+  const coords = await readCoords(form);
 
   return {
     code: str(form, "code").toUpperCase(),
@@ -52,7 +65,7 @@ function readForm(form: FormData): Omit<Branch, "id"> {
 
 export async function createBranchForm(form: FormData): Promise<void> {
   await requireAdmin();
-  const row = { ...readForm(form), is_active: true };
+  const row = { ...(await readForm(form)), is_active: true };
 
   if (!row.code || !row.name) back("กรุณากรอกรหัสสาขาและชื่อสาขา", true);
 
@@ -70,7 +83,7 @@ export async function createBranchForm(form: FormData): Promise<void> {
 export async function updateBranchForm(form: FormData): Promise<void> {
   await requireAdmin();
   const id = str(form, "id");
-  const patch = readForm(form);
+  const patch = await readForm(form);
 
   if (!id) back("ไม่พบสาขา", true);
   if (!patch.code || !patch.name) back("กรุณากรอกรหัสสาขาและชื่อสาขา", true);

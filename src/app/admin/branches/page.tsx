@@ -79,7 +79,7 @@ export default async function BranchesPage({
             <input
               name="coords"
               className="input"
-              placeholder="13.7563, 100.5018 หรือวางลิงก์ Google Maps"
+              placeholder="13.7563, 100.5018 หรือวางลิงก์ Google Maps (รวมลิงก์ย่อ)"
             />
           </div>
           <div>
@@ -146,7 +146,7 @@ export default async function BranchesPage({
                   name="coords"
                   defaultValue={formatLatLng(b.site_lat, b.site_lng)}
                   className="input"
-                  placeholder="13.7563, 100.5018 หรือวางลิงก์ Google Maps"
+                  placeholder="13.7563, 100.5018 หรือวางลิงก์ Google Maps (รวมลิงก์ย่อ)"
                 />
               </div>
               <div>

@@ -37,6 +37,35 @@ export function parseLatLng(input: string): LatLng | null {
   return null;
 }
 
+/** ลิงก์ย่อของ Google Maps (ไม่มีพิกัดอยู่ในตัว ต้องตามรีไดเรกต์ก่อน) */
+export function isMapsShortLink(input: string): boolean {
+  return /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test((input ?? "").trim());
+}
+
+/**
+ * ตามรีไดเรกต์ของลิงก์ย่อไปยัง URL จริง แล้วอ่านพิกัดจาก URL นั้น
+ *
+ * ใช้ได้เมื่อผู้ใช้แชร์ "หมุดที่ปักเอง" เพราะ Google จะใส่พิกัดมาใน ?q=lat,lng
+ * แต่ถ้าแชร์ "ร้านค้าในแผนที่" Google จะใส่มาเป็นชื่อ+ที่อยู่แทน (ไม่มีตัวเลขพิกัด)
+ * กรณีหลังคืน null เพื่อให้ผู้เรียกแจ้งผู้ใช้ว่าต้องคัดลอกพิกัดมาเอง
+ */
+export async function resolveMapsShortLink(input: string): Promise<LatLng | null> {
+  try {
+    const res = await fetch(input.trim(), {
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000),
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept-Language": "th,en",
+      },
+    });
+    return parseLatLng(decodeURIComponent(res.url));
+  } catch {
+    return null;
+  }
+}
+
 /** ลิงก์เปิดพิกัดใน Google Maps */
 export function googleMapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps?q=${lat},${lng}`;
