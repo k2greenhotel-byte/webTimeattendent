@@ -4,7 +4,13 @@ import ActivityForm from "@/components/marketing/ActivityForm";
 import { FlowBadge, PhotoStrip } from "@/components/marketing/StatusBadge";
 import { formatThaiDate } from "@/lib/datetime";
 import { canReceive, canSubmit, formatBaht, outstandingAmount } from "@/lib/marketing";
-import { getActivityRow, listActivityPhotos, listMaster } from "@/lib/marketing-db";
+import {
+  getActivityRow,
+  getStaffIdForEmployee,
+  listActivityPhotos,
+  listMaster,
+} from "@/lib/marketing-db";
+import { requireUser } from "@/lib/session";
 import { deleteActivityForm, updateActivityForm } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +28,13 @@ export default async function ActivityDetailPage({
   const activity = await getActivityRow(id);
   if (!activity) notFound();
 
-  const [photos, staff, companies, activityTypes] = await Promise.all([
+  const user = await requireUser();
+  const [photos, staff, companies, activityTypes, defaultStaffId] = await Promise.all([
     listActivityPhotos(id),
     listMaster("staff"),
     listMaster("company"),
     listMaster("activityType"),
+    getStaffIdForEmployee(user.id),
   ]);
 
   const submitGate = canSubmit(activity);
@@ -93,6 +101,7 @@ export default async function ActivityDetailPage({
         staff={staff}
         companies={companies}
         activityTypes={activityTypes}
+        defaultStaffId={defaultStaffId}
       />
 
       {activity.submission_id && (

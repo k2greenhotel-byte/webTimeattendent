@@ -41,7 +41,11 @@ export async function createMasterForm(form: FormData): Promise<void> {
   if (!code || !name) back(`กรุณากรอกทั้ง ID และชื่อ${LABEL[kind]}`, true);
 
   try {
-    await insertMaster(kind, { code, name });
+    await insertMaster(kind, {
+      code,
+      name,
+      ...(kind === "staff" ? { employee_id: str(form, "employee_id") || null } : {}),
+    });
     await logAudit({
       actor_id: null,
       action: `mkt_create_${kind}`,
@@ -66,7 +70,12 @@ export async function updateMasterForm(form: FormData): Promise<void> {
   if (!code || !name) back(`กรุณากรอกทั้ง ID และชื่อ${LABEL[kind]}`, true);
 
   try {
-    await updateMaster(kind, id, { code, name, is_active: form.get("is_active") === "on" });
+    await updateMaster(kind, id, {
+      code,
+      name,
+      is_active: form.get("is_active") === "on",
+      ...(kind === "staff" ? { employee_id: str(form, "employee_id") || null } : {}),
+    });
     await logAudit({
       actor_id: null,
       action: `mkt_update_${kind}`,

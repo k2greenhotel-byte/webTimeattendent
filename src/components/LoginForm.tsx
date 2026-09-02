@@ -7,7 +7,7 @@ const initialState: LoginState = { error: null };
 const PIN_MIN = 4;
 const PIN_MAX = 8;
 
-export default function LoginForm() {
+export default function LoginForm({ next }: { next?: string }) {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
@@ -21,6 +21,7 @@ export default function LoginForm() {
   return (
     <form action={formAction} className="card space-y-4">
       <input type="hidden" name="pin" value={pin} />
+      {next && <input type="hidden" name="next" value={next} />}
 
       <div>
         <label className="label" htmlFor="phone">

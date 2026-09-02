@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { marketingPhotoUrl, newPhotoPath, uploadMarketingPhoto } from "@/lib/marketing-db";
+import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +9,10 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 /** อัปโหลดรูปของโมดูลการตลาด (ทีละไฟล์) แล้วคืนเส้นทางไฟล์ให้ฟอร์มเก็บไว้ */
 export async function POST(req: Request) {
+  if (!(await getSessionUser())) {
+    return NextResponse.json({ ok: false, error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
+  }
+
   const form = await req.formData();
   const file = form.get("photo");
   const prefix = String(form.get("prefix") ?? "activity").replace(/[^a-z]/g, "") || "activity";
@@ -34,6 +39,10 @@ export async function POST(req: Request) {
 
 /** ส่งต่อไปยัง signed URL ของรูป — เปิดได้เฉพาะไฟล์ในโฟลเดอร์ mkt/ เท่านั้น */
 export async function GET(req: Request) {
+  if (!(await getSessionUser())) {
+    return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
+  }
+
   const path = new URL(req.url).searchParams.get("path");
   if (!path || !path.startsWith("mkt/") || path.includes("..")) {
     return NextResponse.json({ error: "ไม่พบรูป" }, { status: 400 });

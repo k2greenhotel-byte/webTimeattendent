@@ -38,17 +38,48 @@ export async function listMaster(
   kind: MktMasterKind,
   options: { includeInactive?: boolean } = {},
 ): Promise<MktOption[]> {
-  let q = getSupabase().from(MKT_MASTER_TABLES[kind]).select("id, code, name, is_active");
+  const columns = kind === "staff" ? "id, code, name, is_active, employee_id" : "id, code, name, is_active";
+  let q = getSupabase().from(MKT_MASTER_TABLES[kind]).select(columns);
   if (!options.includeInactive) q = q.eq("is_active", true);
 
   const { data, error } = await q.order("code");
   if (error) throw new Error(`อ่าน${MASTER_LABEL[kind]}ไม่สำเร็จ: ${error.message}`);
-  return (data ?? []) as MktOption[];
+  return (data ?? []) as unknown as MktOption[];
+}
+
+/**
+ * หาพนักงานการตลาดที่ผูกกับบัญชีเข้าระบบนี้ — ใช้เลือก "ผู้บันทึก" ให้อัตโนมัติ
+ * คืน null ถ้ายังไม่ได้ผูก (ผู้ใช้เลือกเองจาก dropdown ได้ตามปกติ)
+ */
+export async function getStaffIdForEmployee(employeeId: string): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .from("mkt_staff")
+    .select("id")
+    .eq("employee_id", employeeId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) return null;
+  return (data?.id as string) ?? null;
+}
+
+/** บัญชีเข้าระบบทั้งหมดที่เลือกผูกได้ (ใช้ใน dropdown หน้าค่าเริ่มต้น) */
+export async function listLoginAccounts(): Promise<
+  { id: string; emp_code: string; full_name: string }[]
+> {
+  const { data, error } = await getSupabase()
+    .from("employees")
+    .select("id, emp_code, full_name")
+    .eq("is_active", true)
+    .order("emp_code");
+
+  if (error) throw new Error(`อ่านรายชื่อบัญชีเข้าระบบไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as { id: string; emp_code: string; full_name: string }[];
 }
 
 export async function insertMaster(
   kind: MktMasterKind,
-  row: { code: string; name: string },
+  row: { code: string; name: string; employee_id?: string | null },
 ): Promise<void> {
   const { error } = await getSupabase().from(MKT_MASTER_TABLES[kind]).insert(row);
   if (error) {
@@ -67,11 +98,15 @@ export async function updateMaster(
 ): Promise<void> {
   const { error } = await getSupabase().from(MKT_MASTER_TABLES[kind]).update(patch).eq("id", id);
   if (error) {
-    throw new Error(
-      error.code === "23505"
-        ? "รหัสนี้ถูกใช้ไปแล้ว กรุณาใช้รหัสอื่น"
-        : `บันทึก${MASTER_LABEL[kind]}ไม่สำเร็จ: ${error.message}`,
-    );
+    if (error.code === "23505") {
+      // มี unique 2 ตัวในตารางพนักงาน: รหัส และบัญชีเข้าระบบ
+      throw new Error(
+        error.message.includes("employee")
+          ? "บัญชีเข้าระบบนี้ถูกผูกกับพนักงานคนอื่นแล้ว กรุณาปลดออกจากคนนั้นก่อน"
+          : "รหัสนี้ถูกใช้ไปแล้ว กรุณาใช้รหัสอื่น",
+      );
+    }
+    throw new Error(`บันทึก${MASTER_LABEL[kind]}ไม่สำเร็จ: ${error.message}`);
   }
 }
 

@@ -9,6 +9,8 @@ type Props = {
   staff: MktOption[];
   companies: MktOption[];
   activityTypes: MktOption[];
+  /** พนักงานการตลาดที่ผูกกับบัญชีที่ล็อกอินอยู่ — ใช้เป็นค่าตั้งต้นของผู้บันทึก */
+  defaultStaffId?: string | null;
 };
 
 /** ฟอร์มบันทึกงานกิจกรรม (หน้าจอ 1) — ใช้ร่วมกันทั้งตอนเพิ่มใหม่และตอนแก้ไข */
@@ -19,6 +21,7 @@ export default function ActivityForm({
   staff,
   companies,
   activityTypes,
+  defaultStaffId,
 }: Props) {
   const isEdit = Boolean(activity);
 
@@ -47,7 +50,7 @@ export default function ActivityForm({
         </div>
         <div>
           <label className="label">ผู้บันทึกจัดทำ</label>
-          <select name="created_by_staff_id" className="input" defaultValue={activity?.created_by_staff_id ?? ""}>
+          <select name="created_by_staff_id" className="input" defaultValue={activity?.created_by_staff_id ?? defaultStaffId ?? ""}>
             <option value="">— เลือกพนักงาน —</option>
             {staff.map((s) => (
               <option key={s.id} value={s.id}>

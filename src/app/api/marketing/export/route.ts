@@ -4,6 +4,7 @@ import { toCsv, toXlsx } from "@/lib/export";
 import { listActivities } from "@/lib/marketing-db";
 import { marketingToTable } from "@/lib/marketing-export";
 import { FLOW_STATUS_LABEL, type MktFlowStatus } from "@/lib/marketing-types";
+import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,10 @@ export const dynamic = "force-dynamic";
  * /api/marketing/export?flow_status=submitted&from=...&to=...&company_id=...&format=xlsx
  */
 export async function GET(req: Request) {
+  if (!(await getSessionUser())) {
+    return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
+  }
+
   const sp = new URL(req.url).searchParams;
   const format = sp.get("format") === "csv" ? "csv" : "xlsx";
 

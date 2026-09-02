@@ -4,7 +4,14 @@ import PhotoUploader from "@/components/marketing/PhotoUploader";
 import { FlowBadge, PhotoStrip } from "@/components/marketing/StatusBadge";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
 import { canSubmit, formatBaht } from "@/lib/marketing";
-import { getActivityRow, getSubmission, listActivityPhotos, listMaster } from "@/lib/marketing-db";
+import {
+  getActivityRow,
+  getStaffIdForEmployee,
+  getSubmission,
+  listActivityPhotos,
+  listMaster,
+} from "@/lib/marketing-db";
+import { requireUser } from "@/lib/session";
 import { saveSubmissionForm } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -22,10 +29,12 @@ export default async function SubmitFormPage({
   const activity = await getActivityRow(id);
   if (!activity) notFound();
 
-  const [submission, photos, staff] = await Promise.all([
+  const user = await requireUser();
+  const [submission, photos, staff, defaultStaffId] = await Promise.all([
     getSubmission(id),
     listActivityPhotos(id),
     listMaster("staff"),
+    getStaffIdForEmployee(user.id),
   ]);
 
   const gate = canSubmit(activity);
@@ -82,7 +91,7 @@ export default async function SubmitFormPage({
               <select
                 name="submitted_by_staff_id"
                 className="input"
-                defaultValue={submission?.submitted_by_staff_id ?? ""}
+                defaultValue={submission?.submitted_by_staff_id ?? defaultStaffId ?? ""}
               >
                 <option value="">— เลือกพนักงาน —</option>
                 {staff.map((s) => (

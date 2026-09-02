@@ -26,12 +26,20 @@ export const FLOW_STATUS_CLASS: Record<MktFlowStatus, string> = {
   received: "bg-emerald-100 text-emerald-700",
 };
 
-export type MktStaff = { id: string; code: string; name: string; is_active: boolean };
 export type MktCompany = { id: string; code: string; name: string; is_active: boolean };
 export type MktActivityType = { id: string; code: string; name: string; is_active: boolean };
 
 /** ตัวเลือกใน dropdown ของข้อมูลหลัก (โครงเดียวกันทั้ง 3 ประเภท) */
-export type MktOption = { id: string; code: string; name: string; is_active: boolean };
+export type MktOption = {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+  /** เฉพาะพนักงาน: บัญชีเข้าระบบที่ผูกไว้ (null = ยังไม่ได้ผูก) */
+  employee_id?: string | null;
+};
+
+export type MktStaff = MktOption & { employee_id: string | null };
 
 export type MktPhoto = { id: string; path: string; sort_order: number };
 

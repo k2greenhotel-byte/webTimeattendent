@@ -1,4 +1,4 @@
-import { listMaster, type MktMasterKind } from "@/lib/marketing-db";
+import { listLoginAccounts, listMaster, type MktMasterKind } from "@/lib/marketing-db";
 import type { MktOption } from "@/lib/marketing-types";
 import { createMasterForm, deleteMasterForm, updateMasterForm } from "./actions";
 
@@ -40,10 +40,11 @@ export default async function SetupPage({
   searchParams: Promise<{ msg?: string; err?: string }>;
 }) {
   const params = await searchParams;
-  const [staff, companies, types] = await Promise.all([
+  const [staff, companies, types, accounts] = await Promise.all([
     listMaster("staff", { includeInactive: true }),
     listMaster("company", { includeInactive: true }),
     listMaster("activityType", { includeInactive: true }),
+    listLoginAccounts(),
   ]);
 
   const data: Record<MktMasterKind, MktOption[]> = {
@@ -77,7 +78,21 @@ export default async function SetupPage({
             </span>
           </h2>
 
-          <form action={createMasterForm} className="grid gap-3 sm:grid-cols-[10rem_1fr_auto]">
+          {section.kind === "staff" && (
+            <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              ผูก “บัญชีเข้าระบบ” ไว้ เพื่อให้หน้าบันทึกเลือกชื่อผู้บันทึกให้อัตโนมัติเมื่อคนนั้นล็อกอินเข้ามา
+              — บัญชีมาจากรายชื่อพนักงานในระบบลงเวลา (เข้าด้วยเบอร์มือถือ + รหัสผ่าน)
+            </p>
+          )}
+
+          <form
+            action={createMasterForm}
+            className={`grid gap-3 ${
+              section.kind === "staff"
+                ? "sm:grid-cols-[9rem_1fr_14rem_auto]"
+                : "sm:grid-cols-[10rem_1fr_auto]"
+            }`}
+          >
             <input type="hidden" name="kind" value={section.kind} />
             <div>
               <label className="label">{section.codeLabel} *</label>
@@ -87,6 +102,19 @@ export default async function SetupPage({
               <label className="label">ชื่อ *</label>
               <input name="name" className="input" placeholder={section.namePlaceholder} required />
             </div>
+            {section.kind === "staff" && (
+              <div>
+                <label className="label">บัญชีเข้าระบบ</label>
+                <select name="employee_id" defaultValue="" className="input">
+                  <option value="">— ยังไม่ผูก —</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.emp_code} · {a.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex items-end">
               <button type="submit" className="btn-primary w-full sm:w-auto">
                 เพิ่ม
@@ -134,6 +162,21 @@ export default async function SetupPage({
                               className="input min-w-48 flex-1"
                               required
                             />
+                            {section.kind === "staff" && (
+                              <select
+                                name="employee_id"
+                                defaultValue={row.employee_id ?? ""}
+                                className="input w-56"
+                                title="บัญชีเข้าระบบที่ผูกกับพนักงานคนนี้"
+                              >
+                                <option value="">— ยังไม่ผูกบัญชี —</option>
+                                {accounts.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.emp_code} · {a.full_name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                             <label className="flex items-center gap-1 text-sm text-slate-600">
                               <input
                                 type="checkbox"

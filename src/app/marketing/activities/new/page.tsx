@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ActivityForm from "@/components/marketing/ActivityForm";
-import { listMaster } from "@/lib/marketing-db";
+import { getStaffIdForEmployee, listMaster } from "@/lib/marketing-db";
+import { requireUser } from "@/lib/session";
 import { createActivityForm } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -11,10 +12,12 @@ export default async function NewActivityPage({
   searchParams: Promise<{ err?: string }>;
 }) {
   const params = await searchParams;
-  const [staff, companies, activityTypes] = await Promise.all([
+  const user = await requireUser();
+  const [staff, companies, activityTypes, defaultStaffId] = await Promise.all([
     listMaster("staff"),
     listMaster("company"),
     listMaster("activityType"),
+    getStaffIdForEmployee(user.id),
   ]);
 
   return (
@@ -48,6 +51,7 @@ export default async function NewActivityPage({
         staff={staff}
         companies={companies}
         activityTypes={activityTypes}
+        defaultStaffId={defaultStaffId}
       />
     </main>
   );

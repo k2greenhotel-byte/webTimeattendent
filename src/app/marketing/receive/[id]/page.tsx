@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { FlowBadge } from "@/components/marketing/StatusBadge";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
 import { canReceive, expectedAmount, formatBaht, outstandingAmount } from "@/lib/marketing";
-import { getActivityRow, getReceipt, listMaster } from "@/lib/marketing-db";
+import { getActivityRow, getReceipt, getStaffIdForEmployee, listMaster } from "@/lib/marketing-db";
+import { requireUser } from "@/lib/session";
 import { saveReceiptForm } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,12 @@ export default async function ReceiveFormPage({
   const activity = await getActivityRow(id);
   if (!activity) notFound();
 
-  const [receipt, staff] = await Promise.all([getReceipt(id), listMaster("staff")]);
+  const user = await requireUser();
+  const [receipt, staff, defaultStaffId] = await Promise.all([
+    getReceipt(id),
+    listMaster("staff"),
+    getStaffIdForEmployee(user.id),
+  ]);
   const gate = canReceive(activity);
 
   return (
@@ -82,7 +88,7 @@ export default async function ReceiveFormPage({
               <select
                 name="received_by_staff_id"
                 className="input"
-                defaultValue={receipt?.received_by_staff_id ?? ""}
+                defaultValue={receipt?.received_by_staff_id ?? defaultStaffId ?? ""}
               >
                 <option value="">— เลือกพนักงาน —</option>
                 {staff.map((s) => (

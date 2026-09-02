@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { logoutAction } from "@/app/login/actions";
+import type { SessionUser } from "@/lib/types";
 
 const NAV = [
   { href: "/marketing", label: "หน้าแรก" },
@@ -10,13 +12,19 @@ const NAV = [
   { href: "/marketing/dashboard", label: "6. Dashboard" },
 ];
 
-export default function MarketingHeader() {
+export default function MarketingHeader({ user }: { user: SessionUser }) {
   return (
     <header className="no-print border-b border-slate-200 bg-white">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
         <div className="mr-auto">
-          <p className="text-sm font-semibold text-slate-800">ระบบกิจกรรมการตลาด</p>
-          <p className="text-xs text-slate-500">บันทึกกิจกรรม · คุมการเบิกเงินค่าส่งเสริมกับบริษัทรถ</p>
+          <p className="text-sm font-semibold text-slate-800">
+            ระบบกิจกรรมการตลาด
+            <span className="ml-2 font-normal text-slate-500">· {user.full_name}</span>
+          </p>
+          <p className="text-xs text-slate-500">
+            {user.emp_code}
+            {user.role === "admin" ? " · ผู้ดูแลระบบ" : ""} · คุมการเบิกเงินค่าส่งเสริมกับบริษัทรถ
+          </p>
         </div>
 
         <nav className="flex flex-wrap items-center gap-1">
@@ -29,6 +37,20 @@ export default function MarketingHeader() {
               {l.label}
             </Link>
           ))}
+          <Link
+            href="/punch"
+            className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
+          >
+            ระบบลงเวลา
+          </Link>
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="rounded-lg px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50"
+            >
+              ออกจากระบบ
+            </button>
+          </form>
         </nav>
       </div>
     </header>
