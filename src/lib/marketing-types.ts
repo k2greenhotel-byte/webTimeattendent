@@ -127,3 +127,107 @@ export type MktQuery = {
 };
 
 export const MAX_ACTIVITY_PHOTOS = 10;
+
+// ==================== Memo (หน้าจอ 7 และ 8) ====================
+
+/** สถานะของ Memo ตามความคืบหน้าของการเบิกเงินทั้งโครงการ */
+export type MktMemoStatus =
+  | "not_requested"
+  | "partial_requested"
+  | "partial_received"
+  | "fully_received"
+  | "closed";
+
+export const MEMO_STATUS_LABEL: Record<MktMemoStatus, string> = {
+  not_requested: "ยังไม่ได้ตั้งเบิก",
+  partial_requested: "ทำเรื่องตั้งเบิกแล้วบางส่วน",
+  partial_received: "ได้รับเงินบางส่วน",
+  fully_received: "ได้รับครบแล้ว",
+  closed: "จบโครงการแล้ว",
+};
+
+/** เรียงตามความคืบหน้า ใช้กับ dropdown และ dashboard ให้ลำดับตรงกันทุกที่ */
+export const MEMO_STATUS_ORDER: MktMemoStatus[] = [
+  "not_requested",
+  "partial_requested",
+  "partial_received",
+  "fully_received",
+  "closed",
+];
+
+export const MEMO_STATUS_CLASS: Record<MktMemoStatus, string> = {
+  not_requested: "bg-slate-100 text-slate-600",
+  partial_requested: "bg-amber-100 text-amber-700",
+  partial_received: "bg-sky-100 text-sky-700",
+  fully_received: "bg-emerald-100 text-emerald-700",
+  closed: "bg-violet-100 text-violet-700",
+};
+
+export type MktMemo = {
+  id: string;
+  doc_no: string;
+  memo_date: string;
+  company_id: string | null;
+  detail: string | null;
+  period_from: string | null;
+  period_to: string | null;
+  created_by_staff_id: string | null;
+  status: MktMemoStatus;
+  active_status: MktActiveStatus;
+};
+
+/** ไฟล์แนบของ Memo — รับได้ทั้งเอกสารและรูปภาพ */
+export type MktMemoFile = {
+  id: string;
+  path: string;
+  filename: string;
+  mime: string | null;
+  size_bytes: number | null;
+  sort_order: number;
+};
+
+export type MktMemoStatusLog = {
+  id: string;
+  memo_id: string;
+  status: MktMemoStatus;
+  changed_on: string;
+  changed_by_staff_id: string | null;
+  changed_by_name?: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+/** แถวรวมจาก view v_mkt_memos */
+export type MktMemoRow = {
+  id: string;
+  doc_no: string;
+  memo_date: string;
+  detail: string | null;
+  period_from: string | null;
+  period_to: string | null;
+  status: MktMemoStatus;
+  active_status: MktActiveStatus;
+  company_id: string | null;
+  company_name: string | null;
+  created_by_staff_id: string | null;
+  created_by_name: string | null;
+  file_count: number;
+  status_log_count: number;
+  last_status_changed_on: string | null;
+};
+
+export type MktMemoQuery = {
+  status?: MktMemoStatus | "";
+  active_status?: MktActiveStatus | "";
+  company_id?: string;
+  staff_id?: string;
+  from?: string;
+  to?: string;
+  keyword?: string;
+};
+
+export const MAX_MEMO_FILES = 20;
+
+/** ชนิดไฟล์แนบที่รับ — เอกสารสำนักงานและรูปภาพ */
+export const MEMO_FILE_ACCEPT =
+  "image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt";

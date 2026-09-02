@@ -6,6 +6,9 @@ import type {
   MktActiveStatus,
   MktActivityRow,
   MktFlowStatus,
+  MktMemoQuery,
+  MktMemoRow,
+  MktMemoStatus,
   MktQuery,
 } from "./marketing-types";
 import { MAX_ACTIVITY_PHOTOS } from "./marketing-types";
@@ -228,4 +231,102 @@ export function filterRows(rows: MktActivityRow[], q: MktQuery): MktActivityRow[
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// ==================== Memo (หน้าจอ 7 และ 8) ====================
+
+/** ตรวจช่วงเวลาของ Memo — เว้นว่างได้ แต่ถ้ากรอกทั้งคู่ วันสิ้นสุดต้องไม่มาก่อนวันเริ่ม */
+export function assertMemoPeriod(
+  from: string | null,
+  to: string | null,
+): { from: string | null; to: string | null } {
+  if (from && to && to < from) {
+    throw new Error("วันสิ้นสุดต้องไม่มาก่อนวันเริ่มต้น กรุณาตรวจช่วงเวลาอีกครั้ง");
+  }
+  return { from: from || null, to: to || null };
+}
+
+/** "1 ม.ค. 2569 - 31 มี.ค. 2569" ("-" เมื่อไม่ได้กำหนดช่วงเวลา) */
+export function formatPeriod(
+  from: string | null,
+  to: string | null,
+  format: (d: string) => string,
+): string {
+  if (!from && !to) return "-";
+  if (from && to) return `${format(from)} - ${format(to)}`;
+  return from ? `ตั้งแต่ ${format(from)}` : `ถึง ${format(to as string)}`;
+}
+
+/** Memo ยังอยู่ในช่วงเวลาที่กำหนดหรือไม่ ณ วันที่ที่ระบุ (ใช้เตือนว่าหมดอายุแล้ว) */
+export function isPeriodExpired(to: string | null, today: string): boolean {
+  return Boolean(to) && (to as string) < today;
+}
+
+/** ตรวจเส้นทางไฟล์แนบ — กันไม่ให้หลุดออกนอกโฟลเดอร์ mkt/ ในถังเก็บไฟล์ */
+export function assertMemoFilePaths(paths: string[], max: number): string[] {
+  const clean = paths.map((p) => p.trim()).filter(Boolean);
+  if (clean.length > max) throw new Error(`แนบไฟล์ได้สูงสุด ${max} ไฟล์ต่อ 1 Memo`);
+
+  for (const p of clean) {
+    if (!p.startsWith("mkt/") || p.includes("..")) throw new Error("เส้นทางไฟล์แนบไม่ถูกต้อง");
+  }
+  return clean;
+}
+
+export type MemoTotals = { count: number; byStatus: Record<MktMemoStatus, number> };
+
+/** นับจำนวน Memo ตามสถานะ (ใบที่ยกเลิกไม่นับ) */
+export function summarizeMemos(rows: MktMemoRow[]): MemoTotals {
+  const byStatus: Record<MktMemoStatus, number> = {
+    not_requested: 0,
+    partial_requested: 0,
+    partial_received: 0,
+    fully_received: 0,
+    closed: 0,
+  };
+
+  let count = 0;
+  for (const r of rows) {
+    if (r.active_status === "cancelled") continue;
+    byStatus[r.status] += 1;
+    count += 1;
+  }
+  return { count, byStatus };
+}
+
+/** จัดกลุ่มจำนวน Memo ตามคีย์ที่เลือก (เช่น บริษัท) เรียงจากมากไปน้อย */
+export function groupMemoCounts(
+  rows: MktMemoRow[],
+  keyOf: (row: MktMemoRow) => { key: string; label: string },
+): { key: string; label: string; count: number }[] {
+  const map = new Map<string, { key: string; label: string; count: number }>();
+
+  for (const r of rows) {
+    if (r.active_status === "cancelled") continue;
+    const { key, label } = keyOf(r);
+    const acc = map.get(key) ?? { key, label, count: 0 };
+    acc.count += 1;
+    map.set(key, acc);
+  }
+
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+/** กรอง Memo ตามเงื่อนไขหน้าสอบถาม — ใช้ตัวเดียวกันทั้งหน้าจอและไฟล์ export */
+export function filterMemos(rows: MktMemoRow[], q: MktMemoQuery): MktMemoRow[] {
+  const keyword = (q.keyword ?? "").trim().toLowerCase();
+
+  return rows.filter((r) => {
+    if (q.status && r.status !== q.status) return false;
+    if (q.active_status && r.active_status !== q.active_status) return false;
+    if (q.company_id && r.company_id !== q.company_id) return false;
+    if (q.staff_id && r.created_by_staff_id !== q.staff_id) return false;
+    if (q.from && r.memo_date < q.from) return false;
+    if (q.to && r.memo_date > q.to) return false;
+    if (keyword) {
+      const hay = `${r.doc_no} ${r.detail ?? ""} ${r.company_name ?? ""}`;
+      if (!hay.toLowerCase().includes(keyword)) return false;
+    }
+    return true;
+  });
 }

@@ -2,9 +2,20 @@ import {
   ACTIVE_STATUS_LABEL,
   FLOW_STATUS_CLASS,
   FLOW_STATUS_LABEL,
+  MEMO_STATUS_CLASS,
+  MEMO_STATUS_LABEL,
   type MktActiveStatus,
   type MktFlowStatus,
+  type MktMemoStatus,
 } from "@/lib/marketing-types";
+
+export function MemoBadge({ status }: { status: MktMemoStatus }) {
+  return (
+    <span className={`badge whitespace-nowrap ${MEMO_STATUS_CLASS[status]}`}>
+      {MEMO_STATUS_LABEL[status]}
+    </span>
+  );
+}
 
 export function FlowBadge({ status }: { status: MktFlowStatus }) {
   return <span className={`badge ${FLOW_STATUS_CLASS[status]}`}>{FLOW_STATUS_LABEL[status]}</span>;

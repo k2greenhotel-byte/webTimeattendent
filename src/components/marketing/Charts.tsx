@@ -147,9 +147,15 @@ export function GroupedBarChart({
 export function HorizontalBarChart({
   rows,
   series,
+  valueFormat = compactBaht,
+  unit = "บาท",
 }: {
   rows: { label: string; values: Record<string, number> }[];
   series: Series[];
+  /** วิธีแสดงตัวเลขท้ายแท่ง — ค่าเริ่มต้นเป็นจำนวนเงินแบบย่อ */
+  valueFormat?: (value: number) => string;
+  /** หน่วยที่ต่อท้ายตัวเลขเต็มใน tooltip */
+  unit?: string;
 }) {
   if (rows.length === 0) return <p className="py-6 text-sm text-slate-500">ยังไม่มีข้อมูล</p>;
 
@@ -180,7 +186,7 @@ export function HorizontalBarChart({
                 const y = top + 4 + si * 14;
                 return (
                   <path key={s.key} d={barRight(labelW, y, w, 10)} fill={s.color}>
-                    <title>{`${r.label} · ${s.label}: ${value.toLocaleString("th-TH")} บาท`}</title>
+                    <title>{`${r.label} · ${s.label}: ${value.toLocaleString("th-TH")} ${unit}`}</title>
                   </path>
                 );
               })}
@@ -192,7 +198,7 @@ export function HorizontalBarChart({
                 fontSize={12}
                 fill={INK}
               >
-                {compactBaht(primary)}
+                {valueFormat(primary)}
               </text>
             </g>
           );

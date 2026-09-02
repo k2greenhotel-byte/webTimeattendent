@@ -17,6 +17,7 @@
   "vars": {
     "NEXT_PUBLIC_SUPABASE_URL": "https://riqolnbcolvgfxkmgyzn.supabase.co",
     "SUPABASE_PHOTO_BUCKET": "attendance-photos",
+    "SUPABASE_MEMO_BUCKET": "marketing-files",
     "TZ": "Asia/Bangkok"
   }
 }

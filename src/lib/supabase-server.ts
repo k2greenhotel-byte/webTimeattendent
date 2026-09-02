@@ -26,3 +26,6 @@ export function getSupabase(): SupabaseClient {
 }
 
 export const PHOTO_BUCKET = process.env.SUPABASE_PHOTO_BUCKET || "attendance-photos";
+
+/** ถังแยกสำหรับไฟล์แนบของ Memo — รับไฟล์เอกสารได้ ต่างจากถังรูปลงเวลาที่รับเฉพาะ JPEG */
+export const MEMO_BUCKET = process.env.SUPABASE_MEMO_BUCKET || "marketing-files";

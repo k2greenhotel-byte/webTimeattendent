@@ -10,6 +10,8 @@ const NAV = [
   { href: "/marketing/setup", label: "4. ค่าเริ่มต้น" },
   { href: "/marketing/search", label: "5. สอบถาม" },
   { href: "/marketing/dashboard", label: "6. Dashboard" },
+  { href: "/marketing/memos", label: "7. Memo" },
+  { href: "/marketing/memos/status", label: "8. เปลี่ยนสถานะ Memo" },
 ];
 
 export default function MarketingHeader({ user }: { user: SessionUser }) {

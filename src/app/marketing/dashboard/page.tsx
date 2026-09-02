@@ -7,9 +7,23 @@ import {
   type Series,
 } from "@/components/marketing/Charts";
 import { thaiMonthShort } from "@/lib/datetime";
-import { countByFlowStatus, formatBaht, groupTotals, monthKeyOf, summarize } from "@/lib/marketing";
+import {
+  countByFlowStatus,
+  formatBaht,
+  groupMemoCounts,
+  groupTotals,
+  monthKeyOf,
+  summarize,
+  summarizeMemos,
+} from "@/lib/marketing";
 import { listActivities, listMaster } from "@/lib/marketing-db";
-import { FLOW_STATUS_LABEL, type MktFlowStatus } from "@/lib/marketing-types";
+import { listMemos } from "@/lib/memo-db";
+import {
+  FLOW_STATUS_LABEL,
+  MEMO_STATUS_LABEL,
+  MEMO_STATUS_ORDER,
+  type MktFlowStatus,
+} from "@/lib/marketing-types";
 
 export const dynamic = "force-dynamic";
 
@@ -32,12 +46,15 @@ export default async function DashboardPage({
 }) {
   const params = await searchParams;
 
-  const [rows, companies] = await Promise.all([
-    listActivities({
-      from: params.from || undefined,
-      to: params.to || undefined,
-      company_id: params.company_id || undefined,
-    }),
+  const filter = {
+    from: params.from || undefined,
+    to: params.to || undefined,
+    company_id: params.company_id || undefined,
+  };
+
+  const [rows, memos, companies] = await Promise.all([
+    listActivities(filter),
+    listMemos(filter),
     listMaster("company", { includeInactive: true }),
   ]);
 
@@ -59,6 +76,12 @@ export default async function DashboardPage({
   const byType = groupTotals(rows, (r) => ({
     key: r.activity_type_id ?? "-",
     label: r.activity_type_name ?? "ไม่ระบุประเภท",
+  })).slice(0, 10);
+
+  const memoTotals = summarizeMemos(memos);
+  const memoByCompany = groupMemoCounts(memos, (r) => ({
+    key: r.company_id ?? "-",
+    label: r.company_name ?? "ไม่ระบุบริษัท",
   })).slice(0, 10);
 
   return (
@@ -181,6 +204,45 @@ export default async function DashboardPage({
           />
         </section>
       </div>
+
+      {/* ---------- Memo ---------- */}
+      <section className="card space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="font-semibold text-slate-800">Memo โครงการ</h2>
+            <p className="text-xs text-slate-500">
+              นับจาก Memo ที่ใช้งานอยู่ {memoTotals.count} ใบ (ใบที่ยกเลิกไม่ถูกนับ)
+            </p>
+          </div>
+          <Link href="/marketing/memos" className="text-sm text-brand-600 hover:underline">
+            ดูรายการ Memo
+          </Link>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {MEMO_STATUS_ORDER.map((s) => (
+            <Link
+              key={s}
+              href={`/marketing/search?tab=memo&status=${s}`}
+              className="rounded-xl border border-slate-200 px-3 py-2 hover:border-brand-300"
+            >
+              <p className="text-xs text-slate-500">{MEMO_STATUS_LABEL[s]}</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">{memoTotals.byStatus[s]}</p>
+            </Link>
+          ))}
+        </div>
+
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-slate-600">จำนวน Memo ตามบริษัท</h3>
+          <HorizontalBarChart
+            rows={memoByCompany.map((g) => ({ label: g.label, values: { count: g.count } }))}
+            series={[{ key: "count", label: "จำนวน Memo", color: SERIES_COLORS.request }]}
+            valueFormat={(v) => `${v.toLocaleString("th-TH")} ใบ`}
+            unit="ใบ"
+          />
+        </div>
+      </section>
+
     </main>
   );
 }

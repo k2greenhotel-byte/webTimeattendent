@@ -13,8 +13,15 @@ import {
   outstandingAmount,
   parseAmount,
   summarize,
+  assertMemoPeriod,
+  isPeriodExpired,
+  summarizeMemos,
+  groupMemoCounts,
+  filterMemos,
+  assertMemoFilePaths,
+  formatPeriod,
 } from "../src/lib/marketing";
-import type { MktActivityRow } from "../src/lib/marketing-types";
+import type { MktActivityRow, MktMemoRow } from "../src/lib/marketing-types";
 
 function row(patch: Partial<MktActivityRow> = {}): MktActivityRow {
   return {
@@ -235,5 +242,151 @@ describe("assertPhotoPaths", () => {
   it("กันเส้นทางนอกโฟลเดอร์ mkt", () => {
     expect(() => assertPhotoPaths(["EMP001/photo.jpg"])).toThrow();
     expect(() => assertPhotoPaths(["mkt/../secret.jpg"])).toThrow();
+  });
+});
+
+// ==================== Memo (หน้าจอ 7 และ 8) ====================
+
+function memo(patch: Partial<MktMemoRow> = {}): MktMemoRow {
+  return {
+    id: "m1",
+    doc_no: "MEMO-2569-0001",
+    memo_date: "2026-08-01",
+    detail: "ข้อตกลงส่งเสริมการขายไตรมาส 3",
+    period_from: "2026-07-01",
+    period_to: "2026-09-30",
+    status: "not_requested",
+    active_status: "active",
+    company_id: "c1",
+    company_name: "โตโยต้า",
+    created_by_staff_id: "s1",
+    created_by_name: "สนุ๊ก",
+    file_count: 0,
+    status_log_count: 0,
+    last_status_changed_on: null,
+    ...patch,
+  };
+}
+
+describe("ช่วงเวลาของ Memo", () => {
+  it("เว้นว่างได้ทั้งคู่", () => {
+    expect(assertMemoPeriod(null, null)).toEqual({ from: null, to: null });
+    expect(assertMemoPeriod("", "")).toEqual({ from: null, to: null });
+  });
+
+  it("กรอกข้างเดียวได้", () => {
+    expect(assertMemoPeriod("2026-07-01", null)).toEqual({ from: "2026-07-01", to: null });
+  });
+
+  it("วันสิ้นสุดมาก่อนวันเริ่มไม่ได้", () => {
+    expect(() => assertMemoPeriod("2026-09-30", "2026-07-01")).toThrow(/วันสิ้นสุด/);
+  });
+
+  it("วันเดียวกันได้", () => {
+    expect(assertMemoPeriod("2026-07-01", "2026-07-01").to).toBe("2026-07-01");
+  });
+
+  it("บอกได้ว่าเลยกำหนดแล้วหรือยัง", () => {
+    expect(isPeriodExpired("2026-09-30", "2026-10-01")).toBe(true);
+    expect(isPeriodExpired("2026-09-30", "2026-09-30")).toBe(false);
+    expect(isPeriodExpired(null, "2026-10-01")).toBe(false);
+  });
+});
+
+describe("summarizeMemos", () => {
+  const rows = [
+    memo({ id: "1", status: "not_requested" }),
+    memo({ id: "2", status: "partial_received" }),
+    memo({ id: "3", status: "partial_received" }),
+    memo({ id: "4", status: "closed", active_status: "cancelled" }),
+  ];
+
+  it("นับตามสถานะ และไม่นับใบที่ยกเลิก", () => {
+    const t = summarizeMemos(rows);
+    expect(t.count).toBe(3);
+    expect(t.byStatus.partial_received).toBe(2);
+    expect(t.byStatus.not_requested).toBe(1);
+    expect(t.byStatus.closed).toBe(0);
+  });
+
+  it("จัดกลุ่มตามบริษัทเรียงมากไปน้อย", () => {
+    const groups = groupMemoCounts(
+      [
+        memo({ id: "1", company_id: "c1", company_name: "โตโยต้า" }),
+        memo({ id: "2", company_id: "c2", company_name: "ฮอนด้า" }),
+        memo({ id: "3", company_id: "c2", company_name: "ฮอนด้า" }),
+      ],
+      (r) => ({ key: r.company_id ?? "-", label: r.company_name ?? "ไม่ระบุ" }),
+    );
+    expect(groups.map((g) => [g.label, g.count])).toEqual([
+      ["ฮอนด้า", 2],
+      ["โตโยต้า", 1],
+    ]);
+  });
+});
+
+describe("filterMemos", () => {
+  const rows = [
+    memo({ id: "1", memo_date: "2026-08-01", status: "not_requested", company_id: "c1" }),
+    memo({
+      id: "2",
+      memo_date: "2026-09-15",
+      status: "fully_received",
+      company_id: "c2",
+      doc_no: "MEMO-2569-0002",
+    }),
+  ];
+
+  it("กรองตามสถานะ", () => {
+    expect(filterMemos(rows, { status: "fully_received" }).map((r) => r.id)).toEqual(["2"]);
+  });
+
+  it("กรองตามช่วงวันที่", () => {
+    expect(filterMemos(rows, { from: "2026-09-01" }).map((r) => r.id)).toEqual(["2"]);
+  });
+
+  it("กรองตามบริษัท", () => {
+    expect(filterMemos(rows, { company_id: "c1" }).map((r) => r.id)).toEqual(["1"]);
+  });
+
+  it("ค้นด้วยคำค้นจากเลขที่", () => {
+    expect(filterMemos(rows, { keyword: "0002" }).map((r) => r.id)).toEqual(["2"]);
+  });
+
+  it("ไม่ใส่เงื่อนไข = ได้ทุกแถว", () => {
+    expect(filterMemos(rows, {})).toHaveLength(2);
+  });
+});
+
+describe("ไฟล์แนบของ Memo", () => {
+  it("ตัดค่าว่างทิ้ง", () => {
+    expect(assertMemoFilePaths(["mkt/files/a.pdf", "", " "], 20)).toEqual(["mkt/files/a.pdf"]);
+  });
+
+  it("เกินจำนวนที่กำหนดไม่ได้", () => {
+    const many = Array.from({ length: 21 }, (_, i) => `mkt/files/${i}.pdf`);
+    expect(() => assertMemoFilePaths(many, 20)).toThrow(/20 ไฟล์/);
+  });
+
+  it("กันเส้นทางนอกโฟลเดอร์ mkt", () => {
+    expect(() => assertMemoFilePaths(["E001/secret.pdf"], 20)).toThrow();
+    expect(() => assertMemoFilePaths(["mkt/../secret.pdf"], 20)).toThrow();
+  });
+});
+
+describe("formatPeriod", () => {
+  const fmt = (d: string) => d;
+
+  it("มีทั้งสองวัน", () => {
+    expect(formatPeriod("2026-07-01", "2026-09-30", fmt)).toBe("2026-07-01 - 2026-09-30");
+  });
+
+  it("มีวันเดียว", () => {
+    expect(formatPeriod("2026-07-01", null, fmt)).toBe("ตั้งแต่ 2026-07-01");
+    expect(formatPeriod(null, "2026-09-30", fmt)).toBe("ถึง 2026-09-30");
+  });
+
+  it("ไม่กำหนดช่วงเวลา", () => {
+    expect(formatPeriod(null, null, fmt)).toBe("-");
   });
 });
