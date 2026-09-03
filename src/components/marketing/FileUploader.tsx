@@ -17,6 +17,9 @@ type Props = {
   hint?: string;
   max?: number;
   initialFiles?: UploadedFile[];
+  /** ปลายทางอัปโหลด/เปิดไฟล์ — โมดูลอื่นส่ง endpoint ของตัวเองเข้ามาได้ */
+  endpoint?: string;
+  accept?: string;
 };
 
 const MAX_EDGE = 1600;
@@ -63,7 +66,15 @@ function icon(mime: string | null, filename: string): string {
   return "📎";
 }
 
-export default function FileUploader({ name, label, hint, max = 20, initialFiles = [] }: Props) {
+export default function FileUploader({
+  name,
+  label,
+  hint,
+  max = 20,
+  initialFiles = [],
+  endpoint = "/api/marketing/file",
+  accept = MEMO_FILE_ACCEPT,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadedFile[]>(initialFiles);
   const [busy, setBusy] = useState(false);
@@ -88,7 +99,7 @@ export default function FileUploader({ name, label, hint, max = 20, initialFiles
           const body = new FormData();
           body.append("file", await prepare(file), file.name);
 
-          const res = await fetch("/api/marketing/file", { method: "POST", body });
+          const res = await fetch(endpoint, { method: "POST", body });
           const data = (await res.json()) as {
             ok: boolean;
             path?: string;
@@ -118,7 +129,7 @@ export default function FileUploader({ name, label, hint, max = 20, initialFiles
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     },
-    [files.length, max],
+    [endpoint, files.length, max],
   );
 
   const remove = useCallback((path: string) => {
@@ -143,7 +154,7 @@ export default function FileUploader({ name, label, hint, max = 20, initialFiles
             >
               <span aria-hidden>{icon(f.mime, f.filename)}</span>
               <a
-                href={`/api/marketing/file?path=${encodeURIComponent(f.path)}`}
+                href={`${endpoint}?path=${encodeURIComponent(f.path)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="mr-auto truncate text-brand-600 hover:underline"
@@ -173,7 +184,7 @@ export default function FileUploader({ name, label, hint, max = 20, initialFiles
         <input
           ref={inputRef}
           type="file"
-          accept={MEMO_FILE_ACCEPT}
+          accept={accept}
           multiple
           onChange={(e) => void pick(e.target.files)}
           disabled={busy || files.length >= max}

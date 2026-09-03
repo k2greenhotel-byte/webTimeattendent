@@ -53,5 +53,8 @@ export const config = {
     "/marketing",
     "/marketing/:path*",
     "/api/marketing/:path*",
+    "/booking",
+    "/booking/:path*",
+    "/api/booking/:path*",
   ],
 };
