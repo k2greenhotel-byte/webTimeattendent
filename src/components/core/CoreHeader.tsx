@@ -9,7 +9,8 @@ const NAV = [
   { href: "/core/branches", label: "2. สาขา" },
   { href: "/core/users", label: "3. ผู้ใช้งาน" },
   { href: "/core/levels", label: "4. สิทธิ์ตามระดับ" },
-  { href: "/core/programs", label: "5. ทะเบียนโปรแกรม" },
+  { href: "/core/program-users", label: "5. ผู้ใช้งานโปรแกรม" },
+  { href: "/core/programs", label: "6. ทะเบียนโปรแกรม" },
 ];
 
 export default function CoreHeader({ user }: { user: SessionUser }) {

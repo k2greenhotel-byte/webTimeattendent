@@ -446,3 +446,44 @@ export async function getLiveAccount(
     access_level: (data.access_level ?? "user") as AccessLevel,
   };
 }
+
+// ---------- มองจากฝั่งโปรแกรม: ใครใช้โปรแกรมนี้ได้บ้าง ----------
+
+export async function listProgramUserIds(programId: string): Promise<string[]> {
+  const { data, error } = await getSupabase()
+    .from("user_programs")
+    .select("user_id")
+    .eq("program_id", programId);
+  if (error) throw new Error(`อ่านรายชื่อผู้ใช้ของโปรแกรมไม่สำเร็จ: ${error.message}`);
+  return (data ?? []).map((r: { user_id: string }) => r.user_id);
+}
+
+/** จำนวนผู้ใช้ของแต่ละโปรแกรม (program_id → จำนวนคน) */
+export async function countUsersByProgram(): Promise<Map<string, number>> {
+  const { data, error } = await getSupabase().from("user_programs").select("program_id");
+  if (error) throw new Error(`นับผู้ใช้ของโปรแกรมไม่สำเร็จ: ${error.message}`);
+
+  const counts = new Map<string, number>();
+  for (const row of (data ?? []) as { program_id: string }[]) {
+    counts.set(row.program_id, (counts.get(row.program_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** แทนที่รายชื่อผู้ใช้ของโปรแกรมนี้ทั้งชุด (ที่ไม่ได้ส่งมา = ถูกถอดสิทธิ์) */
+export async function setProgramUsers(programId: string, userIds: string[]): Promise<void> {
+  const supabase = getSupabase();
+  const { error: delError } = await supabase
+    .from("user_programs")
+    .delete()
+    .eq("program_id", programId);
+  if (delError) throw new Error(`บันทึกผู้ใช้งานโปรแกรมไม่สำเร็จ: ${delError.message}`);
+
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (unique.length === 0) return;
+
+  const { error } = await supabase
+    .from("user_programs")
+    .insert(unique.map((user_id) => ({ user_id, program_id: programId })));
+  if (error) throw new Error(`บันทึกผู้ใช้งานโปรแกรมไม่สำเร็จ: ${error.message}`);
+}
