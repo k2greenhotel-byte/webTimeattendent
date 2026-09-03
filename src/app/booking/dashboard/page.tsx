@@ -1,6 +1,7 @@
 import Link from "next/link";
 import BookingCalendar from "@/components/booking/BookingCalendar";
 import BookingFilters from "@/components/booking/BookingFilters";
+import StaffSummaryTable from "@/components/booking/StaffSummaryTable";
 import { HorizontalBarChart } from "@/components/marketing/Charts";
 import {
   countByBrandModel,
@@ -8,9 +9,11 @@ import {
   formatBaht,
   queryFromParams,
   shiftMonth,
+  staffNameOf,
   summarize,
+  summarizeByStaff,
 } from "@/lib/booking";
-import { listBookings } from "@/lib/booking-db";
+import { listBookings, listBookingStaffNames } from "@/lib/booking-db";
 import {
   BOOKING_STATUS_LABEL,
   BOOKING_STATUS_ORDER,
@@ -64,13 +67,14 @@ export default async function BookingDashboardPage({
       ? { ...base, pickup_from: from, pickup_to: to, from: null, to: null }
       : { ...base, from, to, pickup_from: null, pickup_to: null };
 
-  const [rows, branches, brands, models, variants, colors] = await Promise.all([
+  const [rows, branches, brands, models, variants, colors, staffNames] = await Promise.all([
     listBookings(query),
     listBranches(),
     listMaster("brand", { includeInactive: true }),
     listMaster("model", { includeInactive: true }),
     listMaster("variant", { includeInactive: true }),
     listMaster("color", { includeInactive: true }),
+    listBookingStaffNames(),
   ]);
 
   const summary = summarize(rows);
@@ -80,6 +84,8 @@ export default async function BookingDashboardPage({
   const byBrand = countByKey(rows, (r) => r.brand_name, "— ไม่ระบุยี่ห้อ —");
   const byModel = countByKey(rows, (r) => r.model_name, "— ไม่ระบุรุ่น —").slice(0, 12);
   const brandModel = countByBrandModel(rows);
+  const byStaff = summarizeByStaff(rows);
+  const staffChart = countByKey(rows, staffNameOf);
 
   /** แปลงสถานะแต่ละชุดเป็นรายการ ชื่อ-จำนวน ชุดเดียวกัน เพื่อให้วาดด้วยโค้ดก้อนเดียว */
   function toItems<T extends string>(
@@ -157,6 +163,7 @@ export default async function BookingDashboardPage({
           models={models}
           variants={variants}
           colors={colors}
+          staffNames={staffNames}
           resetHref={`/booking/dashboard?year=${year}&month=${month}&by=${field}`}
           extraHiddenFields={{ year: String(year), month: String(month), by: field }}
         />
@@ -190,6 +197,26 @@ export default async function BookingDashboardPage({
             </ul>
           </div>
         ))}
+      </section>
+
+      {/* ---------- ยอดจองแยกตามพนักงานขาย ---------- */}
+      <section className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
+        <div className="card min-w-0 space-y-2">
+          <h2 className="font-semibold text-slate-800">แยกตามพนักงานขาย</h2>
+          <HorizontalBarChart
+            rows={staffChart.map((s) => ({ label: s.label, values: { count: s.count } }))}
+            series={COUNT_SERIES}
+            valueFormat={countFormat}
+            unit="ใบ"
+          />
+        </div>
+        <div className="card min-w-0 space-y-2">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <h2 className="font-semibold text-slate-800">ยอดจองรายพนักงาน</h2>
+            <p className="text-sm text-slate-500">{byStaff.length} คน</p>
+          </div>
+          <StaffSummaryTable rows={byStaff} emptyText="ยังไม่มีใบจองในเดือนนี้" />
+        </div>
       </section>
 
       {/* ---------- 1.4.2 แยกตามยี่ห้อ / รุ่นรถ ---------- */}

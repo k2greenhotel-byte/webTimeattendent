@@ -1,7 +1,8 @@
 import BookingFilters from "@/components/booking/BookingFilters";
 import BookingTable from "@/components/booking/BookingTable";
-import { formatBaht, queryFromParams, summarize } from "@/lib/booking";
-import { listBookings } from "@/lib/booking-db";
+import StaffSummaryTable from "@/components/booking/StaffSummaryTable";
+import { formatBaht, queryFromParams, summarize, summarizeByStaff } from "@/lib/booking";
+import { listBookings, listBookingStaffNames } from "@/lib/booking-db";
 import {
   BOOKING_STATUS_LABEL,
   BOOKING_STATUS_ORDER,
@@ -14,7 +15,7 @@ import { requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-/** หน้าจอ 1.3 — สอบถามใบจองตามยี่ห้อ/รุ่น/แบบ สถานะต่าง ๆ และวันที่รับรถ */
+/** หน้าจอ 1.3 — สอบถามใบจองตามยี่ห้อ/รุ่น/แบบ พนักงานที่รับจอง สถานะต่าง ๆ และวันที่รับรถ */
 export default async function BookingSearchPage({
   searchParams,
 }: {
@@ -23,16 +24,18 @@ export default async function BookingSearchPage({
   await requirePermission("BOOK_SEARCH", "read");
   const params = await searchParams;
 
-  const [rows, branches, brands, models, variants, colors] = await Promise.all([
+  const [rows, branches, brands, models, variants, colors, staffNames] = await Promise.all([
     listBookings(queryFromParams(params)),
     listBranches(),
     listMaster("brand", { includeInactive: true }),
     listMaster("model", { includeInactive: true }),
     listMaster("variant", { includeInactive: true }),
     listMaster("color", { includeInactive: true }),
+    listBookingStaffNames(),
   ]);
 
   const summary = summarize(rows);
+  const byStaff = summarizeByStaff(rows);
 
   return (
     <main className="mx-auto max-w-[110rem] space-y-4 p-3 sm:p-4">
@@ -51,6 +54,7 @@ export default async function BookingSearchPage({
           models={models}
           variants={variants}
           colors={colors}
+          staffNames={staffNames}
           resetHref="/booking/search"
         />
       </div>
@@ -77,6 +81,17 @@ export default async function BookingSearchPage({
         </div>
 
         <BookingTable rows={rows} emptyText="ไม่พบใบจองที่ตรงกับเงื่อนไขที่เลือก" />
+      </section>
+
+      {/* ---------- ยอดจองแยกตามพนักงานขาย ---------- */}
+      <section className="card space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="font-semibold text-slate-800">ยอดจองแยกตามพนักงานขาย</h2>
+          <p className="text-sm text-slate-500">
+            นับจากผลการค้นหาข้างบน · {byStaff.length} คน
+          </p>
+        </div>
+        <StaffSummaryTable rows={byStaff} emptyText="ไม่พบใบจองที่ตรงกับเงื่อนไขที่เลือก" />
       </section>
     </main>
   );

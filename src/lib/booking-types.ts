@@ -230,6 +230,8 @@ export type BookingQuery = {
   doc_status?: DocStatus | null;
   booking_status?: BookingStatus | null;
   cancel_reason?: CancelReason | null;
+  /** ชื่อพนักงานที่รับจองตามที่แสดงบนใบ (ตรงตัว) */
+  staff?: string | null;
   /** ช่วงวันที่จอง */
   from?: string | null;
   to?: string | null;

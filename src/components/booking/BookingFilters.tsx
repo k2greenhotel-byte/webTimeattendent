@@ -90,6 +90,7 @@ export default function BookingFilters({
   models,
   variants,
   colors,
+  staffNames = [],
   resetHref,
   extraHiddenFields = {},
 }: {
@@ -99,6 +100,8 @@ export default function BookingFilters({
   models: MotoOption[];
   variants: MotoOption[];
   colors: MotoOption[];
+  /** ชื่อพนักงานที่รับจองที่มีอยู่จริงในใบจอง */
+  staffNames?: string[];
   resetHref: string;
   /** ค่าที่ต้องติดไปกับฟอร์มด้วย เช่นเดือนที่กำลังดูบน dashboard */
   extraHiddenFields?: Record<string, string>;
@@ -126,6 +129,21 @@ export default function BookingFilters({
           />
         </div>
         <OptionSelect name="branch" label="สาขาที่รับจอง" rows={branches} value={params.branch} />
+
+        <div>
+          <label className="label" htmlFor="staff">
+            พนักงานที่รับจอง
+          </label>
+          <select id="staff" name="staff" defaultValue={params.staff ?? ""} className="input">
+            <option value="">ทั้งหมด</option>
+            {staffNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <OptionSelect name="brand" label="ยี่ห้อรถ" rows={brands} value={params.brand} />
 
         <OptionSelect

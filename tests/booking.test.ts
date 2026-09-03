@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  NO_STAFF,
   applyUpdate,
   bookingOptionLabel,
   buildCalendar,
@@ -11,9 +12,12 @@ import {
   groupByDate,
   isOpenBooking,
   parseAmount,
+  queryFromParams,
   resolveDocStatus,
   shiftMonth,
+  staffNameOf,
   summarize,
+  summarizeByStaff,
   validateBooking,
   validateUpdate,
 } from "../src/lib/booking";
@@ -343,6 +347,63 @@ describe("สรุปตัวเลขสำหรับ dashboard", () => {
     expect(grouped[0].count).toBe(2);
     expect(grouped[0].models).toEqual([{ label: "Wave 110i", count: 2 }]);
     expect(grouped[1].brand).toBe("Yamaha");
+  });
+});
+
+describe("ยอดจองแยกตามพนักงานขาย", () => {
+  it("ใช้ชื่อบนใบก่อน ไม่มีจึงถอยไปใช้ชื่อบัญชีที่บันทึก", () => {
+    expect(staffNameOf({ taken_by_name: "สมชาย", taken_by_full_name: "ผู้ดูแลระบบ" })).toBe("สมชาย");
+    expect(staffNameOf({ taken_by_name: null, taken_by_full_name: "ผู้ดูแลระบบ" })).toBe("ผู้ดูแลระบบ");
+    expect(staffNameOf({ taken_by_name: "   ", taken_by_full_name: "ผู้ดูแลระบบ" })).toBe("ผู้ดูแลระบบ");
+  });
+
+  it("ไม่มีชื่อทั้งสองช่อง จัดเข้ากลุ่มไม่ระบุ", () => {
+    expect(staffNameOf({})).toBe(NO_STAFF);
+    expect(staffNameOf({ taken_by_name: null, taken_by_full_name: null })).toBe(NO_STAFF);
+  });
+
+  it("รวมใบจอง เงินมัดจำ และแยกสถานะให้แต่ละคน", () => {
+    const rows = [
+      booking({ id: "1", taken_by_name: "สมชาย", deposit_amount: 3000 }),
+      booking({
+        id: "2",
+        taken_by_name: "สมชาย",
+        deposit_amount: 5000,
+        booking_status: "delivered",
+        sale_contract_no: "SO-1",
+      }),
+      booking({ id: "3", taken_by_name: "มาลี", deposit_amount: 1000, booking_status: "cancelled" }),
+    ];
+
+    const [first, second] = summarizeByStaff(rows);
+
+    // เรียงจากใบมากไปน้อย
+    expect(first.staff).toBe("สมชาย");
+    expect(first.total).toBe(2);
+    expect(first.deposit).toBe(8000);
+    expect(first.byBookingStatus.wait_contract).toBe(1);
+    expect(first.byBookingStatus.delivered).toBe(1);
+    expect(first.sold).toBe(1);
+
+    expect(second.staff).toBe("มาลี");
+    expect(second.total).toBe(1);
+    expect(second.byBookingStatus.cancelled).toBe(1);
+    expect(second.sold).toBe(0);
+  });
+
+  it("ไม่มีใบจองเลย คืนอาร์เรย์ว่าง", () => {
+    expect(summarizeByStaff([])).toEqual([]);
+  });
+
+  it("เลขที่สัญญาขายที่เป็นช่องว่างล้วน ไม่นับว่าปิดการขายได้", () => {
+    const rows = [booking({ taken_by_name: "สมชาย", sale_contract_no: "   " })];
+    expect(summarizeByStaff(rows)[0].sold).toBe(0);
+  });
+
+  it("กรองพนักงานจาก query string ได้ (ตรงตัว)", () => {
+    expect(queryFromParams({ staff: "สมชาย" }).staff).toBe("สมชาย");
+    expect(queryFromParams({ staff: "  " }).staff).toBeNull();
+    expect(queryFromParams({}).staff).toBeNull();
   });
 });
 

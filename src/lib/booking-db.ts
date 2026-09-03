@@ -1,5 +1,5 @@
 import "server-only";
-import { applyUpdate } from "./booking";
+import { applyUpdate, staffNameOf } from "./booking";
 import type {
   Booking,
   BookingFile,
@@ -67,7 +67,11 @@ export async function listBookings(query: BookingQuery = {}): Promise<BookingRow
     .limit(query.limit ?? 500);
   if (error) throw new Error(`อ่านรายการใบจองไม่สำเร็จ: ${error.message}`);
 
-  const rows = (data ?? []).map((r) => toBookingRow(r as Record<string, unknown>));
+  let rows = (data ?? []).map((r) => toBookingRow(r as Record<string, unknown>));
+
+  // พนักงานที่รับจองกรองฝั่งนี้ เพราะชื่อที่ใช้จัดกลุ่มมาจาก 2 ช่อง (ชื่อบนใบ → ชื่อบัญชี)
+  const staff = (query.staff ?? "").trim();
+  if (staff) rows = rows.filter((r) => staffNameOf(r) === staff);
 
   // คำค้นอิสระ (เลขที่ใบจอง เลขที่อ้างอิง ชื่อลูกค้า เบอร์โทร เลขที่ใบเสร็จ เลขที่สัญญาขาย ชื่อพนักงานที่รับจอง)
   const keyword = (query.keyword ?? "").trim().toLowerCase();
@@ -163,6 +167,24 @@ export async function deleteBooking(id: string): Promise<{ filesDeleted: number 
   const { error } = await supabase.from("bk_bookings").delete().eq("id", id);
   if (error) throw new Error(`ลบใบจองไม่สำเร็จ: ${error.message}`);
   return { filesDeleted: paths.length };
+}
+
+/**
+ * ชื่อพนักงานที่รับจองที่มีอยู่จริงในใบจอง — ใช้เป็นตัวเลือกของช่องกรองในหน้าสอบถาม/dashboard
+ * (ไม่ได้ดึงจากทะเบียนพนักงานทั้งหมด เพราะต้องการเฉพาะคนที่มีใบจองอยู่จริง)
+ */
+export async function listBookingStaffNames(): Promise<string[]> {
+  const { data, error } = await getSupabase()
+    .from("v_bk_bookings")
+    .select("taken_by_name, taken_by_full_name")
+    .limit(2000);
+  if (error) throw new Error(`อ่านรายชื่อพนักงานที่รับจองไม่สำเร็จ: ${error.message}`);
+
+  const names = new Set<string>();
+  for (const row of data ?? []) {
+    names.add(staffNameOf(row as { taken_by_name?: string | null; taken_by_full_name?: string | null }));
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, "th"));
 }
 
 /** จำนวนใบ update ที่ผูกกับใบจองนี้ — ใช้เตือนก่อนลบ */

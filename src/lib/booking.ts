@@ -303,6 +303,63 @@ export function summarize(rows: BookingRow[]): BookingSummary {
   return summary;
 }
 
+// ---------- แยกตามพนักงานขาย ----------
+
+export const NO_STAFF = "— ไม่ระบุพนักงาน —";
+
+/**
+ * ชื่อพนักงานที่รับจองที่ใช้แสดงและใช้จัดกลุ่ม
+ * ใช้ชื่อบนใบ (taken_by_name) ก่อน เพราะเป็นคนที่รับจองจริงตามที่บันทึกไว้
+ * ไม่มีจึงถอยไปใช้ชื่อบัญชีที่บันทึก (taken_by_full_name) — ใบเก่าที่ยังไม่มีชื่อบนใบ
+ */
+export function staffNameOf(row: {
+  taken_by_name?: string | null;
+  taken_by_full_name?: string | null;
+}): string {
+  const onBill = (row.taken_by_name ?? "").trim();
+  if (onBill) return onBill;
+  return (row.taken_by_full_name ?? "").trim() || NO_STAFF;
+}
+
+/** ยอดจองของพนักงานขายหนึ่งคน */
+export type StaffSummary = {
+  staff: string;
+  total: number;
+  deposit: number;
+  byBookingStatus: Record<BookingStatus, number>;
+  /** ปิดการขายได้จริง (มีเลขที่สัญญาขาย) */
+  sold: number;
+};
+
+/** ยอดจองแยกตามพนักงานขาย เรียงจากใบมากไปน้อย — ใช้ทั้งหน้าสอบถาม (1.3) และ dashboard (1.4) */
+export function summarizeByStaff(rows: BookingRow[]): StaffSummary[] {
+  const byStaff = new Map<string, StaffSummary>();
+
+  for (const row of rows) {
+    const staff = staffNameOf(row);
+    let entry = byStaff.get(staff);
+    if (!entry) {
+      entry = {
+        staff,
+        total: 0,
+        deposit: 0,
+        byBookingStatus: emptyCounts(BOOKING_STATUS_LABEL),
+        sold: 0,
+      };
+      byStaff.set(staff, entry);
+    }
+
+    entry.total += 1;
+    entry.deposit += Number(row.deposit_amount ?? 0);
+    entry.byBookingStatus[row.booking_status] += 1;
+    if ((row.sale_contract_no ?? "").trim()) entry.sold += 1;
+  }
+
+  return [...byStaff.values()].sort(
+    (a, b) => b.total - a.total || a.staff.localeCompare(b.staff, "th"),
+  );
+}
+
 /** จัดกลุ่มนับจำนวน เรียงจากมากไปน้อย — ใช้กับ "แยกตามยี่ห้อ / รุ่นรถ" (1.4.2) */
 export function countByKey(
   rows: BookingRow[],
@@ -426,6 +483,7 @@ export function queryFromParams(params: BookingSearchParams): BookingQuery {
     doc_status: one(params.doc, DOC_STATUS_ORDER),
     booking_status: one(params.status, BOOKING_STATUS_ORDER),
     cancel_reason: one(params.cancel, CANCEL_REASON_ORDER),
+    staff: (params.staff ?? "").trim() || null,
     from: params.from || null,
     to: params.to || null,
     pickup_from: params.pickup_from || null,
