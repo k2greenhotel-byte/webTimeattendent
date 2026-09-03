@@ -4,14 +4,31 @@
     {
       "name": "webTimeattendent",
       "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
+      "runtimeArgs": [
+        "node_modules/next/dist/bin/next",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "webTimeattendent-3100",
       "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev", "-p", "3100"],
+      "runtimeArgs": [
+        "node_modules/next/dist/bin/next",
+        "dev",
+        "-p",
+        "3100"
+      ],
       "port": 3100
+    },
+    {
+      "name": "webTimeattendent-3200",
+      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
+      "runtimeArgs": [
+        "scripts/dev-isolated.mjs",
+        "3200"
+      ],
+      "port": 3200
     }
   ]
 }

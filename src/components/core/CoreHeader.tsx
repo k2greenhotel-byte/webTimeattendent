@@ -7,7 +7,7 @@ const NAV = [
   { href: "/core/companies", label: "1. บริษัท" },
   { href: "/core/branches", label: "2. สาขา" },
   { href: "/core/users", label: "3. ผู้ใช้งาน" },
-  { href: "/core/levels", label: "4. สิทธิ์ตามระดับ" },
+  { href: "/core/program-rights", label: "4. สิทธิ์เมนูในโปรแกรม" },
   { href: "/core/program-users", label: "5. ผู้ใช้งานโปรแกรม" },
   { href: "/core/programs", label: "6. ทะเบียนโปรแกรม" },
 ];

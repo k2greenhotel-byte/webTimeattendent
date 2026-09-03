@@ -2,11 +2,12 @@
  * กฎเรื่องสิทธิ์ทั้งหมดอยู่ในไฟล์นี้ที่เดียว (pure function ไม่แตะฐานข้อมูล)
  * หน้าเว็บ / server action / middleware เรียกใช้ฟังก์ชันชุดเดียวกันหมด
  *
- * ลำดับการตัดสินสิทธิ์ของหนึ่งเมนู:
+ * ลำดับการตัดสินสิทธิ์ของหนึ่งเมนู (ตรงกับ view v_user_permissions):
  *   1. ระดับ admin  → ได้ทุกสิทธิ์เสมอ (กันแอดมินล็อกตัวเองออกจากระบบ)
- *   2. มีค่าเฉพาะราย (override) → ใช้ค่านั้น
- *   3. ไม่มี → ใช้ค่าเริ่มต้นของกลุ่มระดับการทำงาน
- *   4. ไม่มีอีก → ไม่มีสิทธิ์
+ *   2. ไม่มีสิทธิ์เข้าโปรแกรม (เมนู "กำหนดผู้ใช้งานโปรแกรม") → ไม่มีสิทธิ์ใด ๆ ในโปรแกรมนั้น
+ *   3. มีค่าเฉพาะราย (override) → ใช้ค่านั้น
+ *   4. ไม่มี → ใช้ค่าเริ่มต้นของกลุ่มระดับการทำงาน (แม่แบบ)
+ *   5. ไม่มีอีก → ไม่มีสิทธิ์
  */
 import type {
   AccessLevel,
@@ -36,13 +37,15 @@ const FIELD_OF: Record<PermAction, keyof MenuRights> = {
   delete: "can_delete",
 };
 
-/** รวมสิทธิ์เฉพาะราย + ค่าเริ่มต้นของระดับ ให้ได้สิทธิ์จริงหนึ่งชุด */
+/** รวมสิทธิ์เข้าโปรแกรม + ค่าเฉพาะราย + ค่าเริ่มต้นของระดับ ให้ได้สิทธิ์จริงหนึ่งชุด */
 export function resolveRights(
   level: AccessLevel,
+  hasProgramAccess: boolean,
   override: MenuRights | null | undefined,
   levelDefault: MenuRights | null | undefined,
 ): MenuRights {
   if (level === "admin") return { ...FULL_RIGHTS };
+  if (!hasProgramAccess) return { ...NO_RIGHTS };
   if (override) return { ...override };
   if (levelDefault) return { ...levelDefault };
   return { ...NO_RIGHTS };
@@ -65,6 +68,23 @@ export function readableMenus(
   perms: EffectiveMenuPermission[],
 ): EffectiveMenuPermission[] {
   return perms.filter((p) => p.can_read);
+}
+
+/** สรุปว่าเปิดได้กี่เมนูจากทั้งหมด และตั้งค่าเฉพาะรายไว้กี่เมนู — ใช้โชว์ในรายชื่อผู้ใช้ของโปรแกรม */
+export function summarizeAccess(perms: Iterable<EffectiveMenuPermission>): {
+  readable: number;
+  total: number;
+  overrides: number;
+} {
+  let readable = 0;
+  let total = 0;
+  let overrides = 0;
+  for (const p of perms) {
+    total += 1;
+    if (p.can_read) readable += 1;
+    if (p.is_override) overrides += 1;
+  }
+  return { readable, total, overrides };
 }
 
 /** รหัสโปรแกรมที่ผู้ใช้เข้าถึงได้อย่างน้อยหนึ่งเมนู */

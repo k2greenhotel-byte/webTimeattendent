@@ -88,6 +88,8 @@ export type EffectiveMenuPermission = MenuRights & {
   menu_path: string | null;
   /** true = ตั้งค่าเฉพาะรายคนไว้ (ไม่ได้ใช้ค่าเริ่มต้นของระดับ) */
   is_override: boolean;
+  /** true = มีสิทธิ์เข้าโปรแกรมนี้ตามเมนู "กำหนดผู้ใช้งานโปรแกรม" (ประตูด่านแรกของทุกสิทธิ์) */
+  has_program_access: boolean;
 };
 
 /** ผู้ใช้งานในมุมของระบบส่วนกลาง */

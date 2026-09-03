@@ -14,6 +14,8 @@ export type MatrixRow = {
   override: MenuRights | null;
   /** ค่าเริ่มต้นของระดับที่ผู้ใช้คนนี้อยู่ */
   levelDefault: MenuRights;
+  /** false = ยังไม่มีสิทธิ์เข้าโปรแกรมนี้ตามเมนู "ผู้ใช้งานโปรแกรม" — ค่าที่ตั้งจะยังไม่มีผล */
+  hasProgramAccess?: boolean;
 };
 
 const ACTIONS: PermAction[] = ["read", "write", "edit", "delete"];
@@ -55,7 +57,14 @@ export default function PermissionMatrix({
           <table className="table-report">
             <thead>
               <tr>
-                <th className="text-left">{programName}</th>
+                <th className="text-left">
+                  {programName}
+                  {menus[0]?.hasProgramAccess === false && (
+                    <span className="ml-2 badge bg-amber-50 font-normal text-amber-700">
+                      ยังไม่มีสิทธิ์เข้าโปรแกรมนี้ (เมนู 5) — ค่าที่ตั้งจะยังไม่มีผล
+                    </span>
+                  )}
+                </th>
                 <th>ประเภทหน้าจอ</th>
                 <th>ตามระดับ</th>
                 {ACTIONS.map((a) => (

@@ -487,3 +487,123 @@ export async function setProgramUsers(programId: string, userIds: string[]): Pro
     .insert(unique.map((user_id) => ({ user_id, program_id: programId })));
   if (error) throw new Error(`บันทึกผู้ใช้งานโปรแกรมไม่สำเร็จ: ${error.message}`);
 }
+
+// ---------- สิทธิ์เมนูในโปรแกรม (เมนู 4 ใหม่: มองจากฝั่งโปรแกรม) ----------
+
+async function menuIdsOfProgram(programId: string): Promise<string[]> {
+  const { data, error } = await getSupabase()
+    .from("program_menus")
+    .select("id")
+    .eq("program_id", programId);
+  if (error) throw new Error(`อ่านเมนูของโปรแกรมไม่สำเร็จ: ${error.message}`);
+  return (data ?? []).map((r: { id: string }) => r.id);
+}
+
+/** สิทธิ์ที่มีผลจริงของ "ทุกคน" ในโปรแกรมเดียว — ใช้สรุปรายชื่อผู้ใช้ของโปรแกรม (≈ ผู้ใช้ × เมนู แถว) */
+export async function getProgramPermissions(programCode: string): Promise<
+  (EffectiveMenuPermission & { user_id: string })[]
+> {
+  const { data, error } = await getSupabase()
+    .from("v_user_permissions")
+    .select("*")
+    .eq("program_code", programCode);
+  if (error) throw new Error(`อ่านสิทธิ์ของโปรแกรมไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as (EffectiveMenuPermission & { user_id: string })[];
+}
+
+/**
+ * บันทึก override เฉพาะเมนูที่ส่งมา (เมนูของโปรแกรมเดียว)
+ * เมนูใน menuIds ที่ไม่มีใน rights = ล้าง override ให้กลับไปใช้ค่าตามระดับ
+ * เมนูนอก menuIds (โปรแกรมอื่น) ไม่ถูกแตะ
+ */
+export async function setUserOverridesForMenus(
+  userId: string,
+  menuIds: string[],
+  rights: Map<string, MenuRights>,
+): Promise<void> {
+  if (menuIds.length === 0) return;
+  const supabase = getSupabase();
+
+  const { error: delError } = await supabase
+    .from("user_menu_permissions")
+    .delete()
+    .eq("user_id", userId)
+    .in("menu_id", menuIds);
+  if (delError) throw new Error(`บันทึกสิทธิ์ไม่สำเร็จ: ${delError.message}`);
+
+  const rows = [...rights.entries()]
+    .filter(([menu_id]) => menuIds.includes(menu_id))
+    .map(([menu_id, r]) => ({ user_id: userId, menu_id, ...r }));
+  if (rows.length === 0) return;
+
+  const { error } = await supabase.from("user_menu_permissions").insert(rows);
+  if (error) throw new Error(`บันทึกสิทธิ์ไม่สำเร็จ: ${error.message}`);
+}
+
+/** ล้าง override ของทุกคนในโปรแกรมนี้ → ทุกคนกลับไปใช้ค่าตามระดับ */
+export async function clearProgramOverrides(programId: string): Promise<{ affected: number }> {
+  const menuIds = await menuIdsOfProgram(programId);
+  if (menuIds.length === 0) return { affected: 0 };
+
+  const { data, error } = await getSupabase()
+    .from("user_menu_permissions")
+    .delete()
+    .in("menu_id", menuIds)
+    .select("user_id");
+  if (error) throw new Error(`รีเซ็ตสิทธิ์ไม่สำเร็จ: ${error.message}`);
+  return { affected: new Set((data ?? []).map((r: { user_id: string }) => r.user_id)).size };
+}
+
+/**
+ * คัดลอกสิทธิ์รายเมนูของคนหนึ่งไปให้ทุกคนที่มีสิทธิ์เข้าโปรแกรมนี้
+ * เมนูที่ต้นทางไม่ได้ตั้ง override (ใช้ตามระดับ) ปลายทางก็จะกลับไปใช้ตามระดับเช่นกัน
+ */
+export async function copyOverridesToProgramUsers(
+  fromUserId: string,
+  programId: string,
+): Promise<{ affected: number }> {
+  const supabase = getSupabase();
+  const menuIds = await menuIdsOfProgram(programId);
+  if (menuIds.length === 0) return { affected: 0 };
+
+  const [targets, source] = await Promise.all([
+    supabase.from("user_programs").select("user_id").eq("program_id", programId),
+    supabase
+      .from("user_menu_permissions")
+      .select("menu_id, can_read, can_write, can_edit, can_delete")
+      .eq("user_id", fromUserId)
+      .in("menu_id", menuIds),
+  ]);
+  if (targets.error) throw new Error(`อ่านผู้ใช้ของโปรแกรมไม่สำเร็จ: ${targets.error.message}`);
+  if (source.error) throw new Error(`อ่านสิทธิ์ต้นทางไม่สำเร็จ: ${source.error.message}`);
+
+  const userIds = (targets.data ?? [])
+    .map((r: { user_id: string }) => r.user_id)
+    .filter((id: string) => id !== fromUserId);
+  if (userIds.length === 0) return { affected: 0 };
+
+  const { error: delError } = await supabase
+    .from("user_menu_permissions")
+    .delete()
+    .in("user_id", userIds)
+    .in("menu_id", menuIds);
+  if (delError) throw new Error(`คัดลอกสิทธิ์ไม่สำเร็จ: ${delError.message}`);
+
+  const template = (source.data ?? []) as (MenuRights & { menu_id: string })[];
+  if (template.length > 0) {
+    const rows = userIds.flatMap((user_id: string) =>
+      template.map((t) => ({
+        user_id,
+        menu_id: t.menu_id,
+        can_read: t.can_read,
+        can_write: t.can_write,
+        can_edit: t.can_edit,
+        can_delete: t.can_delete,
+      })),
+    );
+    const { error } = await supabase.from("user_menu_permissions").insert(rows);
+    if (error) throw new Error(`คัดลอกสิทธิ์ไม่สำเร็จ: ${error.message}`);
+  }
+
+  return { affected: userIds.length };
+}

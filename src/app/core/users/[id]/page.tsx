@@ -45,7 +45,11 @@ export default async function UserDetailPage({
 
   const programName = new Map(programs.map((p) => [p.id, p]));
 
-  const rows: MatrixRow[] = menus.map((m) => ({
+  // แสดงเฉพาะเมนูของโปรแกรมที่คนนี้มีสิทธิ์เข้า (เมนู 5) — โปรแกรมอื่นไม่ต้องกำหนดอะไร
+  const hiddenPrograms = programs.filter((p) => !user.program_ids.includes(p.id));
+  const shownMenus = menus.filter((m) => user.program_ids.includes(m.program_id));
+
+  const rows: MatrixRow[] = shownMenus.map((m) => ({
     menu_id: m.id,
     menu_code: m.code,
     menu_name: m.name,
@@ -54,6 +58,7 @@ export default async function UserDetailPage({
     program_name: programName.get(m.program_id)?.name ?? "ไม่ระบุโปรแกรม",
     override: (overrides.get(m.id) as MenuRights | undefined) ?? null,
     levelDefault: levelDefaults.get(m.id) ?? NO_RIGHTS,
+    hasProgramAccess: true,
   }));
 
   return (
@@ -222,9 +227,25 @@ export default async function UserDetailPage({
             <Link href="/core/levels" className="text-brand-600 hover:underline">
               {ACCESS_LEVEL_LABEL[user.access_level]}
             </Link>{" "}
-            — เอาติ๊กออกเพื่อกำหนดเฉพาะคนนี้
+            — เอาติ๊กออกเพื่อกำหนดเฉพาะคนนี้ · แสดงเฉพาะโปรแกรมที่มีสิทธิ์เข้า (
+            <Link href="/core/program-rights" className="text-brand-600 hover:underline">
+              กำหนดจากฝั่งโปรแกรมได้ที่เมนู 4
+            </Link>
+            )
           </p>
         </div>
+
+        {hiddenPrograms.length > 0 && (
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            ไม่แสดงอีก {hiddenPrograms.length} โปรแกรม (
+            {hiddenPrograms.map((p) => p.name).join(", ")}) เพราะยังไม่ได้ให้สิทธิ์เข้าโปรแกรม —
+            ติ๊กที่ &quot;โปรแกรมที่ใช้งานได้&quot; ด้านบนแล้วบันทึกก่อน จึงจะกำหนดสิทธิ์รายเมนูได้
+          </p>
+        )}
+
+        {rows.length === 0 && (
+          <p className="text-sm text-slate-500">ยังไม่มีสิทธิ์เข้าโปรแกรมใดเลย</p>
+        )}
 
         <PermissionMatrix
           rows={rows}

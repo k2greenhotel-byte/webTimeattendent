@@ -12,6 +12,7 @@ import {
   menuForPath,
   NO_RIGHTS,
   resolveRights,
+  summarizeAccess,
 } from "../src/lib/permissions";
 
 const rights = (r: Partial<MenuRights>): MenuRights => ({ ...NO_RIGHTS, ...r });
@@ -31,32 +32,43 @@ function perm(
     menu_kind: "entry",
     menu_path,
     is_override: false,
+    has_program_access: true,
     ...rights(r),
   };
 }
 
 describe("รวมสิทธิ์เฉพาะราย + ค่าเริ่มต้นของระดับ", () => {
   it("ระดับ admin ได้ทุกสิทธิ์เสมอ แม้จะตั้ง override เป็นห้ามไว้", () => {
-    expect(resolveRights("admin", NO_RIGHTS, NO_RIGHTS)).toEqual(FULL_RIGHTS);
+    expect(resolveRights("admin", true, NO_RIGHTS, NO_RIGHTS)).toEqual(FULL_RIGHTS);
   });
 
   it("มี override ให้ใช้ override ทับค่าเริ่มต้นของระดับ", () => {
-    const result = resolveRights("user", rights({ can_read: true }), FULL_RIGHTS);
+    const result = resolveRights("user", true, rights({ can_read: true }), FULL_RIGHTS);
     expect(result).toEqual(rights({ can_read: true }));
   });
 
   it("ไม่มี override ให้ตกไปใช้ค่าเริ่มต้นของระดับ", () => {
     const level = rights({ can_read: true, can_write: true });
-    expect(resolveRights("supervisor", null, level)).toEqual(level);
+    expect(resolveRights("supervisor", true, null, level)).toEqual(level);
   });
 
   it("ไม่มีทั้งสองอย่าง = ไม่มีสิทธิ์", () => {
-    expect(resolveRights("user", null, null)).toEqual(NO_RIGHTS);
+    expect(resolveRights("user", true, null, null)).toEqual(NO_RIGHTS);
+  });
+
+  it("ไม่มีสิทธิ์เข้าโปรแกรม (เมนูผู้ใช้งานโปรแกรม) = ไม่มีสิทธิ์เลย แม้ระดับหรือ override จะให้", () => {
+    expect(resolveRights("user", false, FULL_RIGHTS, FULL_RIGHTS)).toEqual(NO_RIGHTS);
+    expect(resolveRights("assistant_admin", false, null, FULL_RIGHTS)).toEqual(NO_RIGHTS);
+    expect(resolveRights("supervisor", false, FULL_RIGHTS, null)).toEqual(NO_RIGHTS);
+  });
+
+  it("admin ไม่ต้องมีสิทธิ์เข้าโปรแกรมก็ยังได้ทุกอย่าง (กันล็อกตัวเองออกจากระบบ)", () => {
+    expect(resolveRights("admin", false, null, null)).toEqual(FULL_RIGHTS);
   });
 
   it("คืนค่าเป็นสำเนาใหม่ ไม่ผูกกับ object ต้นทาง", () => {
     const level = rights({ can_read: true });
-    const result = resolveRights("user", null, level);
+    const result = resolveRights("user", true, null, level);
     result.can_read = false;
     expect(level.can_read).toBe(true);
   });
@@ -86,6 +98,21 @@ describe("ตรวจสิทธิ์รายเมนู", () => {
 
   it("สรุปรหัสโปรแกรมที่เข้าถึงได้ ไม่ซ้ำและไม่รวมโปรแกรมที่อ่านไม่ได้", () => {
     expect(accessibleProgramCodes(perms)).toEqual(["MKT"]);
+  });
+});
+
+describe("สรุปสิทธิ์ของผู้ใช้ในโปรแกรม", () => {
+  it("นับเมนูที่เปิดได้ เมนูทั้งหมด และเมนูที่ตั้งเฉพาะราย", () => {
+    const perms = [
+      perm("A", "P", null, { can_read: true }),
+      { ...perm("B", "P", null, { can_read: true }), is_override: true },
+      perm("C", "P", null, {}),
+    ];
+    expect(summarizeAccess(perms)).toEqual({ readable: 2, total: 3, overrides: 1 });
+  });
+
+  it("ไม่มีเมนูเลยได้ศูนย์ทั้งหมด", () => {
+    expect(summarizeAccess([])).toEqual({ readable: 0, total: 0, overrides: 0 });
   });
 });
 

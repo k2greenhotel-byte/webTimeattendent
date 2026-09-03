@@ -52,11 +52,15 @@ export default async function LevelsPage({
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-4">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">กลุ่มระดับการทำงานและสิทธิ์เริ่มต้น</h1>
+        <h1 className="text-xl font-bold text-slate-800">ค่าเริ่มต้นสิทธิ์ตามระดับ (แม่แบบ)</h1>
         <p className="text-sm text-slate-500">
-          ค่าที่ตั้งตรงนี้ใช้กับทุกคนในระดับนั้น เว้นแต่จะกำหนดสิทธิ์เฉพาะรายไว้ที่{" "}
-          <Link href="/core/users" className="text-brand-600 hover:underline">
-            กำหนดผู้ใช้งาน
+          ใช้เป็นค่าตั้งต้นให้ทุกคนในระดับนั้น <strong>เฉพาะโปรแกรมที่คนนั้นมีสิทธิ์เข้าตาม</strong>{" "}
+          <Link href="/core/program-users" className="text-brand-600 hover:underline">
+            5. ผู้ใช้งานโปรแกรม
+          </Link>{" "}
+          — ไม่มีสิทธิ์เข้าโปรแกรมก็ไม่ได้อะไรจากตรงนี้ · กำหนดรายคนรายเมนูได้ที่{" "}
+          <Link href="/core/program-rights" className="text-brand-600 hover:underline">
+            4. กำหนดสิทธิ์เมนูในโปรแกรม
           </Link>
         </p>
       </div>
