@@ -44,6 +44,8 @@ export const config = {
     "/admin",
     "/admin/:path*",
     "/api/punch",
+    "/moto",
+    "/moto/:path*",
     "/marketing",
     "/marketing/:path*",
     "/api/marketing/:path*",
