@@ -170,9 +170,12 @@ export function specOfSlug(slug: string): MotoMasterSpec | null {
   return MOTO_MASTERS.find((m) => m.slug === slug.toLowerCase()) ?? null;
 }
 
-/** รหัสเก็บเป็นตัวพิมพ์ใหญ่ไม่มีช่องว่างเสมอ เพื่อให้ค้นหาและเรียงลำดับได้ตรงกันทุกหน้าจอ */
+/**
+ * รหัสเก็บเป็นตัวพิมพ์ใหญ่เสมอ และยุบช่องว่างซ้อนให้เหลือเคาะเดียว
+ * (ไม่ลบช่องว่างทิ้ง เพราะรหัสจริงจากบริษัทรถมีเคาะวรรค เช่น "NHX125S TH")
+ */
 export function normalizeCode(raw: string): string {
-  return raw.trim().replace(/\s+/g, "").toUpperCase();
+  return raw.trim().replace(/\s+/g, " ").toUpperCase();
 }
 
 /** ข้อความบอกชนิดข้อมูลหลักในรูปแบบ "1. ยี่ห้อรถ" */

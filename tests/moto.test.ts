@@ -55,9 +55,14 @@ describe("ทะเบียนข้อมูลหลัก", () => {
 });
 
 describe("normalizeCode", () => {
-  it("ตัดช่องว่างและทำเป็นตัวพิมพ์ใหญ่", () => {
-    expect(normalizeCode("  br 01 ")).toBe("BR01");
+  it("ตัดช่องว่างหัวท้ายและทำเป็นตัวพิมพ์ใหญ่", () => {
+    expect(normalizeCode("  br01 ")).toBe("BR01");
     expect(normalizeCode("md-01")).toBe("MD-01");
+  });
+
+  it("รหัสจริงที่มีเคาะวรรคยังอยู่ครบ แต่ยุบช่องว่างซ้อนเหลือเคาะเดียว", () => {
+    expect(normalizeCode("nhx125s th")).toBe("NHX125S TH");
+    expect(normalizeCode(" ACF110CBTT   3TH ")).toBe("ACF110CBTT 3TH");
   });
 
   it("รหัสภาษาไทยไม่ถูกทำลาย", () => {
