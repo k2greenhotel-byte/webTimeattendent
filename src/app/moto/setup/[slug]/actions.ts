@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { logAudit } from "@/lib/db";
+import { isPickKind, returnUrl, safeReturnPath } from "@/lib/form-draft";
 import { normalizeCode, specOf, validateMasterInput, type MotoMasterSpec } from "@/lib/moto";
 import {
   countMasterUsage,
@@ -24,6 +25,32 @@ function back(spec: MotoMasterSpec | null, message: string, isError = false): ne
   redirect(`${path}?${isError ? "err" : "msg"}=${encodeURIComponent(message)}`);
 }
 
+/**
+ * บริบท "มาจากหน้าอื่น" ที่ติดมากับฟอร์ม (เช่น กดจากใบจองรถมาเพิ่มสี)
+ * ต้องพากลับไปให้ถูกทั้งตอนบันทึกสำเร็จและตอนกรอกผิด ไม่งั้นผู้ใช้หลุดบริบทกลางทาง
+ */
+function readReturn(form: FormData): { to: string; pick: string } | null {
+  const to = safeReturnPath(str(form, "return_to"));
+  const pick = str(form, "pick");
+  return to && isPickKind(pick) ? { to, pick } : null;
+}
+
+/** กลับไปหน้าเพิ่มข้อมูลหลักพร้อมข้อความ โดยยังคงบริบท "มาจากหน้าอื่น" ไว้ */
+function backKeepingReturn(
+  spec: MotoMasterSpec,
+  context: { to: string; pick: string } | null,
+  message: string,
+): never {
+  if (!context) back(spec, message, true);
+
+  const params = new URLSearchParams({
+    err: message,
+    return: context.to,
+    pick: context.pick,
+  });
+  redirect(`/moto/setup/${spec.slug}?${params.toString()}`);
+}
+
 function readSpec(form: FormData): MotoMasterSpec {
   const spec = specOf(str(form, "kind"));
   if (!spec) back(null, "ไม่รู้จักชนิดข้อมูลที่ส่งมา กรุณาเปิดหน้าใหม่แล้วลองอีกครั้ง", true);
@@ -43,12 +70,14 @@ export async function createMasterForm(form: FormData): Promise<void> {
   const spec = readSpec(form);
   const user = await requirePermission(spec.menuCode, "write");
   const input = { ...readInput(form), is_active: true };
+  const context = readReturn(form);
 
   const problem = validateMasterInput(spec, input);
-  if (problem) back(spec, problem, true);
+  if (problem) backKeepingReturn(spec, context, problem);
 
+  let newId = "";
   try {
-    await insertMaster(spec.kind, input);
+    newId = await insertMaster(spec.kind, input);
     await logAudit({
       actor_id: user.id,
       action: `moto_create_${spec.kind}`,
@@ -56,10 +85,20 @@ export async function createMasterForm(form: FormData): Promise<void> {
       after: input,
     });
   } catch (err) {
-    back(spec, err instanceof Error ? err.message : `เพิ่ม${spec.title}ไม่สำเร็จ`, true);
+    backKeepingReturn(
+      spec,
+      context,
+      err instanceof Error ? err.message : `เพิ่ม${spec.title}ไม่สำเร็จ`,
+    );
   }
 
   revalidatePath(`/moto/setup/${spec.slug}`);
+
+  // มาจากหน้าอื่น (เช่น ใบจองรถ) → พากลับไปหน้านั้น พร้อมค่าที่เพิ่งเพิ่ม
+  if (context && isPickKind(context.pick) && newId) {
+    redirect(returnUrl(context.to, context.pick, newId));
+  }
+
   back(spec, `เพิ่ม${spec.title} ${input.code} ${input.name} เรียบร้อยแล้ว`);
 }
 

@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import MasterLink from "@/components/booking/MasterLink";
+import { draftValue, isRestoring, pickedFromLocation, takeFormDraft } from "@/lib/form-draft";
 
 export type CustomerBrief = {
   id: string;
@@ -13,6 +15,9 @@ export type CustomerBrief = {
 /**
  * ช่องเลือกลูกค้าของใบจอง (ข้อ 1.1.5-1.1.6)
  * พิมพ์ชื่อ/รหัส/เบอร์โทร → ระบบค้นจากทะเบียนลูกค้า → เลือกแล้วเบอร์โทรเติมให้อัตโนมัติ (แก้ทับได้)
+ *
+ * ยังไม่มีลูกค้าคนนี้ในระบบ → กด "+ เพิ่มลูกค้าใหม่" ไปบันทึกที่ทะเบียนลูกค้าได้เลย
+ * บันทึกเสร็จระบบพากลับมาที่ใบจองใบเดิม พร้อมเลือกลูกค้าคนที่เพิ่งเพิ่มให้
  */
 export default function CustomerPicker({
   defaultCustomer,
@@ -27,6 +32,35 @@ export default function CustomerPicker({
   const [rows, setRows] = useState<CustomerBrief[]>([]);
   const [busy, setBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** ดึงลูกค้าหนึ่งรายมาแสดงชื่อ เมื่อรู้แต่ id (กลับมาจากหน้าทะเบียนลูกค้า / กู้จากร่าง) */
+  const loadById = useCallback(async (id: string, keepPhone: string | null) => {
+    try {
+      const res = await fetch(`/api/booking/customers?id=${encodeURIComponent(id)}`);
+      const data = (await res.json()) as { ok: boolean; rows?: CustomerBrief[] };
+      const row = data.ok ? data.rows?.[0] : null;
+      if (!row) return;
+      setPicked(row);
+      setPhone(keepPhone || row.phone || "");
+    } catch {
+      // ดึงชื่อไม่ได้ก็ไม่เป็นไร ผู้ใช้เลือกใหม่ได้
+    }
+  }, []);
+
+  // กลับมาจากหน้าทะเบียนลูกค้า: เติมลูกค้าที่เพิ่งเพิ่ม หรือกู้ลูกค้าที่เลือกไว้ก่อนออกจากหน้า
+  useEffect(() => {
+    if (!isRestoring()) return;
+
+    const draft = takeFormDraft(window.location.pathname);
+    const draftPhone = draftValue(draft, "customer_phone");
+    if (draftPhone) setPhone(draftPhone);
+
+    const chosen = pickedFromLocation();
+    const id = chosen?.pick === "customer" ? chosen.id : draftValue(draft, "customer_id");
+    if (id) void loadById(id, chosen?.pick === "customer" ? null : draftPhone);
+    // อ่านร่างครั้งเดียวตอน mount เท่านั้น
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -65,14 +99,18 @@ export default function CustomerPicker({
     <div className="space-y-2 rounded-xl border border-slate-200 p-3">
       <input type="hidden" name="customer_id" value={picked?.id ?? ""} />
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="label" htmlFor="customer_search">
-            ชื่อลูกค้า * (ดึงจากทะเบียนลูกค้า)
-          </label>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <label className="label" htmlFor="customer_search">
+              ชื่อลูกค้า * (ดึงจากทะเบียนลูกค้า)
+            </label>
+            <MasterLink href="/customers/new" pick="customer" label="+ เพิ่มลูกค้าใหม่" />
+          </div>
+
           {picked ? (
             <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm">
-              <span className="mr-auto">
+              <span className="mr-auto min-w-0">
                 <span className="font-medium text-slate-800">{picked.full_name}</span>
                 <span className="ml-2 text-xs text-slate-500">{picked.code}</span>
               </span>
@@ -139,7 +177,8 @@ export default function CustomerPicker({
 
       {keyword.trim().length >= 2 && !busy && rows.length === 0 && (
         <p className="text-xs text-amber-600">
-          ไม่พบลูกค้าที่ตรงกับคำค้น — เพิ่มลูกค้าใหม่ที่เมนู “ประวัติลูกค้า” ก่อนแล้วค่อยกลับมาทำใบจอง
+          ไม่พบลูกค้าที่ตรงกับคำค้น — กด “+ เพิ่มลูกค้าใหม่” ด้านบนเพื่อไปบันทึกทะเบียนลูกค้า
+          แล้วระบบจะพากลับมาที่ใบจองใบนี้ให้เอง
         </p>
       )}
     </div>

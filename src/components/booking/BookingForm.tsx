@@ -1,5 +1,6 @@
 import Link from "next/link";
 import CustomerPicker, { type CustomerBrief } from "@/components/booking/CustomerPicker";
+import DraftRestorer from "@/components/booking/DraftRestorer";
 import VehiclePicker from "@/components/booking/VehiclePicker";
 import FileUploader from "@/components/marketing/FileUploader";
 import { formatBaht } from "@/lib/booking";
@@ -66,6 +67,9 @@ export default function BookingForm({
   return (
     <form action={action} className="card space-y-5">
       {booking && <input type="hidden" name="id" value={booking.id} />}
+
+      {/* กลับมาจากหน้าข้อมูลเบื้องต้น — เติมค่าที่กรอกค้างไว้กลับให้ครบ */}
+      <DraftRestorer />
 
       {/* ---------- หัวเอกสาร ---------- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -295,6 +299,7 @@ export default function BookingForm({
               endpoint={UPLOAD_ENDPOINT}
               accept={BOOKING_FILE_ACCEPT}
               initialFiles={filesOfKind(files, kind)}
+              restoreDraft
             />
           ))}
         </div>
@@ -310,6 +315,7 @@ export default function BookingForm({
               endpoint={UPLOAD_ENDPOINT}
               accept={BOOKING_FILE_ACCEPT}
               initialFiles={filesOfKind(files, kind)}
+              restoreDraft
             />
           ))}
         </div>

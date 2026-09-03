@@ -15,6 +15,7 @@ import {
   normalizeNationalId,
 } from "@/lib/customers";
 import { logAudit } from "@/lib/db";
+import { returnUrl, safeReturnPath } from "@/lib/form-draft";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { requirePermission } from "@/lib/session";
 
@@ -27,7 +28,8 @@ function optText(form: FormData, key: string): string | null {
 }
 
 function back(path: string, message: string, isError = false): never {
-  redirect(`${path}?${isError ? "err" : "msg"}=${encodeURIComponent(message)}`);
+  const separator = path.includes("?") ? "&" : "?";
+  redirect(`${path}${separator}${isError ? "err" : "msg"}=${encodeURIComponent(message)}`);
 }
 
 /** รูปถ่าย: PhotoUploader ส่งค่าว่างมาด้วยเสมอ เอาเฉพาะค่าที่ไม่ว่างค่าแรก */
@@ -73,11 +75,18 @@ function validate(row: CustomerInput, path: string): void {
 
 export async function createCustomerForm(form: FormData): Promise<void> {
   const user = await requirePermission("CUST_FORM", "write");
+  const returnTo = safeReturnPath(str(form, "return_to"));
+
+  // กรอกผิดแล้วต้องกลับมาหน้าเดิมโดยไม่หลุดบริบท "มาจากใบจอง"
+  const formPath = returnTo
+    ? `/customers/new?return=${encodeURIComponent(returnTo)}`
+    : "/customers/new";
+
   const row = {
     ...readForm(form, user.branch_id ?? null, user.company_id ?? null),
     created_by: user.id,
   };
-  validate(row, "/customers/new");
+  validate(row, formPath);
 
   let id: string;
   try {
@@ -90,10 +99,14 @@ export async function createCustomerForm(form: FormData): Promise<void> {
       after: { code: row.code, full_name: row.full_name },
     });
   } catch (err) {
-    back("/customers/new", err instanceof Error ? err.message : "บันทึกลูกค้าไม่สำเร็จ", true);
+    back(formPath, err instanceof Error ? err.message : "บันทึกลูกค้าไม่สำเร็จ", true);
   }
 
   revalidatePath("/customers");
+
+  // มาจากหน้าอื่น (เช่น ใบจองรถ) → พากลับไปหน้านั้น พร้อมเลือกลูกค้าที่เพิ่งเพิ่มให้
+  if (returnTo) redirect(returnUrl(returnTo, "customer", id));
+
   back(`/customers/${id}`, `บันทึกประวัติลูกค้า ${row.full_name} เรียบร้อยแล้ว`);
 }
 

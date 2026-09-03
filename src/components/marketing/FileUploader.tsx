@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { draftValues, isRestoring, takeFormDraft } from "@/lib/form-draft";
 import { MEMO_FILE_ACCEPT } from "@/lib/marketing-types";
 
 export type UploadedFile = {
@@ -20,6 +21,11 @@ type Props = {
   /** ปลายทางอัปโหลด/เปิดไฟล์ — โมดูลอื่นส่ง endpoint ของตัวเองเข้ามาได้ */
   endpoint?: string;
   accept?: string;
+  /**
+   * กู้รายการไฟล์กลับมาจากร่างฟอร์ม เมื่อผู้ใช้ออกไปเพิ่มข้อมูลเบื้องต้นแล้วกลับเข้ามา
+   * (ไฟล์ถูกอัปโหลดขึ้นถังไปแล้วตั้งแต่ตอนเลือก จึงกู้ได้ครบโดยไม่ต้องเลือกไฟล์ใหม่)
+   */
+  restoreDraft?: boolean;
 };
 
 const MAX_EDGE = 1600;
@@ -74,11 +80,30 @@ export default function FileUploader({
   initialFiles = [],
   endpoint = "/api/marketing/file",
   accept = MEMO_FILE_ACCEPT,
+  restoreDraft = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadedFile[]>(initialFiles);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!restoreDraft || !isRestoring()) return;
+
+    const saved = draftValues(takeFormDraft(window.location.pathname), name)
+      .map((raw) => {
+        try {
+          return JSON.parse(raw) as UploadedFile;
+        } catch {
+          return null;
+        }
+      })
+      .filter((f): f is UploadedFile => Boolean(f?.path));
+
+    if (saved.length > 0) setFiles(saved.slice(0, max));
+    // อ่านร่างครั้งเดียวตอน mount เท่านั้น
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const pick = useCallback(
     async (picked: FileList | null) => {

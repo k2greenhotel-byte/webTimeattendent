@@ -70,9 +70,18 @@ function duplicateMessage(spec: MotoMasterSpec, code: string): string {
   return `${spec.codeLabel} ${code} ถูกใช้ไปแล้ว กรุณาใช้รหัสอื่น`;
 }
 
-export async function insertMaster(kind: MotoMasterKind, input: MotoMasterInput): Promise<void> {
+/** เพิ่มข้อมูลหลักหนึ่งแถว แล้วคืน id ที่เพิ่งได้ (หน้าจออื่นเอาไปเลือกต่อได้ทันที) */
+export async function insertMaster(
+  kind: MotoMasterKind,
+  input: MotoMasterInput,
+): Promise<string> {
   const spec = requireSpec(kind);
-  const { error } = await getSupabase().from(spec.table).insert(payload(spec, input));
+  const { data, error } = await getSupabase()
+    .from(spec.table)
+    .insert(payload(spec, input))
+    .select("id")
+    .single();
+
   if (error) {
     throw new Error(
       error.code === "23505"
@@ -80,6 +89,7 @@ export async function insertMaster(kind: MotoMasterKind, input: MotoMasterInput)
         : `เพิ่ม${spec.title}ไม่สำเร็จ: ${error.message}`,
     );
   }
+  return (data as { id: string }).id;
 }
 
 export async function updateMaster(

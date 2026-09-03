@@ -11,16 +11,20 @@ export default function CustomerForm({
   suggestedCode,
   action,
   submitLabel,
+  returnTo,
 }: {
   customer?: Customer | null;
   geo?: GeoRow | null;
   suggestedCode?: string;
   action: (formData: FormData) => void | Promise<void>;
   submitLabel: string;
+  /** มาจากหน้าอื่น (เช่น ใบจองรถ) — บันทึกเสร็จให้พากลับไปหน้านั้นพร้อมลูกค้าที่เพิ่งเพิ่ม */
+  returnTo?: string | null;
 }) {
   return (
     <form action={action} className="card space-y-5">
       {customer && <input type="hidden" name="id" value={customer.id} />}
+      {returnTo && <input type="hidden" name="return_to" value={returnTo} />}
       {customer?.branch_id && <input type="hidden" name="branch_id" value={customer.branch_id} />}
       {customer?.company_id && <input type="hidden" name="company_id" value={customer.company_id} />}
 

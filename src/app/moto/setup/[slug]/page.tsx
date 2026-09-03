@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { safeReturnPath } from "@/lib/form-draft";
 import { filterOptions, masterTitle, parentNameOf, specOfSlug } from "@/lib/moto";
 import { listMaster, listParentOptions } from "@/lib/moto-db";
 import { checkPermission, requirePermission } from "@/lib/session";
@@ -13,7 +14,15 @@ export default async function MotoMasterPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ q?: string; msg?: string; err?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    msg?: string;
+    err?: string;
+    /** มาจากหน้าอื่นที่ต้องการค่าใหม่กลับไปใช้ต่อ (เช่น ใบจองรถ) */
+    return?: string;
+    pick?: string;
+    parent?: string;
+  }>;
 }) {
   const { slug } = await params;
   const spec = specOfSlug(slug);
@@ -35,6 +44,7 @@ export default async function MotoMasterPage({
 
   const rows = filterOptions(allRows, keyword);
   const activeCount = allRows.filter((r) => r.is_active).length;
+  const returnTo = safeReturnPath(query.return);
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-4">
@@ -47,6 +57,16 @@ export default async function MotoMasterPage({
           ← กลับหน้ารวม
         </Link>
       </div>
+
+      {returnTo && (
+        <p className="rounded-xl bg-sky-50 px-4 py-3 text-sm text-sky-700">
+          กำลังเพิ่ม{spec.title}เพื่อใช้ต่อในหน้าที่ค้างไว้ — กด “เพิ่ม” แล้วระบบจะพากลับไปหน้านั้น
+          พร้อมเลือก{spec.title}ที่เพิ่งเพิ่มให้อัตโนมัติ{" "}
+          <Link href={`${returnTo}?restore=1`} className="font-medium underline">
+            กลับโดยไม่เพิ่ม
+          </Link>
+        </p>
+      )}
 
       {query.msg && (
         <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{query.msg}</p>
@@ -65,6 +85,9 @@ export default async function MotoMasterPage({
             }`}
           >
             <input type="hidden" name="kind" value={spec.kind} />
+            {/* มาจากหน้าอื่น (เช่น ใบจองรถ) — บันทึกเสร็จให้พากลับไปหน้านั้นพร้อมค่าที่เพิ่งเพิ่ม */}
+            {returnTo && <input type="hidden" name="return_to" value={returnTo} />}
+            {returnTo && query.pick && <input type="hidden" name="pick" value={query.pick} />}
             <div>
               <label className="label">{spec.codeLabel} *</label>
               <input
@@ -88,7 +111,7 @@ export default async function MotoMasterPage({
             {spec.parent && (
               <div>
                 <label className="label">{spec.parent.label}</label>
-                <select name="parent_id" defaultValue="" className="input">
+                <select name="parent_id" defaultValue={query.parent ?? ""} className="input">
                   <option value="">— ไม่ระบุ —</option>
                   {parents.map((p) => (
                     <option key={p.id} value={p.id}>
