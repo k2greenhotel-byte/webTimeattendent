@@ -159,6 +159,10 @@ export type Booking = {
   sale_contract_no: string | null;
   sale_date: string | null;
   refunded: boolean;
+  /** บัญชีผู้ใช้ที่รับจอง (มาจากคนที่ล็อกอินอยู่ตอนเปิดใบ) */
+  taken_by: string | null;
+  /** ชื่อพนักงานที่รับจองตามที่แสดงบนใบ — แก้ได้เผื่อคีย์แทนกัน */
+  taken_by_name: string | null;
   note: string | null;
   company_id: string | null;
   created_by: string | null;
@@ -174,6 +178,8 @@ export type BookingRow = Booking & {
   model_name: string | null;
   variant_name: string | null;
   color_name: string | null;
+  /** ชื่อพนักงานที่รับจอง ตามบัญชีผู้ใช้ล่าสุด (ชื่อบนใบอยู่ที่ taken_by_name) */
+  taken_by_full_name: string | null;
   file_count: number;
   update_count: number;
 };

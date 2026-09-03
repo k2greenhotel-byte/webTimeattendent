@@ -22,7 +22,7 @@ export default async function BookingDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ msg?: string; err?: string }>;
 }) {
-  await requirePermission("BOOK_ENTRY", "read");
+  const user = await requirePermission("BOOK_ENTRY", "read");
   const { id } = await params;
   const query = await searchParams;
 
@@ -68,6 +68,7 @@ export default async function BookingDetailPage({
           </h1>
           <p className="text-sm text-slate-500">
             จองวันที่ {formatThaiDate(booking.booking_date)} · มัดจำ {formatBaht(booking.deposit_amount)}
+            {` · ผู้รับจอง ${booking.taken_by_name ?? booking.taken_by_full_name ?? "ไม่ระบุ"}`}
             {booking.sale_contract_no ? ` · สัญญาขาย ${booking.sale_contract_no}` : ""}
             {booking.sale_date ? ` (${formatThaiDate(booking.sale_date)})` : ""}
             {booking.refunded ? " · คืนเงินลูกค้าแล้ว" : ""}
@@ -107,6 +108,7 @@ export default async function BookingDetailPage({
           models={models}
           variants={variants}
           colors={colors}
+          defaultStaffName={user.full_name}
           action={updateBookingForm}
           submitLabel="บันทึกการแก้ไข"
         />

@@ -65,6 +65,10 @@ export default function BookingTable({
                 <dt className="text-slate-400">มัดจำ</dt>
                 <dd>{formatBaht(row.deposit_amount)}</dd>
               </div>
+              <div className="col-span-2">
+                <dt className="text-slate-400">พนักงานที่รับจอง</dt>
+                <dd>{row.taken_by_name ?? row.taken_by_full_name ?? "—"}</dd>
+              </div>
             </dl>
 
             <div className="mt-2 flex flex-wrap gap-1">
@@ -94,6 +98,7 @@ export default function BookingTable({
               <th className="text-left">ลูกค้า</th>
               <th>เบอร์โทร</th>
               <th className="text-left">รถที่จอง</th>
+              <th>ผู้รับจอง</th>
               <th>ประเภทซื้อ</th>
               <th>นัดรับรถ</th>
               <th>มัดจำ</th>
@@ -127,6 +132,7 @@ export default function BookingTable({
                 </td>
                 <td className="text-xs">{formatPhone(row.customer_phone)}</td>
                 <td className="whitespace-normal text-left text-xs">{describeVehicle(row)}</td>
+                <td className="text-xs">{row.taken_by_name ?? row.taken_by_full_name ?? "-"}</td>
                 <td className="text-xs">{PURCHASE_TYPE_LABEL[row.purchase_type]}</td>
                 <td className="text-xs">
                   {row.pickup_date ? (

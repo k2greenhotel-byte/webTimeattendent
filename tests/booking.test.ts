@@ -44,6 +44,9 @@ function booking(over: Partial<BookingRow> = {}): BookingRow {
     sale_contract_no: null,
     sale_date: null,
     refunded: false,
+    taken_by: "e1",
+    taken_by_name: "พนักงานขาย A",
+    taken_by_full_name: "พนักงานขาย A",
     note: null,
     company_id: null,
     created_by: null,
@@ -205,10 +208,17 @@ describe("ตรวจใบจองก่อนบันทึก", () => {
     deposit_amount: 3000,
     booking_status: "wait_contract" as const,
     cancel_reason: null,
+    taken_by_name: "พนักงานขาย A",
   };
 
   it("ข้อมูลครบผ่าน", () => {
     expect(validateBooking(base)).toBeNull();
+  });
+
+  it("ต้องมีชื่อพนักงานที่รับจองเสมอ (ระบบเติมจากบัญชีที่ล็อกอินให้)", () => {
+    expect(validateBooking({ ...base, taken_by_name: "" })).toContain("พนักงานที่รับจอง");
+    expect(validateBooking({ ...base, taken_by_name: "   " })).toContain("พนักงานที่รับจอง");
+    expect(validateBooking({ ...base, taken_by_name: null })).toContain("พนักงานที่รับจอง");
   });
 
   it("ต้องมีลูกค้า ยี่ห้อ และรุ่นรถ", () => {

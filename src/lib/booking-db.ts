@@ -69,7 +69,7 @@ export async function listBookings(query: BookingQuery = {}): Promise<BookingRow
 
   const rows = (data ?? []).map((r) => toBookingRow(r as Record<string, unknown>));
 
-  // คำค้นอิสระ (เลขที่ใบจอง เลขที่อ้างอิง ชื่อลูกค้า เบอร์โทร เลขที่ใบเสร็จ เลขที่สัญญาขาย)
+  // คำค้นอิสระ (เลขที่ใบจอง เลขที่อ้างอิง ชื่อลูกค้า เบอร์โทร เลขที่ใบเสร็จ เลขที่สัญญาขาย ชื่อพนักงานที่รับจอง)
   const keyword = (query.keyword ?? "").trim().toLowerCase();
   if (!keyword) return rows;
 
@@ -82,6 +82,7 @@ export async function listBookings(query: BookingQuery = {}): Promise<BookingRow
       r.customer_phone,
       r.receipt_no,
       r.sale_contract_no,
+      r.taken_by_name,
     ]
       .join(" ")
       .toLowerCase()

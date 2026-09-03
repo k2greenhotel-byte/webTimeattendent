@@ -149,8 +149,10 @@ export function validateBooking(input: {
   cancel_reason: Booking["cancel_reason"];
   sale_contract_no?: string | null;
   sale_date?: string | null;
+  taken_by_name?: string | null;
 }): string | null {
   if (!input.booking_date) return "กรุณาระบุวันที่รับจอง";
+  if (!(input.taken_by_name ?? "").trim()) return "กรุณาระบุชื่อพนักงานที่รับจอง";
   if (!input.customer_id) return "กรุณาเลือกลูกค้า — ถ้ายังไม่มีในระบบให้เพิ่มที่เมนูประวัติลูกค้าก่อน";
   if (!input.brand_id) return "กรุณาเลือกยี่ห้อรถ";
   if (!input.model_id) return "กรุณาเลือกรุ่นรถ";

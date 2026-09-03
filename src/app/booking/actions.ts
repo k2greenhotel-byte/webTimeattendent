@@ -105,7 +105,12 @@ const CANCEL_REASONS = [
 /** อ่านใบจองจากฟอร์ม — สถานะเอกสาร (1.1.17) คำนวณเอง ไม่รับจากฟอร์ม */
 function readBooking(
   form: FormData,
-  context: { companyId: string | null; createdBy: string | null },
+  context: {
+    companyId: string | null;
+    createdBy: string | null;
+    /** บัญชีผู้ใช้ที่รับจอง — ใบใหม่ใช้คนที่ล็อกอินอยู่ ใบเดิมคงค่าเดิมไว้ */
+    takenBy: string | null;
+  },
 ): BookingInput {
   const booking_status = pick(form, "booking_status", BOOKING_STATUSES) ?? "wait_contract";
   const cancel_reason =
@@ -135,6 +140,8 @@ function readBooking(
     sale_contract_no,
     sale_date: optText(form, "sale_date"),
     refunded,
+    taken_by: context.takenBy,
+    taken_by_name: optText(form, "taken_by_name"),
     note: optText(form, "note"),
     company_id: context.companyId,
     created_by: context.createdBy,
@@ -145,7 +152,11 @@ export async function createBookingForm(form: FormData): Promise<void> {
   const user = await requirePermission("BOOK_ENTRY", "write");
   const path = "/booking/bookings/new";
 
-  const row = readBooking(form, { companyId: user.company_id ?? null, createdBy: user.id });
+  const row = readBooking(form, {
+    companyId: user.company_id ?? null,
+    createdBy: user.id,
+    takenBy: user.id,
+  });
   const problem = validateBooking(row);
   if (problem) back(path, problem, true);
 
@@ -181,7 +192,12 @@ export async function updateBookingForm(form: FormData): Promise<void> {
 
   // เลขที่สัญญาขาย/วันที่ขาย/ธงคืนเงิน แก้ได้จากหน้าจอ Update (1.2) เท่านั้น จึงคงค่าเดิมไว้
   const row = {
-    ...readBooking(form, { companyId: current.company_id, createdBy: current.created_by }),
+    ...readBooking(form, {
+      companyId: current.company_id,
+      createdBy: current.created_by,
+      // แก้ใบเดิมไม่ควรเปลี่ยนว่าใครเป็นคนรับจอง (ชื่อบนใบแก้ได้ที่ช่องพนักงานที่รับจอง)
+      takenBy: current.taken_by,
+    }),
     sale_contract_no: current.sale_contract_no,
     sale_date: current.sale_date,
     refunded: current.refunded,

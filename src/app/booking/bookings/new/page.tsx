@@ -43,6 +43,7 @@ export default async function NewBookingPage({
         variants={variants}
         colors={colors}
         defaultBranchId={user.branch_id ?? null}
+        defaultStaffName={user.full_name}
         action={createBookingForm}
         submitLabel="บันทึกใบจอง"
       />

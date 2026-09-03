@@ -47,6 +47,7 @@ export default function BookingForm({
   variants,
   colors,
   defaultBranchId,
+  defaultStaffName,
   action,
   submitLabel,
 }: {
@@ -59,6 +60,8 @@ export default function BookingForm({
   variants: MotoOption[];
   colors: MotoOption[];
   defaultBranchId?: string | null;
+  /** ชื่อพนักงานที่รับจอง — ดึงจากบัญชีที่ล็อกอินอยู่ ใช้เป็นค่าตั้งต้นของใบใหม่ */
+  defaultStaffName?: string;
   action: (formData: FormData) => void | Promise<void>;
   submitLabel: string;
 }) {
@@ -72,7 +75,7 @@ export default function BookingForm({
       <DraftRestorer />
 
       {/* ---------- หัวเอกสาร ---------- */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <label className="label">เลขที่ใบจอง</label>
           <input
@@ -100,6 +103,21 @@ export default function BookingForm({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="taken_by_name">
+            พนักงานที่รับจอง *
+          </label>
+          <input
+            id="taken_by_name"
+            name="taken_by_name"
+            defaultValue={booking?.taken_by_name ?? defaultStaffName ?? ""}
+            className="input"
+            required
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            ดึงจากบัญชีที่ล็อกอินอยู่ · แก้ได้กรณีคีย์แทนพนักงานขายคนอื่น
+          </p>
         </div>
         <div>
           <label className="label" htmlFor="ref_no">
