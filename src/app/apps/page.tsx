@@ -36,8 +36,8 @@ export default async function AppsPage({
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-4">
-      <header className="card flex flex-wrap items-center gap-3">
-        <div className="mr-auto">
+      <header className="card flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="min-w-0 sm:mr-auto">
           <h1 className="text-lg font-bold text-slate-800">โปรแกรมขององค์กร</h1>
           <p className="text-sm text-slate-500">
             {user.full_name} · {ACCESS_LEVEL_LABEL[live?.access_level ?? user.level]}
@@ -45,17 +45,21 @@ export default async function AppsPage({
             {user.branch_name ? ` · สาขา ${user.branch_name}` : ""}
           </p>
         </div>
-        <Link href="/select-context" className="btn-secondary">
-          เปลี่ยนบริษัท/สาขา
-        </Link>
-        <Link href="/login/change-pin" className="btn-secondary">
-          เปลี่ยนรหัสผ่าน
-        </Link>
-        <form action={logoutAction}>
-          <button type="submit" className="btn-secondary text-rose-600">
-            ออกจากระบบ
-          </button>
-        </form>
+
+        {/* จอเล็กจัดปุ่มเป็น 2 คอลัมน์ ข้อความไทยจะได้ไม่ถูกบีบจนตัดหลายบรรทัด */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <Link href="/select-context" className="btn-secondary w-full sm:w-auto">
+            เปลี่ยนบริษัท/สาขา
+          </Link>
+          <Link href="/login/change-pin" className="btn-secondary w-full sm:w-auto">
+            เปลี่ยนรหัสผ่าน
+          </Link>
+          <form action={logoutAction} className="col-span-2 sm:col-auto">
+            <button type="submit" className="btn-secondary w-full text-rose-600">
+              ออกจากระบบ
+            </button>
+          </form>
+        </div>
       </header>
 
       {params.err && !closed && (

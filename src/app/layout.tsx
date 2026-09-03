@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // ไม่ล็อก maximumScale เพื่อให้ผู้ใช้ซูมอ่านตารางบนมือถือได้
   themeColor: "#2f7de1",
 };
 

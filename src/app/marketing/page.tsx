@@ -47,14 +47,14 @@ export default async function MarketingHomePage() {
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryCard label="ยอดขอเบิกทั้งหมด" value={formatBaht(totals.request)} tone="slate" />
         <SummaryCard label="ยอดอนุมัติเบิก" value={formatBaht(totals.approved)} tone="sky" />
         <SummaryCard label="ได้รับเงินแล้ว" value={formatBaht(totals.received)} tone="emerald" />
         <SummaryCard label="ยอดคงค้าง" value={formatBaht(totals.outstanding)} tone="amber" />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {(["draft", "submitted", "received"] as const).map((s) => (
           <Link key={s} href={`/marketing/search?flow_status=${s}`} className="card hover:border-brand-300">
             <p className="text-sm text-slate-500">{FLOW_STATUS_LABEL[s]}</p>

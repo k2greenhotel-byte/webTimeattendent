@@ -88,7 +88,7 @@ export function GroupedBarChart({
   const barW = Math.max(6, (groupW - 14) / series.length - 2);
 
   return (
-    <div className="overflow-x-auto">
+    <div className="table-wrap min-w-0">
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img">
         {ticks.map((t) => {
           const y = pad.top + plotH - (t / max) * plotH;
@@ -169,7 +169,7 @@ export function HorizontalBarChart({
   const max = niceMax(Math.max(...rows.flatMap((r) => series.map((s) => r.values[s.key] ?? 0)), 0));
 
   return (
-    <div className="overflow-x-auto">
+    <div className="table-wrap min-w-0">
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img">
         {rows.map((r, ri) => {
           const top = ri * rowH + 4;

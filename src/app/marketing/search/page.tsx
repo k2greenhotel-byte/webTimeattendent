@@ -240,7 +240,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
 
       {tab === "activity" ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Total label="รวมขอเบิก" value={`${formatBaht(totals.request)} บาท`} />
             <Total label="รวมอนุมัติ" value={`${formatBaht(totals.approved)} บาท`} />
             <Total label="รวมได้รับ" value={`${formatBaht(totals.received)} บาท`} />
@@ -309,7 +309,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         </>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {MEMO_STATUS_ORDER.map((s) => (
               <div key={s} className="card">
                 <p className="text-xs text-slate-500">{MEMO_STATUS_LABEL[s]}</p>

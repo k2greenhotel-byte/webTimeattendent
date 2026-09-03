@@ -121,14 +121,14 @@ export default async function DashboardPage({
         </Link>
       </form>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="ยอดขอเบิก" value={formatBaht(totals.request)} color={SERIES_COLORS.request} />
         <Stat label="ยอดอนุมัติเบิก" value={formatBaht(totals.approved)} color={SERIES_COLORS.approved} />
         <Stat label="ได้รับโอนแล้ว" value={formatBaht(totals.received)} color={SERIES_COLORS.received} />
         <Stat label="ยอดคงค้าง" value={formatBaht(totals.outstanding)} color="#64748b" />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {(Object.keys(FLOW_STATUS_LABEL) as MktFlowStatus[]).map((s) => (
           <Link key={s} href={`/marketing/search?flow_status=${s}`} className="card hover:border-brand-300">
             <p className="text-sm text-slate-500">{FLOW_STATUS_LABEL[s]}</p>
@@ -137,7 +137,7 @@ export default async function DashboardPage({
         ))}
       </div>
 
-      <section className="card">
+      <section className="card min-w-0">
         <h2 className="mb-1 font-semibold text-slate-800">ยอดเงินรายเดือน (12 เดือนล่าสุด)</h2>
         <Legend series={MONEY_SERIES} />
         <GroupedBarChart
@@ -178,7 +178,7 @@ export default async function DashboardPage({
       </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <section className="card">
+        <section className="card min-w-0">
           <h2 className="mb-1 font-semibold text-slate-800">ยอดตามบริษัทที่ขอเบิก</h2>
           <p className="mb-2 text-xs text-slate-500">เรียงตามยอดขอเบิกมากที่สุด 10 อันดับแรก</p>
           <Legend series={MONEY_SERIES} />
@@ -191,7 +191,7 @@ export default async function DashboardPage({
           />
         </section>
 
-        <section className="card">
+        <section className="card min-w-0">
           <h2 className="mb-1 font-semibold text-slate-800">ยอดตามประเภทกิจกรรม</h2>
           <p className="mb-2 text-xs text-slate-500">เรียงตามยอดขอเบิกมากที่สุด 10 อันดับแรก</p>
           <Legend series={MONEY_SERIES} />
@@ -206,7 +206,7 @@ export default async function DashboardPage({
       </div>
 
       {/* ---------- Memo ---------- */}
-      <section className="card space-y-3">
+      <section className="card min-w-0 space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="font-semibold text-slate-800">Memo โครงการ</h2>
@@ -219,7 +219,7 @@ export default async function DashboardPage({
           </Link>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {MEMO_STATUS_ORDER.map((s) => (
             <Link
               key={s}

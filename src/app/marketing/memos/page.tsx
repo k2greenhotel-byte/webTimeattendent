@@ -48,7 +48,7 @@ export default async function MemosPage({
         <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{params.err}</p>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {MEMO_STATUS_ORDER.map((s) => (
           <Link key={s} href={`/marketing/memos?status=${s}`} className="card hover:border-brand-300">
             <p className="text-xs text-slate-500">{MEMO_STATUS_LABEL[s]}</p>
