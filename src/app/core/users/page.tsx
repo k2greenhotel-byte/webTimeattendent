@@ -3,7 +3,7 @@ import { listCompanies, listCoreUsers, listPrograms } from "@/lib/core-db";
 import { ACCESS_LEVELS, ACCESS_LEVEL_HINT, ACCESS_LEVEL_LABEL } from "@/lib/core-types";
 import { listBranches } from "@/lib/db";
 import { formatPhone } from "@/lib/phone";
-import { createUserForm, deleteUserForm } from "./actions";
+import { createUserForm, deleteUserForm, saveUserProgramsForm } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export default async function UsersPage({
       <div>
         <h1 className="text-xl font-bold text-slate-800">กำหนดผู้ใช้งาน</h1>
         <p className="text-sm text-slate-500">
-          User ID ชื่อผู้ใช้ รหัสผ่าน และสถานะ — กดที่ชื่อเพื่อกำหนดบริษัท/สาขา โปรแกรม และสิทธิ์รายเมนู
+          User ID ชื่อผู้ใช้ รหัสผ่าน และสถานะ · เลือกโปรแกรมที่ใช้งานได้จากในตารางแล้วกดบันทึกในแถวนั้น — กดที่ชื่อเพื่อกำหนดบริษัท/สาขาและสิทธิ์รายเมนูละเอียด
         </p>
       </div>
 
@@ -154,7 +154,7 @@ export default async function UsersPage({
                 <th>เบอร์มือถือ</th>
                 <th>ระดับ</th>
                 <th>ขอบเขต</th>
-                <th>โปรแกรม</th>
+                <th>โปรแกรมที่ใช้งานได้ ({programs.length})</th>
                 <th>สถานะ</th>
                 <th>จัดการ</th>
               </tr>
@@ -172,7 +172,39 @@ export default async function UsersPage({
                   <td>{formatPhone(u.phone)}</td>
                   <td>{ACCESS_LEVEL_LABEL[u.access_level]}</td>
                   <td>{scopeText(u)}</td>
-                  <td>{u.program_ids.length}</td>
+                  <td className="text-left">
+                    <form
+                      action={saveUserProgramsForm}
+                      className="flex flex-wrap items-center gap-1.5"
+                    >
+                      <input type="hidden" name="id" value={u.id} />
+                      <input type="hidden" name="full_name" value={u.full_name} />
+                      <input type="hidden" name="q" value={params.q ?? ""} />
+
+                      {programs.map((p) => (
+                        <label
+                          key={p.id}
+                          title={p.name}
+                          className="flex items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
+                        >
+                          <input
+                            type="checkbox"
+                            name="program_ids"
+                            value={p.id}
+                            defaultChecked={u.program_ids.includes(p.id)}
+                          />
+                          {p.icon} {p.code}
+                        </label>
+                      ))}
+
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-brand-100 bg-brand-50 px-2 py-0.5 text-xs text-brand-700 hover:bg-brand-100"
+                      >
+                        บันทึก
+                      </button>
+                    </form>
+                  </td>
                   <td>
                     <span
                       className={`badge ${

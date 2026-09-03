@@ -423,3 +423,26 @@ export async function resetUserPin(userId: string, pinHash: string): Promise<voi
     .eq("id", userId);
   if (error) throw new Error(`ตั้งรหัสผ่านใหม่ไม่สำเร็จ: ${error.message}`);
 }
+
+/**
+ * อ่านสถานะปัจจุบันของบัญชีจากฐานข้อมูล (ไม่เชื่อค่าที่ติดมากับ cookie)
+ * ใช้ตรวจซ้ำตอนเข้าหน้าที่ต้องมีสิทธิ์ เพราะ cookie อายุ 12 ชม.
+ * ถ้าแอดมินปิดบัญชีหรือลดระดับระหว่างนั้นต้องมีผลทันที
+ */
+export async function getLiveAccount(
+  userId: string,
+): Promise<{ is_active: boolean; access_level: AccessLevel } | null> {
+  const { data, error } = await getSupabase()
+    .from("employees")
+    .select("is_active, access_level")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`ตรวจสอบสถานะบัญชีไม่สำเร็จ: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    is_active: Boolean(data.is_active),
+    access_level: (data.access_level ?? "user") as AccessLevel,
+  };
+}

@@ -2,8 +2,7 @@ import Link from "next/link";
 import { logoutAction } from "@/app/login/actions";
 import { listPrograms } from "@/lib/core-db";
 import { ACCESS_LEVEL_LABEL, MENU_KIND_LABEL, type EffectiveMenuPermission } from "@/lib/core-types";
-import { getMyPermissions } from "@/lib/session";
-import { requireUser } from "@/lib/session";
+import { getLiveAccount, getMyPermissions, requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +14,12 @@ export default async function AppsPage({
 }) {
   const params = await searchParams;
   const user = await requireUser();
-  const [permissions, programs] = await Promise.all([getMyPermissions(), listPrograms(true)]);
+  const live = await getLiveAccount();
+  const closed = !live || !live.is_active;
+
+  const [permissions, programs] = closed
+    ? [[], []]
+    : await Promise.all([getMyPermissions(), listPrograms(true)]);
 
   const byProgram = new Map<string, EffectiveMenuPermission[]>();
   for (const p of permissions) {
@@ -36,7 +40,7 @@ export default async function AppsPage({
         <div className="mr-auto">
           <h1 className="text-lg font-bold text-slate-800">โปรแกรมขององค์กร</h1>
           <p className="text-sm text-slate-500">
-            {user.full_name} · {ACCESS_LEVEL_LABEL[user.level]}
+            {user.full_name} · {ACCESS_LEVEL_LABEL[live?.access_level ?? user.level]}
             {user.company_name ? ` · ${user.company_name}` : ""}
             {user.branch_name ? ` · สาขา ${user.branch_name}` : ""}
           </p>
@@ -54,11 +58,17 @@ export default async function AppsPage({
         </form>
       </header>
 
-      {params.err && (
+      {params.err && !closed && (
         <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{params.err}</p>
       )}
 
-      {cards.length === 0 && (
+      {closed && (
+        <p className="card text-sm text-rose-700">
+          บัญชีนี้ถูกปิดการใช้งานหรือถูกลบออกจากระบบแล้ว — กดออกจากระบบแล้วติดต่อผู้ดูแลระบบ
+        </p>
+      )}
+
+      {!closed && cards.length === 0 && (
         <p className="card text-sm text-slate-600">
           บัญชีนี้ยังไม่ได้รับสิทธิ์เข้าโปรแกรมใดเลย กรุณาติดต่อผู้ดูแลระบบ
         </p>

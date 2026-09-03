@@ -12,7 +12,7 @@ import {
   verifyAdminToken,
   verifySessionToken,
 } from "./session-token";
-import { getEffectivePermissions } from "./core-db";
+import { getEffectivePermissions, getLiveAccount as getLiveAccountRow } from "./core-db";
 import { PERM_ACTION_LABEL, type EffectiveMenuPermission, type PermAction, type WorkContext } from "./core-types";
 import { accessibleProgramCodes, can, isCoreAdmin } from "./permissions";
 import type { SessionUser } from "./types";
@@ -77,6 +77,9 @@ export async function requireAdmin(): Promise<void> {
   if (!(await isAdminAuthed())) redirect("/admin");
 }
 
+const ACCOUNT_CLOSED =
+  "บัญชีนี้ถูกปิดการใช้งานหรือถูกลบแล้ว กรุณาออกจากระบบแล้วติดต่อผู้ดูแลระบบ";
+
 // ---------- ระบบส่วนกลาง: บริษัท/สาขาที่เลือก + สิทธิ์รายเมนู ----------
 
 /** เปลี่ยนบริษัท/สาขาที่กำลังทำงานอยู่ โดยออก session ใหม่ให้ (ข้อมูลอื่นคงเดิม) */
@@ -96,8 +99,32 @@ export const getMyPermissions = cache(async (): Promise<EffectiveMenuPermission[
   return getEffectivePermissions(user.id);
 });
 
+/**
+ * สถานะบัญชีจริงในฐานข้อมูล ณ ตอนนี้ — cache ต่อหนึ่ง request
+ * cookie มีอายุ 12 ชม. ถ้าแอดมินปิดบัญชี ลบบัญชี หรือลดระดับระหว่างนั้น
+ * ต้องมีผลทันทีโดยไม่ต้องรอผู้ใช้ล็อกเอาต์
+ */
+export const getLiveAccount = cache(async () => {
+  const user = await getSessionUser();
+  if (!user) return null;
+  return getLiveAccountRow(user.id);
+});
+
+/** ผู้ใช้ที่ล็อกอินอยู่ พร้อมระดับล่าสุดจากฐานข้อมูล — บัญชีถูกปิด/ลบแล้วจะไปต่อไม่ได้ */
+export async function requireActiveUser(): Promise<SessionUser> {
+  const user = await requireUser();
+  const live = await getLiveAccount();
+
+  if (!live || !live.is_active) {
+    redirect(`/apps?err=${encodeURIComponent(ACCOUNT_CLOSED)}`);
+  }
+  return { ...user, level: live.access_level };
+}
+
 /** ตรวจว่าผู้ใช้ที่ล็อกอินอยู่ทำสิ่งนี้กับเมนูนี้ได้ไหม (ไม่ redirect) */
 export async function checkPermission(menuCode: string, action: PermAction = "read"): Promise<boolean> {
+  const live = await getLiveAccount();
+  if (!live || !live.is_active) return false;
   return can(await getMyPermissions(), menuCode, action);
 }
 
@@ -106,7 +133,7 @@ export async function requirePermission(
   menuCode: string,
   action: PermAction = "read",
 ): Promise<SessionUser> {
-  const user = await requireUser();
+  const user = await requireActiveUser();
   if (!(await checkPermission(menuCode, action))) {
     redirect(`/apps?err=${encodeURIComponent(`ไม่มีสิทธิ์${PERM_ACTION_LABEL[action]}ข้อมูลในเมนูนี้ กรุณาติดต่อผู้ดูแลระบบ`)}`);
   }
@@ -115,7 +142,7 @@ export async function requirePermission(
 
 /** ประตูเข้าระบบส่วนกลาง — เปิดให้ระดับ admin/ผู้ช่วย admin หรือผู้ที่ผ่าน PIN หลังบ้านแล้ว */
 export async function requireCoreAdmin(): Promise<SessionUser> {
-  const user = await requireUser();
+  const user = await requireActiveUser();
   if (!isCoreAdmin(user.level) && !(await isAdminAuthed())) {
     redirect(`/apps?err=${encodeURIComponent("ระบบส่วนกลางเปิดให้เฉพาะผู้ดูแลระบบและผู้ช่วยผู้ดูแลระบบ")}`);
   }
@@ -124,7 +151,7 @@ export async function requireCoreAdmin(): Promise<SessionUser> {
 
 /** ใช้ในหน้าแรกของแต่ละโปรแกรม — ไม่มีสิทธิ์เลยสักเมนูในโปรแกรมนี้จะถูกส่งกลับหน้ารวมโปรแกรม */
 export async function requireProgram(programCode: string): Promise<SessionUser> {
-  const user = await requireUser();
+  const user = await requireActiveUser();
   if (!accessibleProgramCodes(await getMyPermissions()).includes(programCode)) {
     redirect(`/apps?err=${encodeURIComponent("ไม่มีสิทธิ์เข้าใช้งานโปรแกรมนี้ กรุณาติดต่อผู้ดูแลระบบ")}`);
   }

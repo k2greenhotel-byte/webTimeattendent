@@ -13,8 +13,11 @@ function str(form: FormData, key: string): string {
   return String(form.get(key) ?? "").trim();
 }
 
-function back(message: string, isError = false): never {
-  redirect(`/core/users?${isError ? "err" : "msg"}=${encodeURIComponent(message)}`);
+function back(message: string, isError = false, keyword = ""): never {
+  const query = new URLSearchParams();
+  if (keyword) query.set("q", keyword);
+  query.set(isError ? "err" : "msg", message);
+  redirect(`/core/users?${query.toString()}`);
 }
 
 function readLevel(form: FormData, key = "access_level"): AccessLevel {
@@ -101,4 +104,41 @@ export async function deleteUserForm(form: FormData): Promise<void> {
 
   revalidatePath("/core/users");
   back(`ลบผู้ใช้งานเรียบร้อยแล้ว · ลบรูปการลงเวลา ${photosDeleted} รูป`);
+}
+
+/**
+ * เลือกโปรแกรมที่ผู้ใช้คนนี้ใช้งานได้ จากตารางรายชื่อโดยตรง
+ * (ไม่ต้องเข้าหน้ารายละเอียด — ปรับทีละคนแล้วกดบันทึกในแถวนั้น)
+ */
+export async function saveUserProgramsForm(form: FormData): Promise<void> {
+  const actor = await requireCoreAdmin();
+  const id = str(form, "id");
+  const keyword = str(form, "q");
+  const programIds = form.getAll("program_ids").map(String);
+
+  if (!id) back("ไม่พบผู้ใช้งานที่ต้องการแก้สิทธิ์โปรแกรม", true, keyword);
+
+  const name = str(form, "full_name") || "ผู้ใช้งาน";
+
+  try {
+    await setUserPrograms(id, programIds);
+    await logAudit({
+      actor_id: actor.id,
+      action: "update_user_programs",
+      target_table: "user_programs",
+      target_id: id,
+      after: { programs: programIds.length },
+    });
+  } catch (err) {
+    back(err instanceof Error ? err.message : "บันทึกสิทธิ์โปรแกรมไม่สำเร็จ", true, keyword);
+  }
+
+  revalidatePath("/core/users");
+  back(
+    programIds.length > 0
+      ? `บันทึกสิทธิ์โปรแกรมของ ${name} แล้ว (${programIds.length} โปรแกรม)`
+      : `${name} ถูกปิดสิทธิ์เข้าใช้งานทุกโปรแกรมแล้ว`,
+    false,
+    keyword,
+  );
 }
