@@ -49,7 +49,7 @@ export async function loginWithPhone(phoneInput: string, pin: string): Promise<L
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("employees")
-    .select("id, emp_code, full_name, role, is_active, pin_hash, failed_attempts, locked_until")
+    .select("id, emp_code, full_name, role, access_level, is_active, pin_hash, failed_attempts, locked_until")
     .eq("phone", phone)
     .maybeSingle();
 
@@ -95,6 +95,7 @@ export async function loginWithPhone(phoneInput: string, pin: string): Promise<L
       emp_code: data.emp_code,
       full_name: data.full_name,
       role: data.role === "admin" ? "admin" : "employee",
+      level: (data.access_level ?? (data.role === "admin" ? "admin" : "user")) as SessionUser["level"],
     },
   };
 }
@@ -132,4 +133,18 @@ export async function changeOwnPin(
 
   if (updateError) return { ok: false, error: `เปลี่ยนรหัสผ่านไม่สำเร็จ: ${updateError.message}` };
   return { ok: true };
+}
+
+/**
+ * เปลี่ยนรหัสผ่านจากหน้าล็อกอิน (ยังไม่ได้เข้าระบบ)
+ * ต้องยืนยันตัวตนด้วยเบอร์มือถือ + รหัสผ่านเดิมก่อน จึงจะตั้งรหัสใหม่ได้
+ */
+export async function changePinFromLogin(
+  phoneInput: string,
+  currentPin: string,
+  newPin: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await loginWithPhone(phoneInput, currentPin);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  return changeOwnPin(auth.user.id, currentPin, newPin);
 }

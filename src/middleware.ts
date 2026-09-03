@@ -35,6 +35,11 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     "/punch/:path*",
+    "/apps",
+    "/apps/:path*",
+    "/core",
+    "/core/:path*",
+    "/select-context",
     "/me/:path*",
     "/admin",
     "/admin/:path*",

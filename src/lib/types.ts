@@ -1,3 +1,5 @@
+import type { AccessLevel } from "./core-types";
+
 export type UserRole = "employee" | "admin";
 
 export type PunchType = "check_in" | "break_out" | "break_in" | "check_out";
@@ -40,6 +42,8 @@ export type Branch = {
   id: string;
   code: string;
   name: string;
+  /** บริษัทที่สาขานี้สังกัด (null = ยังไม่ระบุบริษัท) */
+  company_id: string | null;
   address: string | null;
   phone: string | null;
   site_lat: number | null;
@@ -178,6 +182,13 @@ export type SessionUser = {
   emp_code: string;
   full_name: string;
   role: UserRole;
+  /** กลุ่มระดับการทำงาน — ตัวตัดสินสิทธิ์เริ่มต้นของทุกเมนู */
+  level: AccessLevel;
+  /** บริษัท/สาขาที่เลือกเข้าทำงานรอบนี้ (เลือกตอนล็อกอิน เปลี่ยนได้ที่ /select-context) */
+  company_id?: string | null;
+  company_name?: string | null;
+  branch_id?: string | null;
+  branch_name?: string | null;
 };
 
 export type Holiday = {

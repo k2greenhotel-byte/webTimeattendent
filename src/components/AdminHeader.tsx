@@ -12,6 +12,7 @@ const NAV = [
   { href: "/admin/setup", label: "ตั้งค่าข้อมูลหลัก" },
   { href: "/admin/settings", label: "ตั้งค่าองค์กร" },
   { href: "/admin/data", label: "ลบข้อมูล" },
+  { href: "/core", label: "ระบบส่วนกลาง" },
 ];
 
 export default function AdminHeader() {

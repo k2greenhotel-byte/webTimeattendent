@@ -12,13 +12,13 @@ function safeNext(value: string | undefined): string | null {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; msg?: string }>;
 }) {
   const params = await searchParams;
   const next = safeNext(params.next);
 
   const user = await getSessionUser();
-  if (user) redirect(next ?? (user.role === "admin" ? "/admin" : "/punch"));
+  if (user) redirect(next ?? "/apps");
 
   const forMarketing = next?.startsWith("/marketing") ?? false;
 
@@ -35,10 +35,22 @@ export default async function LoginPage({
           <p className="mt-1 text-sm text-slate-500">เข้าสู่ระบบด้วยเบอร์มือถือและรหัสผ่าน</p>
         </div>
 
+        {params.msg && (
+          <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {params.msg}
+          </p>
+        )}
+
         <LoginForm next={next ?? undefined} />
 
+        <p className="mt-4 text-center text-sm">
+          <a href="/login/change-pin" className="text-brand-600 hover:underline">
+            เปลี่ยนรหัสผ่าน / PIN ของฉัน
+          </a>
+        </p>
+
         {!forMarketing && (
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-2 text-center text-sm text-slate-500">
             <a href="/marketing" className="text-brand-600 hover:underline">
               ระบบกิจกรรมการตลาด →
             </a>

@@ -4,5 +4,6 @@ import { getSessionUser } from "@/lib/session";
 export default async function HomePage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  redirect(user.role === "admin" ? "/admin" : "/punch");
+  // หน้ารวมโปรแกรมจะเลือกให้เองว่าคนนี้เข้าโปรแกรมไหนได้บ้าง
+  redirect("/apps");
 }

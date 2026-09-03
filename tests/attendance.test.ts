@@ -246,6 +246,7 @@ describe("resolveSettings (องค์กร + กะ + สาขา)", () => {
     id: "b1",
     code: "BKK01",
     name: "สาขาสยาม",
+    company_id: "c1",
     address: null,
     phone: null,
     site_lat: 13.7,

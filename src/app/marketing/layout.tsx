@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import MarketingHeader from "@/components/marketing/MarketingHeader";
-import { requireUser } from "@/lib/session";
+import { requireProgram } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "ระบบกิจกรรมการตลาด",
@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 /** ทุกหน้าในโมดูลนี้ต้องล็อกอินด้วยเบอร์มือถือ + รหัสผ่านก่อน */
 export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireUser();
+  const user = await requireProgram("MKT");
 
   return (
     <div className="min-h-screen">
