@@ -36,6 +36,10 @@ export const config = {
   matcher: [
     "/punch/:path*",
     "/apps",
+    "/customers",
+    "/customers/:path*",
+    "/api/customer/:path*",
+    "/api/geo",
     "/apps/:path*",
     "/core",
     "/core/:path*",

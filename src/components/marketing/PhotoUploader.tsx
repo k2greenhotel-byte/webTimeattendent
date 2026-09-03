@@ -11,6 +11,8 @@ type Props = {
   initialPaths?: string[];
   /** ใช้แยกโฟลเดอร์ในถังเก็บไฟล์ เช่น activity / letter / ack */
   prefix?: string;
+  /** ปลายทางอัปโหลด/อ่านรูป — โมดูลอื่นส่ง endpoint ของตัวเองเข้ามาได้ */
+  endpoint?: string;
 };
 
 const MAX_EDGE = 1600;
@@ -41,6 +43,7 @@ export default function PhotoUploader({
   max = 10,
   initialPaths = [],
   prefix = "activity",
+  endpoint = "/api/marketing/photo",
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [paths, setPaths] = useState<string[]>(initialPaths);
@@ -68,7 +71,7 @@ export default function PhotoUploader({
           form.append("photo", blob, "photo.jpg");
           form.append("prefix", prefix);
 
-          const res = await fetch("/api/marketing/photo", { method: "POST", body: form });
+          const res = await fetch(endpoint, { method: "POST", body: form });
           const data = (await res.json()) as { ok: boolean; path?: string; error?: string };
           if (!res.ok || !data.ok || !data.path) {
             setError(data.error ?? "อัปโหลดรูปไม่สำเร็จ");
@@ -85,7 +88,7 @@ export default function PhotoUploader({
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     },
-    [max, paths.length, prefix],
+    [max, paths.length, prefix, endpoint],
   );
 
   const remove = useCallback((path: string) => {
@@ -107,7 +110,7 @@ export default function PhotoUploader({
             <div key={path} className="relative overflow-hidden rounded-xl border border-slate-200">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`/api/marketing/photo?path=${encodeURIComponent(path)}`}
+                src={`${endpoint}?path=${encodeURIComponent(path)}`}
                 alt="รูปแนบ"
                 className="h-24 w-full object-cover"
               />
