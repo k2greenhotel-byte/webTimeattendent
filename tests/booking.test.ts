@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   NO_STAFF,
   applyUpdate,
+  buildOverview,
   bookingOptionLabel,
   buildCalendar,
   countByBrandModel,
@@ -11,6 +12,7 @@ import {
   formatBaht,
   groupByDate,
   isOpenBooking,
+  monthlyTrend,
   parseAmount,
   queryFromParams,
   resolveDocStatus,
@@ -347,6 +349,117 @@ describe("สรุปตัวเลขสำหรับ dashboard", () => {
     expect(grouped[0].count).toBe(2);
     expect(grouped[0].models).toEqual([{ label: "Wave 110i", count: 2 }]);
     expect(grouped[1].brand).toBe("Yamaha");
+  });
+});
+
+describe("ภาพรวมทั้งหมด (1.4)", () => {
+  const TODAY = "2026-09-10";
+
+  it("นับยอดรวม สถานะ และเงินมัดจำแยกใบที่ยังเปิดอยู่", () => {
+    const rows = [
+      booking({ id: "1", deposit_amount: 3000 }),
+      booking({ id: "2", deposit_amount: 5000, doc_status: "closed", sale_contract_no: "SO-1", booking_status: "delivered" }),
+      booking({ id: "3", deposit_amount: 1000, doc_status: "cancelled", booking_status: "cancelled", cancel_reason: "changed_mind" }),
+    ];
+    const o = buildOverview(rows, TODAY);
+
+    expect(o.total).toBe(3);
+    expect(o.open).toBe(1);
+    expect(o.closed).toBe(1);
+    expect(o.cancelledDoc).toBe(1);
+    expect(o.sold).toBe(1);
+    expect(o.deposit).toBe(9000);
+    expect(o.depositOpen).toBe(3000);
+    expect(o.byBookingStatus.delivered).toBe(1);
+  });
+
+  it("อัตราปิดการขายคิดจากใบทั้งหมด ทศนิยม 1 ตำแหน่ง", () => {
+    const rows = [
+      booking({ id: "1", sale_contract_no: "SO-1" }),
+      booking({ id: "2" }),
+      booking({ id: "3" }),
+    ];
+    expect(buildOverview(rows, TODAY).closeRate).toBe(33.3);
+    expect(buildOverview([], TODAY).closeRate).toBe(0);
+  });
+
+  it("แยกใบที่เลยนัด / นัดวันนี้ / นัดใน 7 วัน ให้ถูกช่อง", () => {
+    const rows = [
+      booking({ id: "late", pickup_date: "2026-09-08" }),
+      booking({ id: "today", pickup_date: TODAY }),
+      booking({ id: "soon", pickup_date: "2026-09-17" }),
+      booking({ id: "far", pickup_date: "2026-09-18" }),
+    ];
+    const o = buildOverview(rows, TODAY);
+
+    expect(o.overdue.map((r) => r.id)).toEqual(["late"]);
+    expect(o.dueToday.map((r) => r.id)).toEqual(["today"]);
+    expect(o.dueSoon.map((r) => r.id)).toEqual(["soon"]);
+  });
+
+  it("ใบที่รับรถแล้วหรือปิดงานแล้ว ไม่ถือว่าเลยนัด", () => {
+    const rows = [
+      booking({ id: "1", pickup_date: "2026-09-01", booking_status: "delivered" }),
+      booking({ id: "2", pickup_date: "2026-09-01", doc_status: "closed" }),
+      booking({ id: "3", pickup_date: null }),
+    ];
+    expect(buildOverview(rows, TODAY).overdue).toEqual([]);
+  });
+
+  it("ยกเลิกแล้วยังไม่คืนเงิน ขึ้นรายการค้างคืนเงิน", () => {
+    const rows = [
+      booking({ id: "1", booking_status: "cancelled", cancel_reason: "got_other", refunded: false }),
+      booking({ id: "2", booking_status: "cancelled", cancel_reason: "got_other", refunded: true }),
+    ];
+    expect(buildOverview(rows, TODAY).refundPending.map((r) => r.id)).toEqual(["1"]);
+  });
+
+  it("นับรถที่ต้องสั่งเฉพาะใบที่ยังดำเนินการอยู่", () => {
+    const rows = [
+      booking({ id: "1", vehicle_status: "need_order" }),
+      booking({ id: "2", vehicle_status: "need_order", doc_status: "closed" }),
+    ];
+    expect(buildOverview(rows, TODAY).needOrder).toBe(1);
+  });
+
+  it("เรียงใบที่เลยนัดจากค้างนานสุดขึ้นก่อน", () => {
+    const rows = [
+      booking({ id: "b", pickup_date: "2026-09-05" }),
+      booking({ id: "a", pickup_date: "2026-09-01" }),
+    ];
+    expect(buildOverview(rows, TODAY).overdue.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("แนวโน้มยอดจองรายเดือน", () => {
+  it("คืนครบ 12 เดือนย้อนหลัง จบที่เดือนที่เลือก", () => {
+    const points = monthlyTrend([], 2026, 9, 12);
+    expect(points).toHaveLength(12);
+    expect(points[0].ym).toBe("2025-10");
+    expect(points[11].ym).toBe("2026-09");
+    expect(points[11].label).toBe("ก.ย. 69");
+  });
+
+  it("เดือนที่ไม่มีใบจองยังมีจุดเป็น 0 ไม่หายไปจากกราฟ", () => {
+    const points = monthlyTrend([booking({ booking_date: "2026-09-01" })], 2026, 9, 3);
+    expect(points.map((p) => p.total)).toEqual([0, 0, 1]);
+  });
+
+  it("นับใบจองและใบที่ปิดการขายได้แยกกัน", () => {
+    const rows = [
+      booking({ id: "1", booking_date: "2026-09-02", deposit_amount: 3000 }),
+      booking({ id: "2", booking_date: "2026-09-20", deposit_amount: 2000, sale_contract_no: "SO-1" }),
+      booking({ id: "3", booking_date: "2026-08-15", deposit_amount: 1000 }),
+    ];
+    const points = monthlyTrend(rows, 2026, 9, 2);
+
+    expect(points[0]).toMatchObject({ ym: "2026-08", total: 1, sold: 0, deposit: 1000 });
+    expect(points[1]).toMatchObject({ ym: "2026-09", total: 2, sold: 1, deposit: 5000 });
+  });
+
+  it("ใบที่อยู่นอกช่วงที่ขอ ไม่ถูกนับเข้ามา", () => {
+    const points = monthlyTrend([booking({ booking_date: "2024-01-05" })], 2026, 9, 12);
+    expect(points.reduce((sum, p) => sum + p.total, 0)).toBe(0);
   });
 });
 

@@ -3,7 +3,7 @@
  * หน้าเว็บ · server action · dashboard · ไฟล์ export เรียกใช้ชุดเดียวกันหมด
  * ตัวเลขบนจอกับในรายงานจะได้ตรงกันเสมอเมื่อกฎเปลี่ยน
  */
-import { dateRange, monthBounds } from "./datetime";
+import { addDays, dateRange, monthBounds, thaiMonthShort, workDateOf } from "./datetime";
 import {
   BOOKING_STATUS_LABEL,
   BOOKING_STATUS_ORDER,
@@ -303,6 +303,151 @@ export function summarize(rows: BookingRow[]): BookingSummary {
   return summary;
 }
 
+// ---------- ภาพรวมทั้งหมดในหน้าเดียว (1.4) ----------
+
+/**
+ * ตัวเลขภาพรวมของใบจองทั้งชุดที่ส่งเข้ามา (ไม่จำกัดเดือน)
+ * แยกเป็น 2 กลุ่ม: "สรุปยอด" (นับเลข) และ "ต้องติดตาม" (รายการใบที่ต้องลงมือทำ)
+ */
+export type BookingOverview = {
+  total: number;
+  /** ยังดำเนินการอยู่ (สถานะเอกสาร = ใช้งาน) */
+  open: number;
+  closed: number;
+  cancelledDoc: number;
+  /** ปิดการขายได้ = มีเลขที่สัญญาขาย */
+  sold: number;
+  /** อัตราปิดการขายจากใบจองทั้งหมด (%) ทศนิยม 1 ตำแหน่ง */
+  closeRate: number;
+  deposit: number;
+  /** มัดจำเฉพาะใบที่ยังดำเนินการอยู่ — เงินก้อนที่ยังถือไว้และยังไม่จบงาน */
+  depositOpen: number;
+  byBookingStatus: Record<BookingStatus, number>;
+  /** รถที่ต้องสั่งเพิ่ม (นับเฉพาะใบที่ยังดำเนินการอยู่) */
+  needOrder: number;
+
+  /** เลยวันนัดรับรถแล้วแต่ยังไม่ได้รับรถ */
+  overdue: BookingRow[];
+  /** นัดรับรถวันนี้ */
+  dueToday: BookingRow[];
+  /** นัดรับรถใน 7 วันข้างหน้า (ไม่รวมวันนี้) */
+  dueSoon: BookingRow[];
+  /** ยกเลิกแล้วแต่ยังไม่ได้บันทึกคืนเงินลูกค้า */
+  refundPending: BookingRow[];
+};
+
+/** เรียงตามวันนัดรับรถจากใกล้ไปไกล (ใบที่ไม่มีวันนัดไว้ท้ายสุด) */
+function byPickupDate(a: BookingRow, b: BookingRow): number {
+  return (a.pickup_date ?? "9999-12-31").localeCompare(b.pickup_date ?? "9999-12-31");
+}
+
+/**
+ * ประกอบภาพรวมทั้งหมดจากใบจองชุดเดียว — หน้า dashboard เรียกครั้งเดียวได้ทุกตัวเลข
+ * `today` รับเข้ามาเพื่อให้ทดสอบได้ (ค่าเริ่มต้นคือวันนี้ตามเวลาไทย)
+ */
+export function buildOverview(rows: BookingRow[], today = workDateOf()): BookingOverview {
+  const soon = addDays(today, 7);
+
+  const overview: BookingOverview = {
+    total: rows.length,
+    open: 0,
+    closed: 0,
+    cancelledDoc: 0,
+    sold: 0,
+    closeRate: 0,
+    deposit: 0,
+    depositOpen: 0,
+    byBookingStatus: emptyCounts(BOOKING_STATUS_LABEL),
+    needOrder: 0,
+    overdue: [],
+    dueToday: [],
+    dueSoon: [],
+    refundPending: [],
+  };
+
+  for (const row of rows) {
+    const amount = Number(row.deposit_amount ?? 0);
+    overview.deposit += amount;
+    overview.byBookingStatus[row.booking_status] += 1;
+    if ((row.sale_contract_no ?? "").trim()) overview.sold += 1;
+
+    if (row.doc_status === "closed") overview.closed += 1;
+    if (row.doc_status === "cancelled") overview.cancelledDoc += 1;
+
+    // ใบที่ยกเลิกแล้วยังไม่คืนเงิน ต้องตามจ่ายคืนลูกค้า
+    if (row.booking_status === "cancelled" && !row.refunded) overview.refundPending.push(row);
+
+    if (row.doc_status !== "active") continue;
+
+    overview.open += 1;
+    overview.depositOpen += amount;
+    if (row.vehicle_status === "need_order") overview.needOrder += 1;
+
+    // นัดรับรถ: เลยกำหนด / วันนี้ / ภายใน 7 วัน (เฉพาะใบที่ยังไม่ได้รับรถ)
+    const pickup = row.pickup_date;
+    if (!pickup || row.booking_status === "delivered") continue;
+    if (pickup < today) overview.overdue.push(row);
+    else if (pickup === today) overview.dueToday.push(row);
+    else if (pickup <= soon) overview.dueSoon.push(row);
+  }
+
+  overview.closeRate =
+    overview.total > 0 ? Math.round((overview.sold / overview.total) * 1000) / 10 : 0;
+
+  overview.overdue.sort(byPickupDate);
+  overview.dueToday.sort(byPickupDate);
+  overview.dueSoon.sort(byPickupDate);
+  overview.refundPending.sort(byPickupDate);
+
+  return overview;
+}
+
+/** ยอดจองรายเดือนหนึ่งจุดบนกราฟแนวโน้ม */
+export type TrendPoint = {
+  /** YYYY-MM */
+  ym: string;
+  /** "ก.ย. 69" */
+  label: string;
+  total: number;
+  sold: number;
+  deposit: number;
+};
+
+/**
+ * แนวโน้มย้อนหลังตามเดือนของ "วันที่จอง" — เดือนที่ไม่มีใบจองก็ยังมีจุดเป็น 0
+ * (กราฟต้องเห็นช่องว่างด้วย ไม่ใช่ข้ามเดือนที่ยอดเป็นศูนย์ไปเฉย ๆ)
+ */
+export function monthlyTrend(
+  rows: BookingRow[],
+  endYear: number,
+  endMonth: number,
+  months = 12,
+): TrendPoint[] {
+  const points: TrendPoint[] = [];
+
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const { year, month } = shiftMonth(endYear, endMonth, -i);
+    points.push({
+      ym: `${year}-${String(month).padStart(2, "0")}`,
+      label: `${thaiMonthShort(month)} ${String((year + 543) % 100).padStart(2, "0")}`,
+      total: 0,
+      sold: 0,
+      deposit: 0,
+    });
+  }
+
+  const index = new Map(points.map((p) => [p.ym, p]));
+  for (const row of rows) {
+    const point = index.get((row.booking_date ?? "").slice(0, 7));
+    if (!point) continue;
+    point.total += 1;
+    point.deposit += Number(row.deposit_amount ?? 0);
+    if ((row.sale_contract_no ?? "").trim()) point.sold += 1;
+  }
+
+  return points;
+}
+
 // ---------- แยกตามพนักงานขาย ----------
 
 export const NO_STAFF = "— ไม่ระบุพนักงาน —";
@@ -361,9 +506,9 @@ export function summarizeByStaff(rows: BookingRow[]): StaffSummary[] {
 }
 
 /** จัดกลุ่มนับจำนวน เรียงจากมากไปน้อย — ใช้กับ "แยกตามยี่ห้อ / รุ่นรถ" (1.4.2) */
-export function countByKey(
-  rows: BookingRow[],
-  pick: (row: BookingRow) => string | null | undefined,
+export function countByKey<T>(
+  rows: T[],
+  pick: (row: T) => string | null | undefined,
   fallback = "— ไม่ระบุ —",
 ): { label: string; count: number }[] {
   const map = new Map<string, number>();

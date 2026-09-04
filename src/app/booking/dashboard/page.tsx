@@ -1,12 +1,15 @@
 import Link from "next/link";
 import BookingCalendar from "@/components/booking/BookingCalendar";
 import BookingFilters from "@/components/booking/BookingFilters";
+import OverviewPanel from "@/components/booking/OverviewPanel";
 import StaffSummaryTable from "@/components/booking/StaffSummaryTable";
-import { HorizontalBarChart } from "@/components/marketing/Charts";
+import { GroupedBarChart, HorizontalBarChart } from "@/components/marketing/Charts";
 import {
+  buildOverview,
   countByBrandModel,
   countByKey,
   formatBaht,
+  monthlyTrend,
   queryFromParams,
   shiftMonth,
   staffNameOf,
@@ -32,6 +35,10 @@ import { requirePermission } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 const COUNT_SERIES = [{ key: "count", label: "จำนวนใบจอง", color: "#2f7de1" }];
+const TREND_SERIES = [
+  { key: "total", label: "ใบจอง", color: "#2f7de1" },
+  { key: "sold", label: "ปิดการขายได้", color: "#0d9488" },
+];
 const countFormat = (v: number) => v.toLocaleString("th-TH");
 
 /** ลิงก์เดือนก่อนหน้า/ถัดไป โดยคงเงื่อนไขค้นหาเดิมไว้ */
@@ -45,7 +52,14 @@ function monthHref(params: Record<string, string | undefined>, year: number, mon
   return `/booking/dashboard?${next.toString()}`;
 }
 
-/** หน้าจอ 1.4 — Dashboard: ปฏิทินนัดรับรถ/วันจอง และสรุปแยกตามยี่ห้อ รุ่น และสถานะ */
+/**
+ * หน้าจอ 1.4 — Dashboard ใบจอง
+ *
+ * แบ่งเป็น 2 ชั้นให้เห็นครบในหน้าเดียว:
+ *   ชั้นบน  = ภาพรวมทุกช่วงเวลา (ยอดรวม · งานที่ต้องตาม · แนวโน้มรายเดือน)
+ *   ชั้นล่าง = เจาะเดือนที่เลือก (ปฏิทิน · สถานะ · พนักงานขาย · ยี่ห้อ/รุ่น)
+ * ตัวกรองด้านบนมีผลกับทั้งสองชั้น ต่างกันแค่ช่วงเวลา
+ */
 export default async function BookingDashboardPage({
   searchParams,
 }: {
@@ -60,15 +74,19 @@ export default async function BookingDashboardPage({
   const field = params.by === "booking_date" ? "booking_date" : "pickup_date";
   const { from, to } = monthBounds(year, month);
 
-  // เดือนที่กำลังดูเป็นตัวกำหนดขอบเขตของทั้งหน้า (ทั้งปฏิทินและกราฟสรุป)
   const base = queryFromParams(params);
-  const query =
+
+  // ชั้นบน: ทุกช่วงเวลา (ตัดช่วงวันที่ออก เหลือเฉพาะเงื่อนไขอื่นที่ผู้ใช้เลือก)
+  const allTimeQuery = { ...base, from: null, to: null, pickup_from: null, pickup_to: null, limit: 2000 };
+  // ชั้นล่าง: เฉพาะเดือนที่กำลังดู ตามช่องวันที่ที่เลือกไว้
+  const monthQuery =
     field === "pickup_date"
       ? { ...base, pickup_from: from, pickup_to: to, from: null, to: null }
       : { ...base, from, to, pickup_from: null, pickup_to: null };
 
-  const [rows, branches, brands, models, variants, colors, staffNames] = await Promise.all([
-    listBookings(query),
+  const [allRows, rows, branches, brands, models, variants, colors, staffNames] = await Promise.all([
+    listBookings(allTimeQuery),
+    listBookings(monthQuery),
     listBranches(),
     listMaster("brand", { includeInactive: true }),
     listMaster("model", { includeInactive: true }),
@@ -76,6 +94,9 @@ export default async function BookingDashboardPage({
     listMaster("color", { includeInactive: true }),
     listBookingStaffNames(),
   ]);
+
+  const overview = buildOverview(allRows, today);
+  const trend = monthlyTrend(allRows, year, month, 12);
 
   const summary = summarize(rows);
   const prev = shiftMonth(year, month, -1);
@@ -115,22 +136,83 @@ export default async function BookingDashboardPage({
     },
   ];
 
+  const hasFilter = Object.entries(params).some(
+    ([key, value]) => value && !["year", "month", "by"].includes(key),
+  );
+
   return (
     <main className="mx-auto max-w-[110rem] space-y-4 p-3 sm:p-4">
-      <div className="no-print flex flex-wrap items-end justify-between gap-3">
+      <div className="no-print">
+        <h1 className="text-xl font-bold text-slate-800">1.4 Dashboard ใบจอง</h1>
+        <p className="text-sm text-slate-500">
+          ภาพรวมทั้งหมดอยู่ด้านบน · ด้านล่างเจาะรายเดือน
+          {hasFilter ? " · ตัวเลขทั้งหน้านับเฉพาะใบที่ตรงกับเงื่อนไขที่กรองไว้" : ""}
+        </p>
+      </div>
+
+      <div className="no-print">
+        <BookingFilters
+          params={params}
+          branches={branches}
+          brands={brands}
+          models={models}
+          variants={variants}
+          colors={colors}
+          staffNames={staffNames}
+          resetHref={`/booking/dashboard?year=${year}&month=${month}&by=${field}`}
+          extraHiddenFields={{ year: String(year), month: String(month), by: field }}
+        />
+      </div>
+
+      {/* ---------- ชั้นบน: ภาพรวมทุกช่วงเวลา ---------- */}
+      <section className="space-y-1">
+        <h2 className="font-semibold text-slate-800">ภาพรวมทุกช่วงเวลา</h2>
+        <p className="text-xs text-slate-500">
+          นับใบจองทั้งหมดในระบบ ไม่จำกัดเดือน · ข้อมูล ณ {formatThaiMonth(year, month)} (วันนี้)
+        </p>
+      </section>
+
+      <OverviewPanel overview={overview} />
+
+      <section className="card min-w-0 space-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="font-semibold text-slate-800">แนวโน้มยอดจอง 12 เดือนล่าสุด</h2>
+          <p className="text-sm text-slate-500">นับตามวันที่จอง</p>
+        </div>
+        <GroupedBarChart
+          groups={trend.map((p) => ({ label: p.label, values: { total: p.total, sold: p.sold } }))}
+          series={TREND_SERIES}
+        />
+        <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+          {TREND_SERIES.map((s) => (
+            <span key={s.key} className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: s.color }} />
+              {s.label}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* ---------- ชั้นล่าง: เจาะเดือนที่เลือก ---------- */}
+      <div className="no-print flex flex-wrap items-end justify-between gap-3 border-t border-slate-200 pt-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">1.4 Dashboard ใบจอง</h1>
+          <h2 className="font-semibold text-slate-800">เจาะรายเดือน · {formatThaiMonth(year, month)}</h2>
           <p className="text-sm text-slate-500">
-            ทุกตัวเลขในหน้านี้นับเฉพาะ{field === "pickup_date" ? "ใบที่นัดรับรถ" : "ใบที่จอง"}ใน
-            {formatThaiMonth(year, month)}
+            หัวข้อถัดจากนี้นับเฉพาะ{field === "pickup_date" ? "ใบที่นัดรับรถ" : "ใบที่จอง"}ในเดือนนี้
           </p>
         </div>
 
         <div className="flex w-full items-center gap-2 sm:w-auto">
-          <Link href={monthHref(params, prev.year, prev.month)} className="btn-secondary flex-1 sm:flex-none">
+          <Link
+            href={monthHref(params, prev.year, prev.month)}
+            className="btn-secondary flex-1 sm:flex-none"
+          >
             ← {formatThaiMonth(prev.year, prev.month)}
           </Link>
-          <Link href={monthHref(params, next.year, next.month)} className="btn-secondary flex-1 sm:flex-none">
+          <Link
+            href={monthHref(params, next.year, next.month)}
+            className="btn-secondary flex-1 sm:flex-none"
+          >
             {formatThaiMonth(next.year, next.month)} →
           </Link>
         </div>
@@ -155,25 +237,12 @@ export default async function BookingDashboardPage({
         ))}
       </div>
 
-      <div className="no-print">
-        <BookingFilters
-          params={params}
-          branches={branches}
-          brands={brands}
-          models={models}
-          variants={variants}
-          colors={colors}
-          staffNames={staffNames}
-          resetHref={`/booking/dashboard?year=${year}&month=${month}&by=${field}`}
-          extraHiddenFields={{ year: String(year), month: String(month), by: field }}
-        />
-      </div>
-
       {/* ---------- 1.4.1 ปฏิทิน ---------- */}
       <section className="card space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h2 className="font-semibold text-slate-800">
-            ปฏิทิน{field === "pickup_date" ? "วันนัดรับรถ" : "วันที่จอง"} · {formatThaiMonth(year, month)}
+            ปฏิทิน{field === "pickup_date" ? "วันนัดรับรถ" : "วันที่จอง"} ·{" "}
+            {formatThaiMonth(year, month)}
           </h2>
           <p className="text-sm text-slate-500">
             {summary.total} ใบ · เงินมัดจำรวม {formatBaht(summary.deposit)}

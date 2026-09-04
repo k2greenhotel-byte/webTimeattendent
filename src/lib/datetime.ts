@@ -114,6 +114,13 @@ export function thaiMonthShort(month1to12: number): string {
   return THAI_MONTHS_SHORT[month1to12 - 1] ?? "";
 }
 
+/** เลื่อนวันที่ YYYY-MM-DD ไปข้างหน้า (บวก) หรือถอยหลัง (ลบ) กี่วันก็ได้ */
+export function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const moved = new Date(Date.UTC(y, m - 1, d + days));
+  return `${moved.getUTCFullYear()}-${pad(moved.getUTCMonth() + 1)}-${pad(moved.getUTCDate())}`;
+}
+
 /** รายการวันที่ทั้งหมดระหว่าง from ถึง to (รวมปลายทั้งสองด้าน) */
 export function dateRange(from: string, to: string): string[] {
   const out: string[] = [];
