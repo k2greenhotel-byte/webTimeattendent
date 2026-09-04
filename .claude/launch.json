@@ -29,6 +29,15 @@
         "3200"
       ],
       "port": 3200
+    },
+    {
+      "name": "webTimeattendent-3300",
+      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
+      "runtimeArgs": [
+        "scripts/dev-isolated.mjs",
+        "3300"
+      ],
+      "port": 3300
     }
   ]
 }

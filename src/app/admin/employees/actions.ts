@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { hashPin, isValidPin, PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/lib/auth";
-import { deleteEmployee, logAudit } from "@/lib/db";
+import { listPrograms, setUserBranches, setUserCompanies, setUserPrograms } from "@/lib/core-db";
+import { deleteEmployee, getBranchById, logAudit } from "@/lib/db";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { requireAdmin } from "@/lib/session";
 import { getSupabase } from "@/lib/supabase-server";
@@ -62,6 +63,17 @@ export async function createEmployeeAction(
   if (error) {
     return { error: duplicateMessage(error, "เพิ่มพนักงานไม่สำเร็จ"), success: null };
   }
+
+  // หน้านี้ไม่มีช่องเลือกบริษัท/สาขา/โปรแกรมที่เข้าได้ (ต่างจาก /core/users) —
+  // ให้เข้าสาขาของตัวเองกับบริษัทของสาขานั้นได้ทันที และให้สิทธิ์โปรแกรมลงเวลา (ATT)
+  // เป็นค่าเริ่มต้น ไม่งั้นพนักงานที่เพิ่งเพิ่มจะล็อกอินไม่ได้เพราะไม่มีบริษัท/สาขาให้เลือก
+  const branch = row.branch_id ? await getBranchById(row.branch_id) : null;
+  const attProgramId = (await listPrograms(true)).find((p) => p.code === "ATT")?.id;
+  await Promise.all([
+    row.branch_id ? setUserBranches(data.id, [row.branch_id]) : Promise.resolve(),
+    branch?.company_id ? setUserCompanies(data.id, [branch.company_id]) : Promise.resolve(),
+    attProgramId ? setUserPrograms(data.id, [attProgramId]) : Promise.resolve(),
+  ]);
 
   await logAudit({
     actor_id: null,
