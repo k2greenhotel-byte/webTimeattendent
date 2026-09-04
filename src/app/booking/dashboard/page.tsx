@@ -2,10 +2,12 @@ import Link from "next/link";
 import BookingCalendar from "@/components/booking/BookingCalendar";
 import BookingFilters from "@/components/booking/BookingFilters";
 import OverviewPanel from "@/components/booking/OverviewPanel";
+import RankingPanel from "@/components/booking/RankingPanel";
 import StaffSummaryTable from "@/components/booking/StaffSummaryTable";
 import { GroupedBarChart, HorizontalBarChart } from "@/components/marketing/Charts";
 import {
   buildOverview,
+  buildRankings,
   countByBrandModel,
   countByKey,
   formatBaht,
@@ -97,6 +99,7 @@ export default async function BookingDashboardPage({
 
   const overview = buildOverview(allRows, today);
   const trend = monthlyTrend(allRows, year, month, 12);
+  const rankings = buildRankings(allRows, today);
 
   const summary = summarize(rows);
   const prev = shiftMonth(year, month, -1);
@@ -173,6 +176,8 @@ export default async function BookingDashboardPage({
       </section>
 
       <OverviewPanel overview={overview} />
+
+      <RankingPanel rankings={rankings} />
 
       <section className="card min-w-0 space-y-2">
         <div className="flex flex-wrap items-end justify-between gap-2">

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  NO_BRANCH,
+  NO_MODEL,
   NO_STAFF,
+  TOP_N,
   applyUpdate,
   buildOverview,
+  buildRankings,
   bookingOptionLabel,
   buildCalendar,
   countByBrandModel,
@@ -12,6 +16,7 @@ import {
   formatBaht,
   groupByDate,
   isOpenBooking,
+  isOutOfStock,
   monthlyTrend,
   parseAmount,
   queryFromParams,
@@ -57,6 +62,7 @@ function booking(over: Partial<BookingRow> = {}): BookingRow {
     company_id: null,
     created_by: null,
     created_at: "2026-09-01T03:00:00Z",
+    updated_at: "2026-09-01T03:00:00Z",
     customer_code: "C000001",
     customer_name: "นายสมชาย ใจดี",
     branch_name: "สาขาหลัก",
@@ -428,6 +434,121 @@ describe("ภาพรวมทั้งหมด (1.4)", () => {
       booking({ id: "a", pickup_date: "2026-09-01" }),
     ];
     expect(buildOverview(rows, TODAY).overdue.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("อันดับสูงสุดและรายการเฝ้าระวังสต็อก (1.4)", () => {
+  const TODAY = "2026-09-10";
+
+  it("รถที่ยังไม่มีในสต็อก = ต้องสั่ง หรือสั่งมาแล้วแต่ยังไม่ถึง", () => {
+    expect(isOutOfStock({ vehicle_status: "in_stock" })).toBe(false);
+    expect(isOutOfStock({ vehicle_status: "need_order" })).toBe(true);
+    expect(isOutOfStock({ vehicle_status: "ordered" })).toBe(true);
+  });
+
+  it("จัดอันดับรุ่นรถ พนักงาน และสาขา สูงสุด 5 อันดับ", () => {
+    const rows = [
+      ...Array.from({ length: 3 }, (_, i) =>
+        booking({ id: `a${i}`, model_name: "Wave 110i", taken_by_name: "สมชาย", branch_name: "กาญ1" }),
+      ),
+      booking({ id: "b", model_name: "PCX 160", taken_by_name: "มาลี", branch_name: "กาญ2" }),
+      booking({ id: "c", model_name: "PCX 160", taken_by_name: "มาลี", branch_name: "กาญ2" }),
+      booking({ id: "d", model_name: "Fino", taken_by_name: "วิชัย", branch_name: "กาญ2" }),
+    ];
+    const r = buildRankings(rows, TODAY);
+
+    expect(r.topModels).toEqual([
+      { label: "Wave 110i", count: 3 },
+      { label: "PCX 160", count: 2 },
+      { label: "Fino", count: 1 },
+    ]);
+    expect(r.topStaff[0]).toEqual({ label: "สมชาย", count: 3 });
+
+    // จำนวนเท่ากันเรียงตามชื่อ เพื่อให้ลำดับคงที่ทุกครั้งที่เปิดหน้า
+    expect(r.topBranches).toEqual([
+      { label: "กาญ1", count: 3 },
+      { label: "กาญ2", count: 3 },
+    ]);
+  });
+
+  it("ตัดให้เหลือ 5 อันดับเท่านั้น", () => {
+    const rows = Array.from({ length: 8 }, (_, i) =>
+      booking({ id: `m${i}`, model_name: `รุ่น ${i}` }),
+    );
+    expect(buildRankings(rows, TODAY).topModels).toHaveLength(TOP_N);
+  });
+
+  it("อันดับรุ่นที่รถยังไม่มีในสต็อก นับเฉพาะใบที่ยังดำเนินการอยู่", () => {
+    const rows = [
+      booking({ id: "1", model_name: "Wave 110i", vehicle_status: "need_order" }),
+      booking({ id: "2", model_name: "Wave 110i", vehicle_status: "ordered" }),
+      booking({ id: "3", model_name: "Wave 110i", vehicle_status: "in_stock" }),
+      // ปิดงาน/ยกเลิกแล้ว ไม่ต้องตามสต็อกอีก
+      booking({ id: "4", model_name: "PCX 160", vehicle_status: "need_order", doc_status: "closed" }),
+      booking({ id: "5", model_name: "PCX 160", vehicle_status: "need_order", doc_status: "cancelled" }),
+    ];
+    expect(buildRankings(rows, TODAY).topModelsOutOfStock).toEqual([
+      { label: "Wave 110i", count: 2 },
+    ]);
+  });
+
+  it("ใบที่ไม่ระบุสาขา/รุ่น เข้ากลุ่มไม่ระบุ ไม่หายไปจากอันดับ", () => {
+    const rows = [booking({ model_name: null, branch_name: null })];
+    const r = buildRankings(rows, TODAY);
+    expect(r.topModels).toEqual([{ label: NO_MODEL, count: 1 }]);
+    expect(r.topBranches).toEqual([{ label: NO_BRANCH, count: 1 }]);
+  });
+
+  it("ข้อ 5: นัดรับรถภายใน 3 วันและรถยังไม่มา (รวมใบที่เลยนัดแล้ว)", () => {
+    const rows = [
+      booking({ id: "late", pickup_date: "2026-09-05", vehicle_status: "need_order" }),
+      booking({ id: "today", pickup_date: TODAY, vehicle_status: "ordered" }),
+      booking({ id: "edge", pickup_date: "2026-09-13", vehicle_status: "need_order" }),
+      booking({ id: "far", pickup_date: "2026-09-14", vehicle_status: "need_order" }),
+      booking({ id: "hasCar", pickup_date: TODAY, vehicle_status: "in_stock" }),
+      booking({ id: "done", pickup_date: TODAY, vehicle_status: "need_order", booking_status: "delivered" }),
+      booking({ id: "noDate", pickup_date: null, vehicle_status: "need_order" }),
+    ];
+    expect(buildRankings(rows, TODAY).pickupSoonNoStock.map((r) => r.id)).toEqual([
+      "late",
+      "today",
+      "edge",
+    ]);
+  });
+
+  it("ข้อ 6: ยกเลิกใน 7 วันล่าสุดตอนรถยังไม่มีในสต็อก เรียงใหม่สุดขึ้นก่อน", () => {
+    const cancelled = (id: string, updatedAt: string, vehicle: "need_order" | "in_stock") =>
+      booking({
+        id,
+        booking_status: "cancelled",
+        cancel_reason: "got_other",
+        doc_status: "cancelled",
+        vehicle_status: vehicle,
+        updated_at: updatedAt,
+      });
+
+    const rows = [
+      cancelled("old", "2026-09-01T03:00:00Z", "need_order"), // เกิน 7 วัน
+      cancelled("recent", "2026-09-08T03:00:00Z", "need_order"),
+      cancelled("newest", "2026-09-09T03:00:00Z", "need_order"),
+      cancelled("hasCar", "2026-09-09T03:00:00Z", "in_stock"), // มีรถอยู่แล้ว ไม่เกี่ยวกับสต็อก
+      booking({ id: "active", vehicle_status: "need_order", updated_at: "2026-09-09T03:00:00Z" }),
+    ];
+
+    expect(buildRankings(rows, TODAY).cancelledNoStockRecent.map((r) => r.id)).toEqual([
+      "newest",
+      "recent",
+    ]);
+  });
+
+  it("ปรับจำนวนวันของข้อ 5 และ 6 ได้", () => {
+    const rows = [
+      booking({ id: "d7", pickup_date: "2026-09-16", vehicle_status: "need_order" }),
+    ];
+    expect(buildRankings(rows, TODAY).pickupSoonNoStock).toHaveLength(0);
+    expect(
+      buildRankings(rows, TODAY, { pickupWithinDays: 7 }).pickupSoonNoStock.map((r) => r.id),
+    ).toEqual(["d7"]);
   });
 });
 

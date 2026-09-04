@@ -402,6 +402,80 @@ export function buildOverview(rows: BookingRow[], today = workDateOf()): Booking
   return overview;
 }
 
+// ---------- อันดับสูงสุด + รายการเฝ้าระวังสต็อก (1.4) ----------
+
+/** จำนวนอันดับที่แสดงบน dashboard */
+export const TOP_N = 5;
+
+export const NO_BRANCH = "— ไม่ระบุสาขา —";
+export const NO_MODEL = "— ไม่ระบุรุ่น —";
+
+/**
+ * รถของใบนี้ยังไม่มีในสต็อก
+ * นับทั้ง "ต้องสั่ง" และ "รถที่สั่งมาแล้ว" เพราะทั้งคู่คือรถที่ยังไม่อยู่ในมือ ส่งมอบทันทีไม่ได้
+ */
+export function isOutOfStock(row: Pick<BookingRow, "vehicle_status">): boolean {
+  return row.vehicle_status !== "in_stock";
+}
+
+export type BookingRankings = {
+  /** 1. รุ่นรถที่จองสูงสุด */
+  topModels: { label: string; count: number }[];
+  /** 2. รุ่นรถที่จองแล้วแต่รถยังไม่มีในสต็อก (เฉพาะใบที่ยังดำเนินการอยู่) */
+  topModelsOutOfStock: { label: string; count: number }[];
+  /** 3. พนักงานขายที่รับจองสูงสุด */
+  topStaff: { label: string; count: number }[];
+  /** 4. สาขาที่รับจองสูงสุด */
+  topBranches: { label: string; count: number }[];
+  /** 5. นัดรับรถภายใน 3 วัน (รวมที่เลยกำหนดแล้ว) แต่รถยังไม่มีในสต็อก */
+  pickupSoonNoStock: BookingRow[];
+  /** 6. ยกเลิกภายใน 7 วันล่าสุด โดยตอนยกเลิกรถยังไม่มีในสต็อก */
+  cancelledNoStockRecent: BookingRow[];
+};
+
+/**
+ * อันดับ 5 อันดับแรก และรายการที่ต้องเฝ้าระวังเรื่องสต็อกรถ
+ *
+ * `withinDays` ของข้อ 5 นับรวมใบที่เลยกำหนดนัดไปแล้วด้วย — ใบที่เลยนัดและยังไม่มีรถ
+ * คือใบที่เร่งด่วนที่สุด ไม่ควรหายไปจากรายการเพราะวันที่ผ่านไปแล้ว
+ * ข้อ 6 ใช้ `updated_at` เป็นตัวแทน "วันที่ยกเลิก" (ใบจองไม่ได้เก็บวันที่ยกเลิกแยกไว้)
+ */
+export function buildRankings(
+  rows: BookingRow[],
+  today = workDateOf(),
+  options: { pickupWithinDays?: number; cancelledWithinDays?: number } = {},
+): BookingRankings {
+  const pickupLimit = addDays(today, options.pickupWithinDays ?? 3);
+  const cancelledSince = addDays(today, -(options.cancelledWithinDays ?? 7));
+
+  const openOutOfStock = rows.filter((r) => r.doc_status === "active" && isOutOfStock(r));
+
+  const pickupSoonNoStock = openOutOfStock
+    .filter(
+      (r) =>
+        r.booking_status !== "delivered" && r.pickup_date !== null && r.pickup_date <= pickupLimit,
+    )
+    .sort(byPickupDate);
+
+  const cancelledNoStockRecent = rows
+    .filter(
+      (r) =>
+        r.booking_status === "cancelled" &&
+        isOutOfStock(r) &&
+        workDateOf(r.updated_at) >= cancelledSince,
+    )
+    .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+
+  return {
+    topModels: countByKey(rows, (r) => r.model_name, NO_MODEL).slice(0, TOP_N),
+    topModelsOutOfStock: countByKey(openOutOfStock, (r) => r.model_name, NO_MODEL).slice(0, TOP_N),
+    topStaff: countByKey(rows, staffNameOf).slice(0, TOP_N),
+    topBranches: countByKey(rows, (r) => r.branch_name, NO_BRANCH).slice(0, TOP_N),
+    pickupSoonNoStock,
+    cancelledNoStockRecent,
+  };
+}
+
 /** ยอดจองรายเดือนหนึ่งจุดบนกราฟแนวโน้ม */
 export type TrendPoint = {
   /** YYYY-MM */

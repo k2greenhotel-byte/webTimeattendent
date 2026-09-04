@@ -167,6 +167,8 @@ export type Booking = {
   company_id: string | null;
   created_by: string | null;
   created_at: string;
+  /** แก้ไขล่าสุดเมื่อไหร่ — ใช้ประมาณ "วันที่ยกเลิก" ของใบที่ถูกยกเลิก */
+  updated_at: string;
 };
 
 /** ใบจองพร้อมชื่อที่ join มาแล้ว (มาจาก view v_bk_bookings) */
@@ -184,8 +186,11 @@ export type BookingRow = Booking & {
   update_count: number;
 };
 
-/** ค่าที่ฟอร์มรับจองส่งมาบันทึก (ยังไม่มีเลขที่เอกสาร — ระบบรันให้ตอนบันทึก) */
-export type BookingInput = Omit<Booking, "id" | "doc_no" | "created_at">;
+/**
+ * ค่าที่ฟอร์มรับจองส่งมาบันทึก
+ * ตัดช่องที่ฐานข้อมูลจัดการเอง (เลขที่เอกสาร, เวลาสร้าง/แก้ไข) ออก
+ */
+export type BookingInput = Omit<Booking, "id" | "doc_no" | "created_at" | "updated_at">;
 
 /** ใบ update สถานะใบจอง (หน้าจอ 1.2) — ช่องสถานะเป็น null ได้ = "ไม่เปลี่ยน" */
 export type BookingUpdate = {
