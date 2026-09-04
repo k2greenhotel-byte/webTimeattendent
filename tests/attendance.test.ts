@@ -12,6 +12,7 @@ const settings: WorkSettings = {
   company_id: "c1",
   org_name: "ทดสอบ",
   schedule_name: "กะมาตรฐาน",
+  crosses_midnight: false,
   work_start: "08:00",
   work_end: "17:00",
   break_start: "12:00",
@@ -278,5 +279,105 @@ describe("resolveSettings (องค์กร + กะ + สาขา)", () => {
     const punches = { work_date: D, check_in_at: at(D, "09:20"), check_out_at: at(D, "17:00") };
     expect(computeDaySummary(punches, resolveSettings(org, morning, null)).lateMinutes).toBe(75);
     expect(computeDaySummary(punches, resolveSettings(org, afternoon, branch)).lateMinutes).toBe(15);
+  });
+});
+
+describe("กะข้ามเที่ยงคืน (กะดึกโรงแรม)", () => {
+  const night: WorkSettings = {
+    ...settings,
+    schedule_name: "กะดึก",
+    crosses_midnight: true,
+    work_start: "22:00",
+    break_start: "02:00",
+    break_end: "03:00",
+    work_end: "07:00",
+    workdays: [0, 1, 2, 3, 4, 5, 6],
+  };
+  const NEXT = "2026-09-01";
+
+  it("เข้า 22:10 ออก 07:05 ของวันถัดไป → สาย 5 / ไม่กลับก่อน / ทำงาน 8 ชม.", () => {
+    const s = computeDaySummary(
+      {
+        work_date: D,
+        check_in_at: at(D, "22:10"),
+        break_out_at: at(NEXT, "02:00"),
+        break_in_at: at(NEXT, "03:00"),
+        check_out_at: at(NEXT, "07:05"),
+      },
+      night,
+    );
+    expect(s.status).toBe("complete");
+    expect(s.lateMinutes).toBe(5); // 10 − ผ่อนผัน 5
+    expect(s.earlyLeaveMinutes).toBe(0);
+    expect(s.otMinutes).toBe(0); // เกิน 5 นาที ไม่ถึงผ่อนผัน OT 30
+    expect(s.workMinutes).toBe(475); // 22:10→07:05 = 535 − พัก 60
+  });
+
+  it("กะดึกออกก่อนเวลา 05:30 → กลับก่อน 85 นาที (ไม่ใช่ตัวเลขผิดจากการเทียบข้ามวัน)", () => {
+    const s = computeDaySummary(
+      { work_date: D, check_in_at: at(D, "22:00"), check_out_at: at(NEXT, "05:30") },
+      night,
+    );
+    expect(s.earlyLeaveMinutes).toBe(85); // 90 − ผ่อนผัน 5
+    expect(s.otMinutes).toBe(0);
+  });
+
+  it("กะดึกอยู่ต่อถึง 08:30 → OT 60 นาที", () => {
+    const s = computeDaySummary(
+      { work_date: D, check_in_at: at(D, "22:00"), check_out_at: at(NEXT, "08:30") },
+      night,
+    );
+    expect(s.otMinutes).toBe(60); // 90 − ผ่อนผัน 30
+    expect(s.earlyLeaveMinutes).toBe(0);
+  });
+
+  it("resolveSettings ตรวจจับกะข้ามเที่ยงคืนจากเวลาเลิกงานที่ไม่เกินเวลาเข้างาน", () => {
+    const org: OrgSettings = {
+      company_id: "c1",
+      org_name: "ทดสอบ",
+      timezone: "Asia/Bangkok",
+      require_gps: false,
+      radius_m: 200,
+      default_schedule_id: null,
+    };
+    const base: WorkSchedule = {
+      id: "n1",
+      company_id: "c1",
+      name: "กะดึก",
+      work_start: "22:00",
+      break_start: "02:00",
+      break_end: "03:00",
+      work_end: "07:00",
+      break_allow_minutes: 60,
+      break_policy: "actual",
+      late_grace_min: 5,
+      early_leave_grace_min: 5,
+      count_ot: true,
+      ot_grace_min: 30,
+      workdays: [0, 1, 2, 3, 4, 5, 6],
+      is_default: false,
+    };
+    expect(resolveSettings(org, base, null).crosses_midnight).toBe(true);
+    expect(resolveSettings(org, { ...base, work_start: "08:00", work_end: "17:00" }, null).crosses_midnight).toBe(false);
+  });
+});
+
+describe("วันหยุดตามตารางเวร", () => {
+  it("ไม่มีการลงเวลาในวันหยุดเวร = off ไม่นับขาดงาน", () => {
+    const s = computeDaySummary({ work_date: D }, settings, false, true);
+    expect(s.status).toBe("off");
+    expect(summarizePeriod([s]).absentDays).toBe(0);
+    expect(summarizePeriod([s]).offDays).toBe(1);
+  });
+
+  it("มาทำงานในวันหยุดเวร ยังคำนวณให้ตามปกติ", () => {
+    const s = computeDaySummary(
+      { work_date: D, check_in_at: at(D, "08:00"), check_out_at: at(D, "17:00") },
+      settings,
+      false,
+      true,
+    );
+    expect(s.status).toBe("incomplete");
+    expect(s.workMinutes).toBe(480);
   });
 });

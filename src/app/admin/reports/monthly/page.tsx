@@ -15,6 +15,7 @@ const CELL: Record<DayStatus, { text: string; cls: string }> = {
   incomplete: { text: "!", cls: "bg-amber-50 text-amber-700" },
   absent: { text: "✕", cls: "bg-rose-50 text-rose-600" },
   holiday: { text: "-", cls: "bg-slate-50 text-slate-300" },
+  off: { text: "○", cls: "bg-sky-50 text-sky-500" },
 };
 
 export default async function MonthlyReportPage({

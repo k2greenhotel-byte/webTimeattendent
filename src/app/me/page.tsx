@@ -3,7 +3,8 @@ import ChangePinForm from "@/components/ChangePinForm";
 import ExportButtons from "@/components/ExportButtons";
 import ReportTable from "@/components/ReportTable";
 import TotalsCards from "@/components/TotalsCards";
-import { formatThaiMonth, monthBounds, workDateOf } from "@/lib/datetime";
+import { addDays, formatThaiDate, formatThaiMonth, monthBounds, workDateOf } from "@/lib/datetime";
+import { listAssignments } from "@/lib/db";
 import { buildEmployeeReport } from "@/lib/reports";
 import { requireUser } from "@/lib/session";
 
@@ -22,7 +23,11 @@ export default async function MyHistoryPage({
   const month = Number(params.month) || Number(today.slice(5, 7));
   const { from, to } = monthBounds(year, month);
 
-  const { rows, totals } = await buildEmployeeReport({ employeeId: user.id, from, to });
+  const [{ rows, totals }, upcoming] = await Promise.all([
+    buildEmployeeReport({ employeeId: user.id, from, to }),
+    // ตารางเวร 7 วันข้างหน้าของตัวเอง (มีเฉพาะคนที่หัวหน้าจัดเวรให้)
+    listAssignments({ from: today, to: addDays(today, 6), employeeIds: [user.id] }),
+  ]);
 
   return (
     <div className="min-h-screen">
@@ -61,6 +66,26 @@ export default async function MyHistoryPage({
 
           <ExportButtons query={`kind=employee&employeeId=${user.id}&from=${from}&to=${to}`} />
         </div>
+
+        {upcoming.length > 0 && (
+          <section className="card">
+            <p className="mb-2 font-semibold text-slate-700">ตารางเวร 7 วันข้างหน้า</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+              {upcoming.map((a) => (
+                <div
+                  key={a.work_date}
+                  className={`rounded-lg px-3 py-2 text-sm ${
+                    a.is_day_off ? "bg-slate-100 text-slate-600" : "bg-sky-50 text-sky-800"
+                  }`}
+                >
+                  <p className="text-xs">{formatThaiDate(a.work_date)}</p>
+                  <p className="font-semibold">{a.is_day_off ? "หยุดเวร" : (a.schedule_name ?? "-")}</p>
+                  {a.note && <p className="text-xs text-slate-500">{a.note}</p>}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <TotalsCards totals={totals} />
 

@@ -7,6 +7,9 @@ export default function TotalsCards({ totals }: { totals: PeriodTotals }) {
     { label: "วันที่มาทำงาน", value: `${totals.workedDays} วัน` },
     { label: "ลงเวลาไม่ครบ", value: `${totals.incompleteDays} วัน`, tone: "text-amber-600" },
     { label: "ขาดงาน", value: `${totals.absentDays} วัน`, tone: "text-rose-600" },
+    ...(totals.offDays > 0
+      ? [{ label: "หยุดเวร", value: `${totals.offDays} วัน`, tone: "text-sky-600" }]
+      : []),
     {
       label: "มาสาย",
       value: `${totals.lateDays} วัน (${totals.lateMinutes} นาที)`,
@@ -17,7 +20,7 @@ export default function TotalsCards({ totals }: { totals: PeriodTotals }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
       {items.map((item) => (
         <div key={item.label} className="rounded-xl border border-slate-200 bg-white p-3">
           <p className="text-xs text-slate-500">{item.label}</p>

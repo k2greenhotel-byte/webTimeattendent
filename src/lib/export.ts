@@ -22,6 +22,7 @@ export function reportRowsToTable(
   const headers = [
     "วันที่",
     ...(showEmployee ? ["รหัสพนักงาน", "ชื่อ-สกุล", "สาขา", "แผนก"] : []),
+    "กะ",
     "เข้าเช้า",
     "ออกพัก",
     "เข้าบ่าย",
@@ -40,6 +41,7 @@ export function reportRowsToTable(
     return [
       formatThaiDate(s.workDate),
       ...(showEmployee ? [r.empCode, r.fullName, r.branchName ?? "-", r.department ?? "-"] : []),
+      r.scheduleName,
       formatTime(s.checkInAt),
       formatTime(s.breakOutAt),
       formatTime(s.breakInAt),
@@ -81,6 +83,7 @@ export function monthlyToTable(title: string, employees: MonthlyEmployeeRow[]): 
     "ครบ 4 ครั้ง",
     "ลงไม่ครบ",
     "ขาดงาน",
+    "หยุดเวร",
     "สาย (วัน)",
     "สาย (นาที)",
     "กลับก่อน (วัน)",
@@ -98,6 +101,7 @@ export function monthlyToTable(title: string, employees: MonthlyEmployeeRow[]): 
     e.totals.completeDays,
     e.totals.incompleteDays,
     e.totals.absentDays,
+    e.totals.offDays,
     e.totals.lateDays,
     e.totals.lateMinutes,
     e.totals.earlyLeaveDays,

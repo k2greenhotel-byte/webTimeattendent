@@ -16,6 +16,8 @@ export type ReportRow = {
   fullName: string;
   department: string | null;
   branchName: string | null;
+  /** ชื่อกะที่ใช้คำนวณวันนั้น (จากตารางเวร หรือกะสาขา) */
+  scheduleName: string;
   summary: DaySummary;
   photos: {
     check_in: string | null;
@@ -53,6 +55,7 @@ function toReportRow(
   row: AttendanceDayRow,
   settings: WorkSettings,
   holidays: Set<string>,
+  isDayOff: boolean,
 ): ReportRow {
   return {
     employeeId: row.employee_id,
@@ -60,7 +63,8 @@ function toReportRow(
     fullName: row.full_name,
     department: row.department,
     branchName: row.branch_name,
-    summary: computeDaySummary(row, settings, holidays.has(row.work_date)),
+    scheduleName: isDayOff ? "หยุดเวร" : settings.schedule_name,
+    summary: computeDaySummary(row, settings, holidays.has(row.work_date), isDayOff),
     photos: {
       check_in: row.check_in_photo,
       break_out: row.break_out_photo,
@@ -88,7 +92,7 @@ export async function buildEmployeeReport(params: {
     getEmployeeById(params.employeeId),
     getHolidaySet(params.from, params.to, params.companyId),
     getDayRows({ from: params.from, to: params.to, employeeId: params.employeeId }),
-    getSettingsResolver(params.companyId),
+    getSettingsResolver(params.companyId, { from: params.from, to: params.to }),
   ]);
 
   const byDate = new Map(dayRows.map((r) => [r.work_date, r]));
@@ -101,7 +105,14 @@ export async function buildEmployeeReport(params: {
       : null;
     for (const date of dateRange(params.from, params.to)) {
       const row = byDate.get(date) ?? emptyDayRow(employee, date, branchName);
-      rows.push(toReportRow(row, resolver.resolve(row.branch_id), holidays));
+      rows.push(
+        toReportRow(
+          row,
+          resolver.resolve(row.branch_id, employee.id, date),
+          holidays,
+          resolver.isDayOff(employee.id, date),
+        ),
+      );
     }
   }
 
@@ -122,7 +133,7 @@ export async function buildDailyReport(
     listEmployees({ activeOnly: true, branchId, companyId }),
     getHolidaySet(date, date, companyId),
     getDayRows({ from: date, to: date, branchId, companyId }),
-    getSettingsResolver(companyId),
+    getSettingsResolver(companyId, { from: date, to: date }),
   ]);
 
   const byEmployee = new Map(dayRows.map((r) => [r.employee_id, r]));
@@ -134,7 +145,12 @@ export async function buildDailyReport(
         date,
         emp.branch_id ? (resolver.branches.get(emp.branch_id)?.name ?? null) : null,
       );
-    return toReportRow(row, resolver.resolve(row.branch_id), holidays);
+    return toReportRow(
+      row,
+      resolver.resolve(row.branch_id, emp.id, date),
+      holidays,
+      resolver.isDayOff(emp.id, date),
+    );
   });
 
   return {
@@ -167,7 +183,7 @@ export async function buildMonthlyReport(
     listEmployees({ activeOnly: true, branchId, companyId }),
     getHolidaySet(from, to, companyId),
     getDayRows({ from, to, branchId, companyId }),
-    getSettingsResolver(companyId),
+    getSettingsResolver(companyId, { from, to }),
   ]);
 
   const dates = dateRange(from, to);
@@ -178,11 +194,15 @@ export async function buildMonthlyReport(
   }
 
   const result: MonthlyEmployeeRow[] = employees.map((emp) => {
-    const empSettings = resolver.resolve(emp.branch_id);
     const byDate = new Map<string, DaySummary>();
     for (const date of dates) {
       const row = rowsByEmp.get(emp.id)?.get(date) ?? emptyDayRow(emp, date, null);
-      byDate.set(date, computeDaySummary(row, empSettings, holidays.has(date)));
+      // กะอาจต่างกันทุกวันตามตารางเวร จึง resolve ทีละวัน (ข้อมูลถูก preload ไว้แล้ว ไม่ยิงฐานข้อมูลซ้ำ)
+      const daySettings = resolver.resolve(row.branch_id ?? emp.branch_id, emp.id, date);
+      byDate.set(
+        date,
+        computeDaySummary(row, daySettings, holidays.has(date), resolver.isDayOff(emp.id, date)),
+      );
     }
     return { employee: emp, byDate, totals: summarizePeriod([...byDate.values()]) };
   });

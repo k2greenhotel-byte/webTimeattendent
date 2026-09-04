@@ -1,8 +1,12 @@
 import { redirect } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import { canPunch } from "@/lib/attendance";
-import { workDateOf } from "@/lib/datetime";
-import { getEmployeeById, getPunchesOfDay, getResolvedSettings } from "@/lib/db";
+import {
+  getEmployeeById,
+  getPunchesOfDay,
+  getResolvedSettings,
+  resolveWorkDateForPunch,
+} from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { PUNCH_LABEL, PUNCH_ORDER, type PunchType } from "@/lib/types";
 
@@ -21,13 +25,12 @@ export default async function CapturePage({
   }
   const punchType = type as PunchType;
 
-  const workDate = workDateOf();
-  const [punches, employee] = await Promise.all([
+  const employee = await getEmployeeById(user.id);
+  const workDate = await resolveWorkDateForPunch(user.id, employee?.branch_id ?? null);
+  const [punches, settings] = await Promise.all([
     getPunchesOfDay(user.id, workDate),
-    getEmployeeById(user.id),
+    getResolvedSettings(employee?.branch_id ?? null, user.id, workDate),
   ]);
-
-  const settings = await getResolvedSettings(employee?.branch_id ?? null);
 
   const check = canPunch(
     punchType,

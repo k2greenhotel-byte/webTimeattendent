@@ -6,9 +6,9 @@ import {
   getPunchesOfDay,
   getResolvedSettings,
   insertPunch,
+  resolveWorkDateForPunch,
   uploadPhoto,
 } from "@/lib/db";
-import { workDateOf } from "@/lib/datetime";
 import { distanceMeters } from "@/lib/geo";
 import { getSessionUser } from "@/lib/session";
 import { PUNCH_ORDER, type PunchType } from "@/lib/types";
@@ -43,16 +43,17 @@ export async function POST(req: Request) {
 
   // เวลาจาก server เท่านั้น
   const now = new Date();
-  const workDate = workDateOf(now);
-
-  const [todayPunches, employee] = await Promise.all([
-    getPunchesOfDay(user.id, workDate),
-    getEmployeeById(user.id),
-  ]);
-
-  // ใช้กะและพิกัดของสาขาที่พนักงานสังกัด (ถ้าไม่มีสาขาจะใช้กะเริ่มต้น)
+  const employee = await getEmployeeById(user.id);
   const branch = await getBranchById(employee?.branch_id ?? null);
-  const settings = await getResolvedSettings(branch?.id ?? null);
+
+  // กะดึกที่กดออกงานตอนเช้า ต้องผูกกับวันที่เริ่มกะ ไม่ใช่วันปฏิทินปัจจุบัน
+  const workDate = await resolveWorkDateForPunch(user.id, branch?.id ?? null, now);
+
+  // กะและพิกัด: ตารางเวรของคนนี้วันนี้ → กะสาขา → กะเริ่มต้น
+  const [todayPunches, settings] = await Promise.all([
+    getPunchesOfDay(user.id, workDate),
+    getResolvedSettings(branch?.id ?? null, user.id, workDate),
+  ]);
 
   const done = todayPunches.map((p) => p.punch_type);
   const check = canPunch(type, done);

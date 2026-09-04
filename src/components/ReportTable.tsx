@@ -9,6 +9,7 @@ const STATUS_CLASS: Record<DayStatus, string> = {
   incomplete: "bg-amber-50 text-amber-700",
   absent: "bg-rose-50 text-rose-700",
   holiday: "bg-slate-100 text-slate-500",
+  off: "bg-sky-50 text-sky-600",
 };
 
 export default function ReportTable({
@@ -36,6 +37,7 @@ export default function ReportTable({
             {showEmployee && <th>รหัส</th>}
             {showEmployee && <th>ชื่อ-สกุล</th>}
             {showEmployee && <th>สาขา</th>}
+            <th>กะ</th>
             <th>เข้าเช้า</th>
             <th>ออกพัก</th>
             <th>เข้าบ่าย</th>
@@ -59,6 +61,7 @@ export default function ReportTable({
                 {showEmployee && <td>{row.empCode}</td>}
                 {showEmployee && <td className="text-left">{row.fullName}</td>}
                 {showEmployee && <td>{row.branchName ?? "-"}</td>}
+                <td className="text-xs text-slate-600">{row.scheduleName}</td>
                 <td className={s.lateMinutes > 0 ? "text-rose-600" : ""}>{formatTime(s.checkInAt)}</td>
                 <td>{formatTime(s.breakOutAt)}</td>
                 <td>{formatTime(s.breakInAt)}</td>

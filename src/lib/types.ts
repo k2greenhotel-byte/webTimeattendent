@@ -99,6 +99,8 @@ export type WorkSettings = {
   company_id: string | null;
   org_name: string;
   schedule_name: string;
+  /** กะข้ามเที่ยงคืน (เช่น 22:00–07:00) เวลาเลิกงานคือวันถัดไป */
+  crosses_midnight: boolean;
   work_start: string;
   work_end: string;
   break_start: string;
@@ -156,13 +158,27 @@ export type AttendanceDayRow = {
   branch_name: string | null;
 };
 
-export type DayStatus = "complete" | "incomplete" | "absent" | "holiday";
+/** off = วันหยุดตามตารางเวร (ไม่ใช่วันหยุดนักขัตฤกษ์) ไม่นับเป็นขาดงาน */
+export type DayStatus = "complete" | "incomplete" | "absent" | "holiday" | "off";
 
 export const DAY_STATUS_LABEL: Record<DayStatus, string> = {
   complete: "ครบ",
   incomplete: "ลงไม่ครบ",
   absent: "ขาดงาน",
   holiday: "วันหยุด",
+  off: "หยุดเวร",
+};
+
+/** ตารางเวร: พนักงานคนหนึ่ง วันหนึ่ง ใช้กะไหน (หรือหยุดเวร) */
+export type ShiftAssignment = {
+  id: string;
+  employee_id: string;
+  work_date: string;
+  schedule_id: string | null;
+  is_day_off: boolean;
+  note: string | null;
+  /** ชื่อกะที่ resolve มาให้แสดงผล (ไม่ได้เก็บซ้ำในตาราง) */
+  schedule_name?: string | null;
 };
 
 export type DaySummary = {

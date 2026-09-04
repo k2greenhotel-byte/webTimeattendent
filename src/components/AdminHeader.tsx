@@ -9,6 +9,7 @@ const NAV = [
   { href: "/admin/branches", label: "สาขา" },
   { href: "/admin/employees", label: "พนักงาน" },
   { href: "/admin/holidays", label: "วันหยุด" },
+  { href: "/admin/roster", label: "ตารางเวร" },
   { href: "/admin/setup", label: "ตั้งค่าข้อมูลหลัก" },
   { href: "/admin/settings", label: "ตั้งค่าองค์กร" },
   { href: "/admin/data", label: "ลบข้อมูล" },

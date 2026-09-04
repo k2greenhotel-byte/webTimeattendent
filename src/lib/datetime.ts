@@ -155,3 +155,13 @@ export function formatStampThai(value: string | Date): string {
   const year = s.getUTCFullYear() + 543;
   return `${day} ${month} ${year} ${pad(s.getUTCHours())}:${pad(s.getUTCMinutes())}:${pad(s.getUTCSeconds())}`;
 }
+
+/**
+ * เวลาไทยของวันทำงานหนึ่ง ๆ เป็น Date จริง เช่น bangkokAt("2026-08-31", "22:00") = 31 ส.ค. 22:00 (+07:00)
+ * ใช้ dayOffset = 1 สำหรับเวลาเลิกงานของกะข้ามเที่ยงคืน (ตกอยู่ในวันถัดไป)
+ */
+export function bangkokAt(workDate: string, time: string, dayOffset = 0): Date {
+  const [y, m, d] = workDate.split("-").map(Number);
+  const [hh = "0", mm = "0"] = time.split(":");
+  return new Date(Date.UTC(y, m - 1, d + dayOffset, Number(hh), Number(mm)) - BANGKOK_OFFSET_MIN * 60_000);
+}

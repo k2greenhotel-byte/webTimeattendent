@@ -3,7 +3,13 @@ import AppHeader from "@/components/AppHeader";
 import Clock from "@/components/Clock";
 import { computeDaySummary, nextPunchType } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
-import { getBranchById, getEmployeeById, getPunchesOfDay, getResolvedSettings } from "@/lib/db";
+import {
+  getBranchById,
+  getEmployeeById,
+  getPunchesOfDay,
+  getResolvedDay,
+  resolveWorkDateForPunch,
+} from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { PUNCH_LABEL, PUNCH_ORDER, type PunchType } from "@/lib/types";
 
@@ -16,15 +22,18 @@ export default async function PunchPage({
 }) {
   const params = await searchParams;
   const user = await requireUser();
-  const workDate = workDateOf();
-
-  const [punches, employee] = await Promise.all([
-    getPunchesOfDay(user.id, workDate),
-    getEmployeeById(user.id),
-  ]);
-
+  const employee = await getEmployeeById(user.id);
   const branch = await getBranchById(employee?.branch_id ?? null);
-  const settings = await getResolvedSettings(branch?.id ?? null);
+
+  // กะดึกที่ยังไม่ออกงาน → หน้านี้ยังแสดงวันเริ่มกะ (เมื่อวาน) ให้กดออกงานต่อได้
+  const calendarDate = workDateOf();
+  const workDate = await resolveWorkDateForPunch(user.id, branch?.id ?? null);
+  const isYesterdayShift = workDate !== calendarDate;
+
+  const [punches, { settings, isDayOff, assignment }] = await Promise.all([
+    getPunchesOfDay(user.id, workDate),
+    getResolvedDay(branch?.id ?? null, user.id, workDate),
+  ]);
 
   const byType = new Map(punches.map((p) => [p.punch_type, p]));
   const done = punches.map((p) => p.punch_type);
@@ -63,9 +72,20 @@ export default async function PunchPage({
             <Clock />
           </p>
           <p className="text-xs text-slate-500">
-            เวลาทำงานมาตรฐาน {settings.work_start} - {settings.work_end} · พักได้{" "}
-            {settings.break_allow_minutes} นาที
+            {assignment ? "กะวันนี้" : "กะทำงาน"}: <span className="font-medium text-slate-700">{settings.schedule_name}</span>{" "}
+            {settings.work_start} - {settings.work_end}
+            {settings.crosses_midnight ? " (ข้ามเที่ยงคืน)" : ""} · พักได้ {settings.break_allow_minutes} นาที
           </p>
+          {isYesterdayShift && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              กำลังลงเวลาต่อของกะวันที่ {formatThaiDate(workDate)} (กะข้ามเที่ยงคืน)
+            </p>
+          )}
+          {isDayOff && (
+            <p className="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700">
+              วันนี้เป็นวันหยุดเวรของคุณ — ถ้ามาทำงานสามารถลงเวลาได้ตามปกติ
+            </p>
+          )}
         </section>
 
         {params.ok && (

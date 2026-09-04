@@ -3,7 +3,7 @@
  * ทุกหน้าจอ ทุกรายงาน และไฟล์ export ต้องเรียกใช้ฟังก์ชันในไฟล์นี้เท่านั้น
  * ห้ามคำนวณสาย/ชั่วโมงทำงานซ้ำที่อื่นเด็ดขาด
  */
-import { dayOfWeek, minutesOfDay, parseTimeToMinutes, toDate } from "./datetime";
+import { bangkokAt, dayOfWeek, parseTimeToMinutes, toDate } from "./datetime";
 import {
   PUNCH_ORDER,
   type Branch,
@@ -35,6 +35,8 @@ export function resolveSettings(
     site_lng: branch?.site_lng ?? null,
     radius_m: branch?.radius_m ?? org.radius_m,
     schedule_name: schedule.name,
+    // เลิกงานไม่เกินเวลาเข้างาน = กะข้ามเที่ยงคืน (กะดึกของโรงแรม 22:00–07:00)
+    crosses_midnight: parseTimeToMinutes(schedule.work_end) <= parseTimeToMinutes(schedule.work_start),
     work_start: schedule.work_start,
     break_start: schedule.break_start,
     break_end: schedule.break_end,
@@ -70,6 +72,23 @@ export function isWorkday(workDate: string, settings: WorkSettings): boolean {
 }
 
 /**
+ * เวลาเริ่ม/เลิกงานที่คาดหวังของวันนั้นเป็น timestamp จริง
+ * กะข้ามเที่ยงคืน: เวลาเลิกงานอยู่วันถัดไป จึงต้องบวก 1 วัน
+ * (เทียบ timestamp ตรง ๆ แทนนับนาทีจากเที่ยงคืน จะได้ถูกทั้งกะกลางวันและกะดึก)
+ */
+export function expectedTimes(workDate: string, settings: WorkSettings): { start: Date; end: Date } {
+  return {
+    start: bangkokAt(workDate, settings.work_start),
+    end: bangkokAt(workDate, settings.work_end, settings.crosses_midnight ? 1 : 0),
+  };
+}
+
+function minutesFrom(from: Date, to: string | null | undefined): number | null {
+  const b = toDate(to);
+  return b ? (b.getTime() - from.getTime()) / 60_000 : null;
+}
+
+/**
  * คำนวณสรุปการทำงานของ 1 วัน
  * - สาย        = เวลาเข้างานจริง − เวลาเริ่มงานมาตรฐาน − นาทีผ่อนผัน
  * - กลับก่อน   = เวลาเลิกงานมาตรฐาน − เวลาออกจริง − นาทีผ่อนผัน
@@ -77,11 +96,13 @@ export function isWorkday(workDate: string, settings: WorkSettings): boolean {
  * - พักเกิน    = เวลาพักจริง − โควตาพัก (พักกลางวันยืดหยุ่น แต่โควตา 1 ชม.)
  * - ชม.ทำงาน   = (ออกงาน − เข้างาน) − เวลาพักที่หัก
  * - OT         = ออกงาน − เลิกงานมาตรฐาน − นาทีผ่อนผัน OT
+ * - isDayOff   = วันหยุดตามตารางเวร → สถานะ "off" ไม่นับขาดงาน (ถ้ามาทำงานก็ยังคำนวณให้)
  */
 export function computeDaySummary(
   punches: DayPunches,
   settings: WorkSettings,
   isHoliday = false,
+  isDayOff = false,
 ): DaySummary {
   const checkInAt = punches.check_in_at ?? null;
   const breakOutAt = punches.break_out_at ?? null;
@@ -97,20 +118,17 @@ export function computeDaySummary(
   const missing = PUNCH_ORDER.filter((t) => !present[t]);
   const punchCount = PUNCH_ORDER.length - missing.length;
 
-  const workStart = parseTimeToMinutes(settings.work_start);
-  const workEnd = parseTimeToMinutes(settings.work_end);
+  const expected = expectedTimes(punches.work_date, settings);
 
-  // ---- สาย ----
-  const inMinutes = minutesOfDay(checkInAt);
+  // ---- สาย: เข้าจริงช้ากว่าเวลาเริ่มที่คาดหวัง ----
+  const inOffset = minutesFrom(expected.start, checkInAt);
   const lateMinutes =
-    inMinutes === null ? 0 : Math.max(0, Math.round(inMinutes - workStart - settings.late_grace_min));
+    inOffset === null ? 0 : Math.max(0, Math.round(inOffset - settings.late_grace_min));
 
-  // ---- กลับก่อนเวลา ----
-  const outMinutes = minutesOfDay(checkOutAt);
+  // ---- กลับก่อนเวลา: ออกจริงเร็วกว่าเวลาเลิกที่คาดหวัง ----
+  const outOffset = minutesFrom(expected.end, checkOutAt);
   const earlyLeaveMinutes =
-    outMinutes === null
-      ? 0
-      : Math.max(0, Math.round(workEnd - outMinutes - settings.early_leave_grace_min));
+    outOffset === null ? 0 : Math.max(0, Math.round(-outOffset - settings.early_leave_grace_min));
 
   // ---- เวลาพัก ----
   const breakActual = diffMinutes(breakOutAt, breakInAt);
@@ -123,10 +141,10 @@ export function computeDaySummary(
   const deduct = settings.break_policy === "fixed" ? settings.break_allow_minutes : breakMinutes;
   const workMinutes = span === null ? 0 : Math.max(0, Math.round(span - deduct));
 
-  // ---- OT ----
+  // ---- OT: ออกจริงช้ากว่าเวลาเลิกที่คาดหวัง ----
   let otMinutes = 0;
-  if (settings.count_ot && outMinutes !== null) {
-    otMinutes = Math.max(0, Math.round(outMinutes - workEnd - settings.ot_grace_min));
+  if (settings.count_ot && outOffset !== null) {
+    otMinutes = Math.max(0, Math.round(outOffset - settings.ot_grace_min));
   }
 
   // ---- สถานะ ----
@@ -134,7 +152,8 @@ export function computeDaySummary(
   if (punchCount === 4) {
     status = "complete";
   } else if (punchCount === 0) {
-    status = isHoliday || !isWorkday(punches.work_date, settings) ? "holiday" : "absent";
+    if (isDayOff) status = "off";
+    else status = isHoliday || !isWorkday(punches.work_date, settings) ? "holiday" : "absent";
   } else {
     status = "incomplete";
   }
@@ -170,6 +189,8 @@ export type PeriodTotals = {
   completeDays: number;
   incompleteDays: number;
   absentDays: number;
+  /** วันหยุดตามตารางเวร */
+  offDays: number;
   lateDays: number;
   lateMinutes: number;
   earlyLeaveDays: number;
@@ -188,6 +209,7 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
     completeDays: 0,
     incompleteDays: 0,
     absentDays: 0,
+    offDays: 0,
     lateDays: 0,
     lateMinutes: 0,
     earlyLeaveDays: 0,
@@ -202,6 +224,7 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
     if (s.status === "complete") totals.completeDays += 1;
     if (s.status === "incomplete") totals.incompleteDays += 1;
     if (s.status === "absent") totals.absentDays += 1;
+    if (s.status === "off") totals.offDays += 1;
     if (s.status === "complete" || s.status === "incomplete") totals.workedDays += 1;
     if (s.lateMinutes > 0) {
       totals.lateDays += 1;

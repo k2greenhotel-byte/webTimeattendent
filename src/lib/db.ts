@@ -1,5 +1,6 @@
 import "server-only";
-import { resolveSettings } from "./attendance";
+import { expectedTimes, resolveSettings } from "./attendance";
+import { addDays, workDateOf } from "./datetime";
 import { getSupabase, PHOTO_BUCKET } from "./supabase-server";
 import type {
   AttendanceDayRow,
@@ -11,6 +12,7 @@ import type {
   OrgSettings,
   Position,
   PunchType,
+  ShiftAssignment,
   WorkSchedule,
   WorkSettings,
 } from "./types";
@@ -171,6 +173,17 @@ export async function deleteSchedule(id: string, force = false): Promise<{ affec
     throw new Error(`ลบไม่ได้ มี ${used} สาขาใช้กะนี้อยู่ — ติ๊กยืนยันถ้าต้องการลบจริง`);
   }
 
+  // ตารางเวรที่ยังอ้างกะนี้อยู่ ฐานข้อมูลห้ามลบ (on delete restrict) จึงบอกให้ชัดว่าต้องแก้เวรก่อน
+  const { count: rosterCount } = await supabase
+    .from("shift_assignments")
+    .select("id", { count: "exact", head: true })
+    .eq("schedule_id", id);
+  if ((rosterCount ?? 0) > 0) {
+    throw new Error(
+      `ลบไม่ได้ กะนี้ถูกจัดอยู่ในตารางเวร ${rosterCount} วัน — เปลี่ยนกะในตารางเวรก่อนแล้วค่อยลบ`,
+    );
+  }
+
   // สาขาที่ใช้กะนี้จะกลับไปใช้กะเริ่มต้นโดยอัตโนมัติ (schedule_id = null)
   const { error } = await supabase.from("work_schedules").delete().eq("id", id);
   if (error) throw new Error(`ลบกะทำงานไม่สำเร็จ: ${error.message}`);
@@ -178,10 +191,28 @@ export async function deleteSchedule(id: string, force = false): Promise<{ affec
 }
 
 /**
- * ค่าที่ใช้คำนวณจริงของสาขาหนึ่ง = ค่าองค์กร + กะของสาขา (ไม่มีก็ใช้กะเริ่มต้น) + พิกัดของสาขา
+ * ค่าที่ใช้คำนวณจริงของคนหนึ่งในวันหนึ่ง
+ *   = ค่าองค์กร + กะ (ตารางเวรของคนนั้นวันนั้น → กะของสาขา → กะเริ่มต้น) + พิกัดของสาขา
+ * ไม่ส่ง employeeId/workDate มา = ใช้กะของสาขาเหมือนเดิม
  */
-export async function getResolvedSettings(branchId?: string | null): Promise<WorkSettings> {
-  const branch = await getBranchById(branchId ?? null);
+export async function getResolvedSettings(
+  branchId?: string | null,
+  employeeId?: string | null,
+  workDate?: string | null,
+): Promise<WorkSettings> {
+  return (await getResolvedDay(branchId, employeeId, workDate)).settings;
+}
+
+/** เหมือน getResolvedSettings แต่บอกด้วยว่าวันนั้นเป็นวันหยุดเวรของคนนั้นหรือไม่ */
+export async function getResolvedDay(
+  branchId?: string | null,
+  employeeId?: string | null,
+  workDate?: string | null,
+): Promise<{ settings: WorkSettings; isDayOff: boolean; assignment: ShiftAssignment | null }> {
+  const [branch, assignment] = await Promise.all([
+    getBranchById(branchId ?? null),
+    employeeId && workDate ? getAssignment(employeeId, workDate) : Promise.resolve(null),
+  ]);
   const companyId = branch?.company_id ?? null;
 
   const [org, schedules] = await Promise.all([
@@ -191,10 +222,45 @@ export async function getResolvedSettings(branchId?: string | null): Promise<Wor
 
   const byId = new Map(schedules.map((s) => [s.id, s]));
   const schedule =
+    (assignment?.schedule_id ? byId.get(assignment.schedule_id) : undefined) ??
     (branch?.schedule_id ? byId.get(branch.schedule_id) : undefined) ??
     pickDefaultSchedule(schedules, org, companyId);
 
-  return resolveSettings(org, schedule, branch);
+  return {
+    settings: resolveSettings(org, schedule, branch),
+    isDayOff: assignment?.is_day_off ?? false,
+    assignment,
+  };
+}
+
+/**
+ * การลงเวลาตอนนี้ควรผูกกับวันทำงานไหน
+ * ปกติคือวันปฏิทินวันนี้ แต่คนกะดึกที่กดออกงานตอนเช้าต้องผูกกับ "เมื่อวาน" ที่เป็นวันเริ่มกะ
+ * เงื่อนไข: เมื่อวานมีเวรกะข้ามเที่ยงคืน + ยังไม่ได้กดออกงาน + ยังไม่เลยเวลาเลิกกะไปเกิน 4 ชม.
+ */
+export async function resolveWorkDateForPunch(
+  employeeId: string,
+  branchId: string | null,
+  now: Date = new Date(),
+): Promise<string> {
+  const today = workDateOf(now);
+  const yesterday = addDays(today, -1);
+
+  const assignment = await getAssignment(employeeId, yesterday);
+  if (!assignment || assignment.is_day_off || !assignment.schedule_id) return today;
+
+  const { settings } = await getResolvedDay(branchId, employeeId, yesterday);
+  if (!settings.crosses_midnight) return today;
+
+  const punches = await getPunchesOfDay(employeeId, yesterday);
+  const startedYesterday = punches.some((p) => p.punch_type === "check_in");
+  const finished = punches.some((p) => p.punch_type === "check_out");
+  if (!startedYesterday || finished) return today;
+
+  const graceMs = 4 * 60 * 60_000;
+  return now.getTime() <= expectedTimes(yesterday, settings).end.getTime() + graceMs
+    ? yesterday
+    : today;
 }
 
 /** กะที่ใช้เมื่อสาขาไม่ได้เลือกเอง — ของบริษัทตัวเองมาก่อน แล้วค่อยของกลาง */
@@ -217,20 +283,29 @@ function pickDefaultSchedule(
  * ตัวช่วยสำหรับรายงาน: โหลดข้อมูลอ้างอิงครั้งเดียวแล้ว resolve ได้หลายสาขา
  * รองรับรายงานที่มีหลายบริษัทปนกัน โดยหยิบค่าตั้งต้นและกะตามบริษัทของแต่ละสาขา
  */
-export async function getSettingsResolver(companyId?: string | null): Promise<{
+export async function getSettingsResolver(
+  companyId?: string | null,
+  range?: { from: string; to: string },
+): Promise<{
   org: OrgSettings;
   branches: Map<string, Branch>;
-  resolve: (branchId?: string | null) => WorkSettings;
+  /** กะที่ใช้คำนวณ — ส่ง employeeId+workDate มาด้วยเพื่อให้ตารางเวรมีผล */
+  resolve: (branchId?: string | null, employeeId?: string | null, workDate?: string | null) => WorkSettings;
+  /** วันนั้นเป็นวันหยุดเวรของคนนั้นหรือไม่ */
+  isDayOff: (employeeId: string, workDate: string) => boolean;
 }> {
-  const [orgList, schedules, branchList] = await Promise.all([
+  const [orgList, schedules, branchList, assignments] = await Promise.all([
     listOrgSettings(),
     listSchedules(),
     listBranches(false, companyId),
+    range ? listAssignments({ from: range.from, to: range.to }) : Promise.resolve([]),
   ]);
 
   const orgByCompany = new Map(orgList.map((o) => [o.company_id ?? "", o]));
   const scheduleById = new Map(schedules.map((s) => [s.id, s]));
   const branches = new Map(branchList.map((b) => [b.id, b]));
+  // preload ตารางเวรทั้งช่วงครั้งเดียว รายงานรายเดือนจะได้ไม่ยิงฐานข้อมูลทีละวัน
+  const assignmentByKey = new Map(assignments.map((a) => [`${a.employee_id}|${a.work_date}`, a]));
 
   const orgFor = (cid: string | null) =>
     orgByCompany.get(cid ?? "") ?? orgByCompany.get("") ?? { ...DEFAULT_ORG, company_id: cid };
@@ -238,16 +313,158 @@ export async function getSettingsResolver(companyId?: string | null): Promise<{
   return {
     org: orgFor(companyId ?? null),
     branches,
-    resolve: (branchId) => {
+    resolve: (branchId, employeeId, workDate) => {
       const branch = branchId ? (branches.get(branchId) ?? null) : null;
       const cid = branch?.company_id ?? companyId ?? null;
       const org = orgFor(cid);
+      const assignment =
+        employeeId && workDate ? assignmentByKey.get(`${employeeId}|${workDate}`) : undefined;
       const schedule =
+        (assignment?.schedule_id ? scheduleById.get(assignment.schedule_id) : undefined) ??
         (branch?.schedule_id ? scheduleById.get(branch.schedule_id) : undefined) ??
         pickDefaultSchedule(schedules, org, cid);
       return resolveSettings(org, schedule, branch);
     },
+    isDayOff: (employeeId, workDate) =>
+      assignmentByKey.get(`${employeeId}|${workDate}`)?.is_day_off ?? false,
   };
+}
+
+// ---------- ตารางเวร (ใครอยู่กะไหน วันไหน) ----------
+
+const ASSIGNMENT_COLUMNS = "id, employee_id, work_date, schedule_id, is_day_off, note, work_schedules(name)";
+
+function toAssignment(row: Record<string, unknown>): ShiftAssignment {
+  const rel = row.work_schedules as { name?: string } | { name?: string }[] | null;
+  const name = Array.isArray(rel) ? rel[0]?.name : rel?.name;
+  return {
+    id: String(row.id),
+    employee_id: String(row.employee_id),
+    work_date: String(row.work_date),
+    schedule_id: (row.schedule_id as string | null) ?? null,
+    is_day_off: Boolean(row.is_day_off),
+    note: (row.note as string | null) ?? null,
+    schedule_name: name ?? null,
+  };
+}
+
+export async function getAssignment(employeeId: string, workDate: string): Promise<ShiftAssignment | null> {
+  const { data, error } = await getSupabase()
+    .from("shift_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .eq("employee_id", employeeId)
+    .eq("work_date", workDate)
+    .maybeSingle();
+  if (error) throw new Error(`อ่านตารางเวรไม่สำเร็จ: ${error.message}`);
+  return data ? toAssignment(data as Record<string, unknown>) : null;
+}
+
+/** ตารางเวรในช่วงวันที่ (กรองคน/สาขา/บริษัทได้) */
+export async function listAssignments(params: {
+  from: string;
+  to: string;
+  employeeIds?: string[];
+  branchId?: string | null;
+  companyId?: string | null;
+}): Promise<ShiftAssignment[]> {
+  let scopeIds = params.employeeIds ?? null;
+  if (!scopeIds && (params.branchId || params.companyId)) {
+    const employees = await listEmployees({
+      branchId: params.branchId ?? undefined,
+      companyId: params.companyId ?? undefined,
+    });
+    scopeIds = employees.map((e) => e.id);
+    if (scopeIds.length === 0) return [];
+  }
+
+  let query = getSupabase()
+    .from("shift_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .gte("work_date", params.from)
+    .lte("work_date", params.to)
+    .order("work_date");
+  if (scopeIds) query = query.in("employee_id", scopeIds);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านตารางเวรไม่สำเร็จ: ${error.message}`);
+  return (data ?? []).map((r) => toAssignment(r as Record<string, unknown>));
+}
+
+export type AssignmentInput = {
+  employee_id: string;
+  work_date: string;
+  schedule_id: string | null;
+  is_day_off: boolean;
+  note?: string | null;
+};
+
+/** บันทึกตารางเวรหลายช่องพร้อมกัน — ช่องที่มีอยู่แล้วถูกแทนที่ (1 คน 1 วัน มีได้แถวเดียว) */
+export async function upsertAssignments(rows: AssignmentInput[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const supabase = getSupabase();
+
+  for (let i = 0; i < rows.length; i += 200) {
+    const chunk = rows.slice(i, i + 200).map((r) => ({
+      employee_id: r.employee_id,
+      work_date: r.work_date,
+      schedule_id: r.is_day_off ? null : r.schedule_id,
+      is_day_off: r.is_day_off,
+      note: r.note ?? null,
+    }));
+    const { error } = await supabase
+      .from("shift_assignments")
+      .upsert(chunk, { onConflict: "employee_id,work_date" });
+    if (error) throw new Error(`บันทึกตารางเวรไม่สำเร็จ: ${error.message}`);
+  }
+  return rows.length;
+}
+
+/** ล้างตารางเวรของคนที่เลือกในช่วงวันที่ (กลับไปใช้กะสาขาตามเดิม) */
+export async function deleteAssignments(params: {
+  employeeIds: string[];
+  from: string;
+  to: string;
+}): Promise<number> {
+  if (params.employeeIds.length === 0) return 0;
+  const { data, error } = await getSupabase()
+    .from("shift_assignments")
+    .delete()
+    .in("employee_id", params.employeeIds)
+    .gte("work_date", params.from)
+    .lte("work_date", params.to)
+    .select("id");
+  if (error) throw new Error(`ล้างตารางเวรไม่สำเร็จ: ${error.message}`);
+  return data?.length ?? 0;
+}
+
+/** คัดลอกตารางเวรของช่วงหนึ่งไปอีกช่วง (เช่น สัปดาห์ก่อน → สัปดาห์นี้) วันต่อวันตามลำดับ */
+export async function copyAssignments(params: {
+  employeeIds: string[];
+  sourceFrom: string;
+  targetFrom: string;
+  days: number;
+}): Promise<number> {
+  if (params.employeeIds.length === 0 || params.days <= 0) return 0;
+  const sourceTo = addDays(params.sourceFrom, params.days - 1);
+  const source = await listAssignments({
+    from: params.sourceFrom,
+    to: sourceTo,
+    employeeIds: params.employeeIds,
+  });
+  if (source.length === 0) return 0;
+
+  const srcStart = new Date(`${params.sourceFrom}T00:00:00Z`).getTime();
+  const rows: AssignmentInput[] = source.map((a) => {
+    const offset = Math.round((new Date(`${a.work_date}T00:00:00Z`).getTime() - srcStart) / 86_400_000);
+    return {
+      employee_id: a.employee_id,
+      work_date: addDays(params.targetFrom, offset),
+      schedule_id: a.schedule_id,
+      is_day_off: a.is_day_off,
+      note: a.note,
+    };
+  });
+  return upsertAssignments(rows);
 }
 
 // ---------- พนักงาน ----------
