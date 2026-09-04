@@ -27,7 +27,7 @@ export function resolveSettings(
   branch?: Branch | null,
 ): WorkSettings {
   return {
-    id: org.id,
+    company_id: branch?.company_id ?? org.company_id,
     org_name: org.org_name,
     timezone: org.timezone,
     require_gps: org.require_gps,

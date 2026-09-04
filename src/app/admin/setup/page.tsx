@@ -1,4 +1,6 @@
 import Link from "next/link";
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import { listBranches, listDepartments, listEmployees, listPositions, listSchedules } from "@/lib/db";
 import type { Department, Position } from "@/lib/types";
 import {
@@ -21,12 +23,14 @@ function LookupSection({
   hint,
   items,
   usage,
+  companyId,
 }: {
   table: "departments" | "positions";
   title: string;
   hint: string;
   items: (Department | Position)[];
   usage: Map<string, number>;
+  companyId: string | null;
 }) {
   return (
     <section className="card space-y-3">
@@ -37,6 +41,7 @@ function LookupSection({
 
       <form action={createLookupForm} className="flex items-end gap-2">
         <input type="hidden" name="table" value={table} />
+        <input type="hidden" name="company" value={companyId ?? ""} />
         <div className="flex-1">
           <input name="name" className="input" placeholder={`เพิ่ม${title}ใหม่`} required />
         </div>
@@ -53,6 +58,7 @@ function LookupSection({
           <div key={item.id} className="flex flex-wrap items-center gap-2">
             <form action={updateLookupForm} className="flex flex-1 items-center gap-2">
               <input type="hidden" name="table" value={table} />
+              <input type="hidden" name="company" value={companyId ?? ""} />
               <input type="hidden" name="id" value={item.id} />
               <input name="name" defaultValue={item.name} className="input flex-1" required />
               <button type="submit" className="btn-secondary">
@@ -62,6 +68,7 @@ function LookupSection({
             <span className="w-16 text-xs text-slate-500">{usage.get(item.id) ?? 0} คน</span>
             <form action={deleteLookupForm} className="flex items-center gap-2">
               <input type="hidden" name="table" value={table} />
+              <input type="hidden" name="company" value={companyId ?? ""} />
               <input type="hidden" name="id" value={item.id} />
               <label className="flex items-center gap-1 text-xs text-slate-400" title="ลบแม้ยังมีคนใช้อยู่">
                 <input type="checkbox" name="force" />
@@ -81,15 +88,18 @@ function LookupSection({
 export default async function SetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ msg?: string; err?: string }>;
+  searchParams: Promise<{ msg?: string; err?: string; company?: string }>;
 }) {
   const params = await searchParams;
+  const scope = await getCompanyScope(params.company);
+  const companyId = scope.companyId;
+
   const [departments, positions, schedules, employees, branches] = await Promise.all([
-    listDepartments(),
-    listPositions(),
-    listSchedules(),
-    listEmployees(),
-    listBranches(),
+    listDepartments(companyId),
+    listPositions(companyId),
+    listSchedules(companyId),
+    listEmployees({ companyId }),
+    listBranches(false, companyId),
   ]);
 
   const deptUsage = new Map<string, number>();
@@ -107,11 +117,23 @@ export default async function SetupPage({
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">ตั้งค่าข้อมูลหลัก (Setup)</h1>
-        <p className="text-sm text-slate-500">
-          ค่าตั้งต้นที่ตารางอื่นอ้างอิงถึง — แก้ที่นี่ที่เดียว มีผลกับทั้งระบบ ไม่ต้องแก้ซ้ำหลายที่
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">ตั้งค่าข้อมูลหลัก (Setup)</h1>
+          <p className="text-sm text-slate-500">
+            ข้อมูลของ <strong>{scope.companyName ?? "บริษัท"}</strong> — แก้ที่นี่ที่เดียว
+            มีผลกับทุกสาขาของบริษัทนี้ · รายการที่ขึ้นว่า &quot;ของกลาง&quot; ใช้ร่วมกันทุกบริษัท
+          </p>
+        </div>
+
+        {scope.companies.length > 1 && (
+          <form method="get" className="flex flex-wrap items-end gap-2">
+            <CompanyFilter companies={scope.companies} value={companyId} />
+            <button type="submit" className="btn-secondary">
+              เปลี่ยนบริษัท
+            </button>
+          </form>
+        )}
       </div>
 
       {params.msg && (
@@ -123,7 +145,7 @@ export default async function SetupPage({
 
       <section className="card">
         <h2 className="mb-2 font-semibold text-slate-800">ตารางข้อมูลหลักของระบบ</h2>
-        <div className="overflow-x-auto">
+        <div className="table-wrap">
           <table className="table-report">
             <thead>
               <tr>
@@ -191,6 +213,7 @@ export default async function SetupPage({
           <div key={s.id} className="rounded-xl border border-slate-200 p-3">
             <form action={updateScheduleForm} className="grid items-end gap-3 sm:grid-cols-4">
               <input type="hidden" name="id" value={s.id} />
+              <input type="hidden" name="company" value={companyId ?? ""} />
 
               <div className="sm:col-span-2">
                 <label className="label">
@@ -302,12 +325,14 @@ export default async function SetupPage({
                 <>
                   <form action={setDefaultScheduleForm}>
                     <input type="hidden" name="id" value={s.id} />
+                    <input type="hidden" name="company" value={companyId ?? ""} />
                     <button type="submit" className="text-xs text-brand-600 hover:underline">
                       ตั้งเป็นกะเริ่มต้น
                     </button>
                   </form>
                   <form action={deleteScheduleForm} className="flex items-center gap-2">
                     <input type="hidden" name="id" value={s.id} />
+                    <input type="hidden" name="company" value={companyId ?? ""} />
                     <label className="flex items-center gap-1 text-xs text-slate-400">
                       <input type="checkbox" name="force" />
                       บังคับ (สาขาที่ใช้อยู่จะกลับไปใช้กะเริ่มต้น)
@@ -328,6 +353,7 @@ export default async function SetupPage({
         ))}
 
         <form action={createScheduleForm} className="rounded-xl border border-dashed border-slate-300 p-3">
+          <input type="hidden" name="company" value={companyId ?? ""} />
           <h3 className="mb-2 text-sm font-semibold text-slate-700">เพิ่มกะทำงานใหม่</h3>
           <div className="grid items-end gap-3 sm:grid-cols-5">
             <div>
@@ -376,6 +402,7 @@ export default async function SetupPage({
           hint="ใช้จัดกลุ่มพนักงานและแสดงในรายงาน"
           items={departments}
           usage={deptUsage}
+          companyId={companyId}
         />
         <LookupSection
           table="positions"
@@ -383,6 +410,7 @@ export default async function SetupPage({
           hint="ตำแหน่งงานของพนักงาน"
           items={positions}
           usage={posUsage}
+          companyId={companyId}
         />
       </div>
     </main>

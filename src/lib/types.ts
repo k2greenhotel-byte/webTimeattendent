@@ -20,9 +20,13 @@ export const PUNCH_SHORT_LABEL: Record<PunchType, string> = {
   check_out: "ออกงาน",
 };
 
-/** ตารางกะทำงาน — เวลาเข้า/ออกพัก/เข้าบ่าย/เลิกงาน เก็บที่นี่ที่เดียว */
+/**
+ * ตารางกะทำงาน — เวลาเข้า/ออกพัก/เข้าบ่าย/เลิกงาน เก็บที่นี่ที่เดียว
+ * company_id = null หมายถึงกะกลางที่ทุกบริษัทใช้ร่วมกันได้
+ */
 export type WorkSchedule = {
   id: string;
+  company_id: string | null;
   name: string;
   work_start: string;
   break_start: string;
@@ -55,12 +59,13 @@ export type Branch = {
   is_active: boolean;
 };
 
-export type Department = { id: string; name: string };
-export type Position = { id: string; name: string };
+/** แผนก/ตำแหน่ง — company_id = null คือของกลางที่ทุกบริษัทใช้ได้ */
+export type Department = { id: string; company_id: string | null; name: string };
+export type Position = { id: string; company_id: string | null; name: string };
 
-/** ค่าระดับองค์กร (แถวเดียว) — ไม่มีเวลาทำงาน เพราะอยู่ในกะแล้ว */
+/** ค่าตั้งต้นของระบบลงเวลา — หนึ่งชุดต่อหนึ่งบริษัท */
 export type OrgSettings = {
-  id: number;
+  company_id: string | null;
   org_name: string;
   timezone: string;
   require_gps: boolean;
@@ -91,7 +96,7 @@ export type Employee = {
 
 /** ค่าที่ resolve แล้วสำหรับใช้คำนวณ (องค์กร + กะ + สาขา) — ไม่ใช่ตารางในฐานข้อมูล */
 export type WorkSettings = {
-  id: number;
+  company_id: string | null;
   org_name: string;
   schedule_name: string;
   work_start: string;
@@ -194,4 +199,6 @@ export type SessionUser = {
 export type Holiday = {
   holiday_date: string;
   name: string;
+  /** null = วันหยุดกลางที่ใช้ทุกบริษัท */
+  company_id?: string | null;
 };

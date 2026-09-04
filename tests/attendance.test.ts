@@ -9,7 +9,7 @@ import {
 import type { Branch, OrgSettings, WorkSchedule, WorkSettings } from "../src/lib/types";
 
 const settings: WorkSettings = {
-  id: 1,
+  company_id: "c1",
   org_name: "ทดสอบ",
   schedule_name: "กะมาตรฐาน",
   work_start: "08:00",
@@ -215,7 +215,7 @@ describe("ลำดับการลงเวลา", () => {
 
 describe("resolveSettings (องค์กร + กะ + สาขา)", () => {
   const org: OrgSettings = {
-    id: 1,
+    company_id: "c1",
     org_name: "ทดสอบ",
     timezone: "Asia/Bangkok",
     require_gps: true,
@@ -225,6 +225,7 @@ describe("resolveSettings (องค์กร + กะ + สาขา)", () => {
 
   const morning: WorkSchedule = {
     id: "s1",
+    company_id: "c1",
     name: "กะมาตรฐาน",
     work_start: "08:00",
     break_start: "12:00",

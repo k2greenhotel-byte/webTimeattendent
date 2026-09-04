@@ -1,3 +1,5 @@
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
 import { listHolidays } from "@/lib/db";
 import { deleteHolidayForm, saveHolidayForm } from "./actions";
@@ -7,11 +9,12 @@ export const dynamic = "force-dynamic";
 export default async function HolidaysPage({
   searchParams,
 }: {
-  searchParams: Promise<{ msg?: string; err?: string; year?: string }>;
+  searchParams: Promise<{ msg?: string; err?: string; year?: string; company?: string }>;
 }) {
   const params = await searchParams;
   const year = Number(params.year) || Number(workDateOf().slice(0, 4));
-  const holidays = await listHolidays(`${year}-01-01`, `${year}-12-31`);
+  const scope = await getCompanyScope(params.company);
+  const holidays = await listHolidays(`${year}-01-01`, `${year}-12-31`, scope.companyId);
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-4">
@@ -30,6 +33,7 @@ export default async function HolidaysPage({
       )}
 
       <form action={saveHolidayForm} className="card flex flex-wrap items-end gap-3">
+        <input type="hidden" name="company" value={scope.companyId ?? ""} />
         <div>
           <label className="label">วันที่</label>
           <input name="holiday_date" type="date" className="input" required />
@@ -48,7 +52,8 @@ export default async function HolidaysPage({
           <h2 className="font-semibold text-slate-800">
             วันหยุดปี {year} ({holidays.length} วัน)
           </h2>
-          <form method="get" className="flex items-end gap-2">
+          <form method="get" className="flex flex-wrap items-end gap-2">
+            <CompanyFilter companies={scope.companies} value={scope.companyId} />
             <input name="year" type="number" defaultValue={year} className="input w-28" />
             <button type="submit" className="btn-secondary">
               ดูปีอื่น
@@ -71,6 +76,7 @@ export default async function HolidaysPage({
             </span>
             <form action={deleteHolidayForm}>
               <input type="hidden" name="holiday_date" value={h.holiday_date} />
+              <input type="hidden" name="company" value={scope.companyId ?? ""} />
               <button type="submit" className="text-xs text-rose-600 hover:underline">
                 ลบ
               </button>

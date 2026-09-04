@@ -1,4 +1,6 @@
 import CreateEmployeeForm from "@/components/CreateEmployeeForm";
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import { listBranches, listDepartments, listEmployees, listPositions } from "@/lib/db";
 import { deleteEmployeeForm, resetPinForm, updateEmployeeForm } from "./actions";
 
@@ -7,15 +9,16 @@ export const dynamic = "force-dynamic";
 export default async function EmployeesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ msg?: string; err?: string; branch?: string }>;
+  searchParams: Promise<{ msg?: string; err?: string; branch?: string; company?: string }>;
 }) {
   const params = await searchParams;
   const branchId = params.branch || undefined;
+  const scope = await getCompanyScope(params.company);
   const [employees, branches, departments, positions] = await Promise.all([
-    listEmployees({ branchId }),
-    listBranches(),
-    listDepartments(),
-    listPositions(),
+    listEmployees({ branchId, companyId: scope.companyId }),
+    listBranches(false, scope.companyId),
+    listDepartments(scope.companyId),
+    listPositions(scope.companyId),
   ]);
 
   return (
@@ -29,7 +32,8 @@ export default async function EmployeesPage({
           </p>
         </div>
 
-        <form method="get" className="flex items-end gap-2">
+        <form method="get" className="flex flex-wrap items-end gap-2">
+          <CompanyFilter companies={scope.companies} value={scope.companyId} />
           <div>
             <label className="label" htmlFor="branch">
               กรองตามสาขา

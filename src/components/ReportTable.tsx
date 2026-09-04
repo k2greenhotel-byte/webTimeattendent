@@ -28,7 +28,7 @@ export default function ReportTable({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="table-wrap">
       <table className="table-report">
         <thead>
           <tr>

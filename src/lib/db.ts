@@ -19,7 +19,7 @@ const EMPLOYEE_COLUMNS =
   "id, emp_code, full_name, nickname, phone, email, role, is_active, hire_date, branch_id, department_id, position_id";
 
 const DEFAULT_ORG: OrgSettings = {
-  id: 1,
+  company_id: null,
   org_name: "บริษัทของฉัน",
   timezone: "Asia/Bangkok",
   require_gps: false,
@@ -29,6 +29,7 @@ const DEFAULT_ORG: OrgSettings = {
 
 const FALLBACK_SCHEDULE: WorkSchedule = {
   id: "default",
+  company_id: null,
   name: "กะมาตรฐาน",
   work_start: "08:00",
   break_start: "12:00",
@@ -48,30 +49,55 @@ function timeOnly(value: unknown, fallback: string): string {
   return value ? String(value).slice(0, 5) : fallback;
 }
 
-// ---------- ค่าระดับองค์กร ----------
+// ---------- ค่าตั้งต้นของแต่ละบริษัท ----------
 
-export async function getOrgSettings(): Promise<OrgSettings> {
-  const { data, error } = await getSupabase()
-    .from("work_settings")
-    .select("*")
-    .eq("id", 1)
-    .maybeSingle();
+/**
+ * ข้อมูลหลักของระบบลงเวลาแยกตามบริษัท โดยแถวที่ company_id เป็น null คือ "ของกลาง"
+ * ที่ทุกบริษัทใช้ร่วมกันได้ ตัวกรองนี้จึงเอาทั้งของบริษัทนั้นและของกลางเสมอ
+ */
+const companyScope = (companyId: string) => `company_id.eq.${companyId},company_id.is.null`;
+
+export async function getOrgSettings(companyId?: string | null): Promise<OrgSettings> {
+  const supabase = getSupabase();
+  const query = supabase.from("work_settings").select("*");
+
+  const { data, error } = companyId
+    ? await query.eq("company_id", companyId).maybeSingle()
+    : await query.limit(1).maybeSingle();
 
   if (error) throw new Error(`อ่านการตั้งค่าไม่สำเร็จ: ${error.message}`);
-  return data ? ({ ...DEFAULT_ORG, ...data } as OrgSettings) : DEFAULT_ORG;
+  return data
+    ? ({ ...DEFAULT_ORG, ...data } as OrgSettings)
+    : { ...DEFAULT_ORG, company_id: companyId ?? null };
 }
 
-export async function updateOrgSettings(patch: Partial<OrgSettings>): Promise<void> {
+/** ค่าตั้งต้นของทุกบริษัท — ใช้ตอนทำรายงานที่มีหลายบริษัทปนกัน */
+export async function listOrgSettings(): Promise<OrgSettings[]> {
+  const { data, error } = await getSupabase().from("work_settings").select("*");
+  if (error) throw new Error(`อ่านการตั้งค่าไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as OrgSettings[];
+}
+
+export async function updateOrgSettings(
+  companyId: string | null,
+  patch: Partial<OrgSettings>,
+): Promise<void> {
   const { error } = await getSupabase()
     .from("work_settings")
-    .upsert({ ...patch, id: 1, updated_at: new Date().toISOString() });
+    .upsert(
+      { ...patch, company_id: companyId, updated_at: new Date().toISOString() },
+      { onConflict: "company_id" },
+    );
   if (error) throw new Error(`บันทึกการตั้งค่าไม่สำเร็จ: ${error.message}`);
 }
 
 // ---------- กะทำงาน ----------
 
-export async function listSchedules(): Promise<WorkSchedule[]> {
-  const { data, error } = await getSupabase().from("work_schedules").select("*").order("name");
+export async function listSchedules(companyId?: string | null): Promise<WorkSchedule[]> {
+  let query = getSupabase().from("work_schedules").select("*").order("name");
+  if (companyId) query = query.or(companyScope(companyId));
+
+  const { data, error } = await query;
   if (error) throw new Error(`อ่านกะทำงานไม่สำเร็จ: ${error.message}`);
 
   return (data ?? []).map((s) => ({
@@ -101,19 +127,27 @@ export async function updateSchedule(id: string, patch: Partial<WorkSchedule>): 
   }
 }
 
-/** ตั้งกะเริ่มต้น (มีได้กะเดียว) */
+/** ตั้งกะเริ่มต้นของบริษัทหนึ่ง (แต่ละบริษัทมีกะเริ่มต้นของตัวเองได้หนึ่งกะ) */
 export async function setDefaultSchedule(id: string): Promise<void> {
   const supabase = getSupabase();
-  const { error: clearError } = await supabase
+
+  const { data: target } = await supabase
     .from("work_schedules")
-    .update({ is_default: false })
-    .neq("id", id);
+    .select("company_id")
+    .eq("id", id)
+    .maybeSingle();
+  const companyId = (target?.company_id ?? null) as string | null;
+
+  // ล้างค่าเริ่มต้นเดิมเฉพาะในขอบเขตเดียวกัน (บริษัทเดียวกัน หรือของกลางด้วยกัน)
+  let clear = supabase.from("work_schedules").update({ is_default: false }).neq("id", id);
+  clear = companyId ? clear.eq("company_id", companyId) : clear.is("company_id", null);
+  const { error: clearError } = await clear;
   if (clearError) throw new Error(`ตั้งกะเริ่มต้นไม่สำเร็จ: ${clearError.message}`);
 
   const { error } = await supabase.from("work_schedules").update({ is_default: true }).eq("id", id);
   if (error) throw new Error(`ตั้งกะเริ่มต้นไม่สำเร็จ: ${error.message}`);
 
-  await updateOrgSettings({ default_schedule_id: id });
+  await updateOrgSettings(companyId, { default_schedule_id: id });
 }
 
 export async function deleteSchedule(id: string, force = false): Promise<{ affected: number }> {
@@ -147,50 +181,70 @@ export async function deleteSchedule(id: string, force = false): Promise<{ affec
  * ค่าที่ใช้คำนวณจริงของสาขาหนึ่ง = ค่าองค์กร + กะของสาขา (ไม่มีก็ใช้กะเริ่มต้น) + พิกัดของสาขา
  */
 export async function getResolvedSettings(branchId?: string | null): Promise<WorkSettings> {
-  const [org, schedules, branch] = await Promise.all([
-    getOrgSettings(),
-    listSchedules(),
-    getBranchById(branchId ?? null),
+  const branch = await getBranchById(branchId ?? null);
+  const companyId = branch?.company_id ?? null;
+
+  const [org, schedules] = await Promise.all([
+    getOrgSettings(companyId),
+    listSchedules(companyId),
   ]);
 
   const byId = new Map(schedules.map((s) => [s.id, s]));
-  const fallback =
-    schedules.find((s) => s.is_default) ??
-    (org.default_schedule_id ? byId.get(org.default_schedule_id) : undefined) ??
-    schedules[0] ??
-    FALLBACK_SCHEDULE;
-  const schedule = (branch?.schedule_id ? byId.get(branch.schedule_id) : undefined) ?? fallback;
+  const schedule =
+    (branch?.schedule_id ? byId.get(branch.schedule_id) : undefined) ??
+    pickDefaultSchedule(schedules, org, companyId);
 
   return resolveSettings(org, schedule, branch);
 }
 
-/** ตัวช่วยสำหรับรายงาน: โหลดข้อมูลอ้างอิงครั้งเดียวแล้ว resolve ได้หลายสาขา */
-export async function getSettingsResolver(): Promise<{
+/** กะที่ใช้เมื่อสาขาไม่ได้เลือกเอง — ของบริษัทตัวเองมาก่อน แล้วค่อยของกลาง */
+function pickDefaultSchedule(
+  schedules: WorkSchedule[],
+  org: OrgSettings,
+  companyId: string | null,
+): WorkSchedule {
+  return (
+    schedules.find((s) => s.is_default && s.company_id === companyId) ??
+    schedules.find((s) => s.is_default && s.company_id === null) ??
+    schedules.find((s) => s.id === org.default_schedule_id) ??
+    schedules.find((s) => s.company_id === companyId) ??
+    schedules[0] ??
+    FALLBACK_SCHEDULE
+  );
+}
+
+/**
+ * ตัวช่วยสำหรับรายงาน: โหลดข้อมูลอ้างอิงครั้งเดียวแล้ว resolve ได้หลายสาขา
+ * รองรับรายงานที่มีหลายบริษัทปนกัน โดยหยิบค่าตั้งต้นและกะตามบริษัทของแต่ละสาขา
+ */
+export async function getSettingsResolver(companyId?: string | null): Promise<{
   org: OrgSettings;
   branches: Map<string, Branch>;
   resolve: (branchId?: string | null) => WorkSettings;
 }> {
-  const [org, schedules, branchList] = await Promise.all([
-    getOrgSettings(),
+  const [orgList, schedules, branchList] = await Promise.all([
+    listOrgSettings(),
     listSchedules(),
-    listBranches(),
+    listBranches(false, companyId),
   ]);
 
+  const orgByCompany = new Map(orgList.map((o) => [o.company_id ?? "", o]));
   const scheduleById = new Map(schedules.map((s) => [s.id, s]));
   const branches = new Map(branchList.map((b) => [b.id, b]));
-  const fallback =
-    schedules.find((s) => s.is_default) ??
-    (org.default_schedule_id ? scheduleById.get(org.default_schedule_id) : undefined) ??
-    schedules[0] ??
-    FALLBACK_SCHEDULE;
+
+  const orgFor = (cid: string | null) =>
+    orgByCompany.get(cid ?? "") ?? orgByCompany.get("") ?? { ...DEFAULT_ORG, company_id: cid };
 
   return {
-    org,
+    org: orgFor(companyId ?? null),
     branches,
     resolve: (branchId) => {
       const branch = branchId ? (branches.get(branchId) ?? null) : null;
+      const cid = branch?.company_id ?? companyId ?? null;
+      const org = orgFor(cid);
       const schedule =
-        (branch?.schedule_id ? scheduleById.get(branch.schedule_id) : undefined) ?? fallback;
+        (branch?.schedule_id ? scheduleById.get(branch.schedule_id) : undefined) ??
+        pickDefaultSchedule(schedules, org, cid);
       return resolveSettings(org, schedule, branch);
     },
   };
@@ -199,13 +253,22 @@ export async function getSettingsResolver(): Promise<{
 // ---------- พนักงาน ----------
 
 export async function listEmployees(
-  options: { activeOnly?: boolean; branchId?: string } | boolean = false,
+  options: { activeOnly?: boolean; branchId?: string; companyId?: string | null } | boolean = false,
 ): Promise<Employee[]> {
   const opts = typeof options === "boolean" ? { activeOnly: options } : options;
+
+  // พนักงานสังกัดบริษัทผ่านสาขาของตัวเอง จึงกรองด้วยรายการสาขาของบริษัทนั้น
+  const companyBranchIds = opts.companyId
+    ? (await listBranches(false, opts.companyId)).map((b) => b.id)
+    : null;
 
   let query = getSupabase().from("employees").select(EMPLOYEE_COLUMNS).order("emp_code");
   if (opts.activeOnly) query = query.eq("is_active", true);
   if (opts.branchId) query = query.eq("branch_id", opts.branchId);
+  else if (companyBranchIds) {
+    if (companyBranchIds.length === 0) return [];
+    query = query.in("branch_id", companyBranchIds);
+  }
 
   const { data, error } = await query;
   if (error) throw new Error(`อ่านรายชื่อพนักงานไม่สำเร็จ: ${error.message}`);
@@ -260,9 +323,13 @@ export async function deleteEmployee(id: string): Promise<{ photosDeleted: numbe
 
 // ---------- สาขา ----------
 
-export async function listBranches(activeOnly = false): Promise<Branch[]> {
+export async function listBranches(
+  activeOnly = false,
+  companyId?: string | null,
+): Promise<Branch[]> {
   let query = getSupabase().from("branches").select("*").order("code");
   if (activeOnly) query = query.eq("is_active", true);
+  if (companyId) query = query.eq("company_id", companyId);
 
   const { data, error } = await query;
   if (error) throw new Error(`อ่านรายชื่อสาขาไม่สำเร็จ: ${error.message}`);
@@ -323,14 +390,20 @@ export async function deleteBranch(id: string, force = false): Promise<{ affecte
 
 // ---------- แผนก / ตำแหน่ง ----------
 
-export async function listDepartments(): Promise<Department[]> {
-  const { data, error } = await getSupabase().from("departments").select("*").order("name");
+export async function listDepartments(companyId?: string | null): Promise<Department[]> {
+  let query = getSupabase().from("departments").select("*").order("name");
+  if (companyId) query = query.or(companyScope(companyId));
+
+  const { data, error } = await query;
   if (error) throw new Error(`อ่านรายชื่อแผนกไม่สำเร็จ: ${error.message}`);
   return (data ?? []) as Department[];
 }
 
-export async function listPositions(): Promise<Position[]> {
-  const { data, error } = await getSupabase().from("positions").select("*").order("name");
+export async function listPositions(companyId?: string | null): Promise<Position[]> {
+  let query = getSupabase().from("positions").select("*").order("name");
+  if (companyId) query = query.or(companyScope(companyId));
+
+  const { data, error } = await query;
   if (error) throw new Error(`อ่านรายชื่อตำแหน่งไม่สำเร็จ: ${error.message}`);
   return (data ?? []) as Position[];
 }
@@ -342,8 +415,12 @@ const LOOKUP_LABEL: Record<LookupTable, string> = {
   positions: "ตำแหน่ง",
 };
 
-export async function insertLookup(table: LookupTable, name: string): Promise<void> {
-  const { error } = await getSupabase().from(table).insert({ name });
+export async function insertLookup(
+  table: LookupTable,
+  name: string,
+  companyId: string | null = null,
+): Promise<void> {
+  const { error } = await getSupabase().from(table).insert({ name, company_id: companyId });
   if (error) {
     throw new Error(
       error.code === "23505"
@@ -384,20 +461,32 @@ export async function deleteLookup(
 
 // ---------- วันหยุด ----------
 
-export async function getHolidaySet(from: string, to: string): Promise<Set<string>> {
-  const { data, error } = await getSupabase()
+export async function getHolidaySet(
+  from: string,
+  to: string,
+  companyId?: string | null,
+): Promise<Set<string>> {
+  let query = getSupabase()
     .from("holidays")
     .select("holiday_date")
     .gte("holiday_date", from)
     .lte("holiday_date", to);
+  if (companyId) query = query.or(companyScope(companyId));
+
+  const { data, error } = await query;
   if (error) throw new Error(`อ่านวันหยุดไม่สำเร็จ: ${error.message}`);
   return new Set((data ?? []).map((r: { holiday_date: string }) => r.holiday_date));
 }
 
-export async function listHolidays(from?: string, to?: string): Promise<Holiday[]> {
+export async function listHolidays(
+  from?: string,
+  to?: string,
+  companyId?: string | null,
+): Promise<Holiday[]> {
   let query = getSupabase().from("holidays").select("*").order("holiday_date");
   if (from) query = query.gte("holiday_date", from);
   if (to) query = query.lte("holiday_date", to);
+  if (companyId) query = query.or(companyScope(companyId));
 
   const { data, error } = await query;
   if (error) throw new Error(`อ่านวันหยุดไม่สำเร็จ: ${error.message}`);
@@ -405,12 +494,20 @@ export async function listHolidays(from?: string, to?: string): Promise<Holiday[
 }
 
 export async function upsertHoliday(holiday: Holiday): Promise<void> {
-  const { error } = await getSupabase().from("holidays").upsert(holiday);
+  const { error } = await getSupabase()
+    .from("holidays")
+    .upsert(
+      { ...holiday, company_id: holiday.company_id ?? null },
+      { onConflict: "company_id,holiday_date" },
+    );
   if (error) throw new Error(`บันทึกวันหยุดไม่สำเร็จ: ${error.message}`);
 }
 
-export async function deleteHoliday(date: string): Promise<void> {
-  const { error } = await getSupabase().from("holidays").delete().eq("holiday_date", date);
+export async function deleteHoliday(date: string, companyId?: string | null): Promise<void> {
+  let query = getSupabase().from("holidays").delete().eq("holiday_date", date);
+  query = companyId ? query.eq("company_id", companyId) : query.is("company_id", null);
+
+  const { error } = await query;
   if (error) throw new Error(`ลบวันหยุดไม่สำเร็จ: ${error.message}`);
 }
 
@@ -421,6 +518,7 @@ export async function getDayRows(params: {
   to: string;
   employeeId?: string;
   branchId?: string;
+  companyId?: string | null;
 }): Promise<AttendanceDayRow[]> {
   let query = getSupabase()
     .from("v_attendance_days")
@@ -432,6 +530,12 @@ export async function getDayRows(params: {
 
   if (params.employeeId) query = query.eq("employee_id", params.employeeId);
   if (params.branchId) query = query.eq("branch_id", params.branchId);
+  else if (params.companyId) {
+    // view ไม่มี company_id ตรง ๆ จึงกรองด้วยรายการสาขาของบริษัทนั้น
+    const branchIds = (await listBranches(false, params.companyId)).map((b) => b.id);
+    if (branchIds.length === 0) return [];
+    query = query.in("branch_id", branchIds);
+  }
 
   const { data, error } = await query;
   if (error) throw new Error(`อ่านข้อมูลการลงเวลาไม่สำเร็จ: ${error.message}`);
@@ -523,7 +627,16 @@ export type AttendanceFilter = {
   to: string;
   employeeId?: string;
   branchId?: string;
+  /** จำกัดเฉพาะสาขาของบริษัทนี้ (ใช้ตอนนับ/ลบข้อมูลจากหน้าหลังบ้าน) */
+  companyId?: string | null;
 };
+
+/** สาขาที่เข้าเงื่อนไข — null = ไม่จำกัดสาขา */
+async function branchIdsFor(filter: AttendanceFilter): Promise<string[] | null> {
+  if (filter.branchId) return [filter.branchId];
+  if (!filter.companyId) return null;
+  return (await listBranches(false, filter.companyId)).map((b) => b.id);
+}
 
 /** นับจำนวนรายการลงเวลาที่ตรงเงื่อนไข (ใช้แสดงก่อนยืนยันลบ) */
 export async function countAttendance(filter: AttendanceFilter): Promise<number> {
@@ -533,7 +646,12 @@ export async function countAttendance(filter: AttendanceFilter): Promise<number>
     .gte("work_date", filter.from)
     .lte("work_date", filter.to);
   if (filter.employeeId) query = query.eq("employee_id", filter.employeeId);
-  if (filter.branchId) query = query.eq("branch_id", filter.branchId);
+
+  const branchIds = await branchIdsFor(filter);
+  if (branchIds) {
+    if (branchIds.length === 0) return 0;
+    query = query.in("branch_id", branchIds);
+  }
 
   const { count, error } = await query;
   if (error) throw new Error(`นับข้อมูลการลงเวลาไม่สำเร็จ: ${error.message}`);
@@ -552,7 +670,12 @@ export async function deleteAttendanceRange(
     .gte("work_date", filter.from)
     .lte("work_date", filter.to);
   if (filter.employeeId) query = query.eq("employee_id", filter.employeeId);
-  if (filter.branchId) query = query.eq("branch_id", filter.branchId);
+
+  const branchIds = await branchIdsFor(filter);
+  if (branchIds) {
+    if (branchIds.length === 0) return { deleted: 0, photosDeleted: 0 };
+    query = query.in("branch_id", branchIds);
+  }
 
   const { data, error } = await query;
   if (error) throw new Error(`อ่านข้อมูลการลงเวลาไม่สำเร็จ: ${error.message}`);

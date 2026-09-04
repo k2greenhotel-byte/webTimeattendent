@@ -1,4 +1,6 @@
 import BranchFilter from "@/components/BranchFilter";
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
 import ReportTable from "@/components/ReportTable";
 import TotalsCards from "@/components/TotalsCards";
@@ -11,15 +13,16 @@ export const dynamic = "force-dynamic";
 export default async function DailyReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; branch?: string }>;
+  searchParams: Promise<{ date?: string; branch?: string; company?: string }>;
 }) {
   const params = await searchParams;
   const date = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : workDateOf();
   const branchId = params.branch || undefined;
 
+  const scope = await getCompanyScope(params.company);
   const [branches, { rows, totals, settings }] = await Promise.all([
-    listBranches(),
-    buildDailyReport(date, branchId),
+    listBranches(false, scope.companyId),
+    buildDailyReport(date, branchId, scope.companyId),
   ]);
   const currentBranch = branches.find((b) => b.id === branchId);
 
@@ -35,7 +38,8 @@ export default async function DailyReportPage({
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
-          <form method="get" className="no-print flex items-end gap-2">
+          <form method="get" className="no-print flex flex-wrap items-end gap-2">
+            <CompanyFilter companies={scope.companies} value={scope.companyId} />
             <div>
               <label className="label" htmlFor="date">
                 เลือกวันที่

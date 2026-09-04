@@ -76,6 +76,8 @@ export async function buildEmployeeReport(params: {
   employeeId: string;
   from: string;
   to: string;
+  /** ใช้เลือกวันหยุด/ค่าตั้งต้นของบริษัทให้ถูกชุด */
+  companyId?: string | null;
 }): Promise<{
   employee: Employee | null;
   settings: WorkSettings;
@@ -84,9 +86,9 @@ export async function buildEmployeeReport(params: {
 }> {
   const [employee, holidays, dayRows, resolver] = await Promise.all([
     getEmployeeById(params.employeeId),
-    getHolidaySet(params.from, params.to),
+    getHolidaySet(params.from, params.to, params.companyId),
     getDayRows({ from: params.from, to: params.to, employeeId: params.employeeId }),
-    getSettingsResolver(),
+    getSettingsResolver(params.companyId),
   ]);
 
   const byDate = new Map(dayRows.map((r) => [r.work_date, r]));
@@ -110,16 +112,17 @@ export async function buildEmployeeReport(params: {
 export async function buildDailyReport(
   date: string,
   branchId?: string,
+  companyId?: string | null,
 ): Promise<{
   settings: WorkSettings;
   rows: ReportRow[];
   totals: PeriodTotals;
 }> {
   const [employees, holidays, dayRows, resolver] = await Promise.all([
-    listEmployees({ activeOnly: true, branchId }),
-    getHolidaySet(date, date),
-    getDayRows({ from: date, to: date, branchId }),
-    getSettingsResolver(),
+    listEmployees({ activeOnly: true, branchId, companyId }),
+    getHolidaySet(date, date, companyId),
+    getDayRows({ from: date, to: date, branchId, companyId }),
+    getSettingsResolver(companyId),
   ]);
 
   const byEmployee = new Map(dayRows.map((r) => [r.employee_id, r]));
@@ -152,6 +155,7 @@ export async function buildMonthlyReport(
   year: number,
   month: number,
   branchId?: string,
+  companyId?: string | null,
 ): Promise<{
   settings: WorkSettings;
   dates: string[];
@@ -160,10 +164,10 @@ export async function buildMonthlyReport(
 }> {
   const { from, to } = monthBounds(year, month);
   const [employees, holidays, dayRows, resolver] = await Promise.all([
-    listEmployees({ activeOnly: true, branchId }),
-    getHolidaySet(from, to),
-    getDayRows({ from, to, branchId }),
-    getSettingsResolver(),
+    listEmployees({ activeOnly: true, branchId, companyId }),
+    getHolidaySet(from, to, companyId),
+    getDayRows({ from, to, branchId, companyId }),
+    getSettingsResolver(companyId),
   ]);
 
   const dates = dateRange(from, to);

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import BranchFilter from "@/components/BranchFilter";
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import { formatThaiDate, monthBounds, workDateOf } from "@/lib/datetime";
 import { countAttendance, listBranches, listEmployees } from "@/lib/db";
 import { getSupabase } from "@/lib/supabase-server";
@@ -34,6 +36,7 @@ export default async function DataPage({
     branch?: string;
     msg?: string;
     err?: string;
+    company?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -45,10 +48,11 @@ export default async function DataPage({
   const employeeId = params.employeeId || undefined;
   const branchId = params.branch || undefined;
 
+  const scope = await getCompanyScope(params.company);
   const [branches, employees, matched, audit] = await Promise.all([
-    listBranches(),
-    listEmployees({ branchId }),
-    countAttendance({ from, to, employeeId, branchId }),
+    listBranches(false, scope.companyId),
+    listEmployees({ branchId, companyId: scope.companyId }),
+    countAttendance({ from, to, employeeId, branchId, companyId: scope.companyId }),
     recentAudit(),
   ]);
 
@@ -81,6 +85,7 @@ export default async function DataPage({
         </div>
 
         <form method="get" className="flex flex-wrap items-end gap-2">
+          <CompanyFilter companies={scope.companies} value={scope.companyId} />
           <div>
             <label className="label" htmlFor="from">
               ตั้งแต่
@@ -132,6 +137,7 @@ export default async function DataPage({
           <input type="hidden" name="to" value={to} />
           <input type="hidden" name="branch" value={branchId ?? ""} />
           <input type="hidden" name="employeeId" value={employeeId ?? ""} />
+          <input type="hidden" name="company" value={scope.companyId ?? ""} />
 
           <label className="flex items-center gap-2 text-sm text-rose-700">
             <input type="checkbox" name="confirm" />
@@ -182,7 +188,7 @@ export default async function DataPage({
         {audit.length === 0 ? (
           <p className="py-3 text-center text-sm text-slate-500">ยังไม่มีการลบข้อมูล</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-wrap">
             <table className="table-report">
               <thead>
                 <tr>

@@ -1,4 +1,6 @@
 import BranchFilter from "@/components/BranchFilter";
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
 import ReportTable from "@/components/ReportTable";
 import TotalsCards from "@/components/TotalsCards";
@@ -11,13 +13,20 @@ export const dynamic = "force-dynamic";
 export default async function EmployeeReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ employeeId?: string; from?: string; to?: string; branch?: string }>;
+  searchParams: Promise<{
+    employeeId?: string;
+    from?: string;
+    to?: string;
+    branch?: string;
+    company?: string;
+  }>;
 }) {
   const params = await searchParams;
   const branchId = params.branch || undefined;
+  const scope = await getCompanyScope(params.company);
   const [employees, branches] = await Promise.all([
-    listEmployees({ branchId }),
-    listBranches(),
+    listEmployees({ branchId, companyId: scope.companyId }),
+    listBranches(false, scope.companyId),
   ]);
 
   const today = workDateOf();
@@ -27,7 +36,7 @@ export default async function EmployeeReportPage({
   const employeeId = params.employeeId ?? employees[0]?.id;
 
   const report = employeeId
-    ? await buildEmployeeReport({ employeeId, from, to })
+    ? await buildEmployeeReport({ employeeId, from, to, companyId: scope.companyId })
     : null;
 
   return (
@@ -47,6 +56,7 @@ export default async function EmployeeReportPage({
 
         <div className="flex flex-wrap items-end gap-2">
           <form method="get" className="no-print flex flex-wrap items-end gap-2">
+            <CompanyFilter companies={scope.companies} value={scope.companyId} />
             <BranchFilter branches={branches} value={branchId} />
             <div>
               <label className="label" htmlFor="employeeId">

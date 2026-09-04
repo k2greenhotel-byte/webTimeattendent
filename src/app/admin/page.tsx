@@ -1,4 +1,6 @@
 import Link from "next/link";
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import AdminPinGate from "@/components/AdminPinGate";
 import BranchFilter from "@/components/BranchFilter";
 import ReportTable from "@/components/ReportTable";
@@ -12,18 +14,19 @@ export const dynamic = "force-dynamic";
 export default async function AdminDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string }>;
+  searchParams: Promise<{ branch?: string; company?: string }>;
 }) {
   // ประตูทางเข้า: ยังไม่ผ่าน PIN 6 หลัก
   if (!(await isAdminAuthed())) return <AdminPinGate />;
 
-  const { branch } = await searchParams;
+  const { branch, company } = await searchParams;
   const branchId = branch || undefined;
 
   const today = workDateOf();
+  const scope = await getCompanyScope(company);
   const [branches, { rows, totals, settings }] = await Promise.all([
-    listBranches(),
-    buildDailyReport(today, branchId),
+    listBranches(false, scope.companyId),
+    buildDailyReport(today, branchId, scope.companyId),
   ]);
 
   const notCheckedIn = rows.filter((r) => !r.summary.checkInAt && r.summary.status !== "holiday");
@@ -54,7 +57,8 @@ export default async function AdminDashboard({
           </p>
         </div>
 
-        <form method="get" className="no-print flex items-end gap-2">
+        <form method="get" className="no-print flex flex-wrap items-end gap-2">
+          <CompanyFilter companies={scope.companies} value={scope.companyId} />
           <BranchFilter branches={branches} value={branchId} />
           <button type="submit" className="btn-secondary">
             กรอง

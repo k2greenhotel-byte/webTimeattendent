@@ -1,5 +1,7 @@
 import Link from "next/link";
 import BranchFilter from "@/components/BranchFilter";
+import CompanyFilter from "@/components/CompanyFilter";
+import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
 import { formatDuration, formatThaiMonth, workDateOf } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
@@ -18,7 +20,7 @@ const CELL: Record<DayStatus, { text: string; cls: string }> = {
 export default async function MonthlyReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string; branch?: string }>;
+  searchParams: Promise<{ year?: string; month?: string; branch?: string; company?: string }>;
 }) {
   const params = await searchParams;
   const today = workDateOf();
@@ -26,9 +28,10 @@ export default async function MonthlyReportPage({
   const month = Number(params.month) || Number(today.slice(5, 7));
   const branchId = params.branch || undefined;
 
+  const scope = await getCompanyScope(params.company);
   const [branches, { dates, employees, settings }] = await Promise.all([
-    listBranches(),
-    buildMonthlyReport(year, month, branchId),
+    listBranches(false, scope.companyId),
+    buildMonthlyReport(year, month, branchId, scope.companyId),
   ]);
   const currentBranch = branches.find((b) => b.id === branchId);
 
@@ -44,7 +47,8 @@ export default async function MonthlyReportPage({
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
-          <form method="get" className="no-print flex items-end gap-2">
+          <form method="get" className="no-print flex flex-wrap items-end gap-2">
+            <CompanyFilter companies={scope.companies} value={scope.companyId} />
             <div>
               <label className="label" htmlFor="month">
                 เดือน
@@ -74,7 +78,7 @@ export default async function MonthlyReportPage({
         </div>
       </div>
 
-      <section className="card overflow-x-auto">
+      <section className="card table-wrap">
         <table className="table-report">
           <thead>
             <tr>

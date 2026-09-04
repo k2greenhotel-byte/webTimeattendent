@@ -22,12 +22,14 @@ export async function deleteAttendanceForm(form: FormData): Promise<void> {
   const to = str(form, "to");
   const employeeId = str(form, "employeeId");
   const branchId = str(form, "branch");
+  const companyId = str(form, "company") || null;
 
   const params = new URLSearchParams();
   if (from) params.set("from", from);
   if (to) params.set("to", to);
   if (employeeId) params.set("employeeId", employeeId);
   if (branchId) params.set("branch", branchId);
+  if (companyId) params.set("company", companyId);
   const query = params.toString();
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
@@ -43,6 +45,7 @@ export async function deleteAttendanceForm(form: FormData): Promise<void> {
     to,
     employeeId: employeeId || undefined,
     branchId: branchId || undefined,
+    companyId,
   };
 
   let result = { deleted: 0, photosDeleted: 0 };
