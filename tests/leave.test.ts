@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAdvanceOverview,
+  buildLeaveOverview,
+  byBranchKey,
+  byCompanyKey,
+  byEmployeeKey,
+  byLeaveTypeKey,
   canDecideAdvance,
   canDecideLeave,
   certDaysLeft,
@@ -13,8 +19,11 @@ import {
   leaveRangeText,
   resolveApprovedAmount,
   serviceMonths,
+  summarizeAdvanceByKey,
   summarizeAdvanceInbox,
+  summarizeLeaveByKey,
   summarizeLeaveInbox,
+  topN,
   validateAdvanceDecision,
   validateAdvanceInput,
   validateLeaveDecision,
@@ -613,5 +622,144 @@ describe("สรุปกล่องอนุมัติ", () => {
     ]);
     expect(summary.pending).toBe(2);
     expect(summary.totalRequested).toBe(8000);
+  });
+});
+
+// ---------- หน้าจอสอบถาม / Dashboard ----------
+
+describe("ภาพรวมใบแจ้งลา (ทุกสถานะ)", () => {
+  it("นับครบทุกสถานะ รวมวันลา และธงเตือน", () => {
+    const rows = [
+      leaveRow({ id: "1", status: "pending", total_days: 2 }),
+      leaveRow({ id: "2", status: "approved", total_days: 1, counts_as_absent: true }),
+      leaveRow({ id: "3", status: "rejected", total_days: 3, is_late_notice: true }),
+      leaveRow({ id: "4", status: "need_docs", total_days: 1 }),
+      leaveRow({ id: "5", status: "cancelled", total_days: 1 }),
+    ];
+    const overview = buildLeaveOverview(rows);
+    expect(overview.total).toBe(5);
+    expect(overview.byStatus).toEqual({
+      pending: 1,
+      need_docs: 1,
+      approved: 1,
+      rejected: 1,
+      cancelled: 1,
+    });
+    expect(overview.totalDays).toBe(8);
+    expect(overview.absentCount).toBe(1);
+    expect(overview.lateCount).toBe(1);
+  });
+
+  it("ใบแจ้งเข้างานสาย (มีเวลาที่จะมาถึง) ไม่นับรวมในจำนวนวันลา", () => {
+    const rows = [leaveRow({ total_days: 1, arrival_time: "10:00:00" })];
+    expect(buildLeaveOverview(rows).totalDays).toBe(0);
+  });
+
+  it("ไม่มีข้อมูลคืนค่าว่างไม่ error", () => {
+    const overview = buildLeaveOverview([]);
+    expect(overview.total).toBe(0);
+    expect(overview.totalDays).toBe(0);
+  });
+});
+
+describe("จัดกลุ่มใบแจ้งลาตามกุญแจที่กำหนด", () => {
+  it("จัดกลุ่มตามบริษัทและสรุปแยกแต่ละกลุ่มถูกต้อง", () => {
+    const rows = [
+      leaveRow({ id: "1", company_id: "c1", company_name: "บริษัท ก", status: "approved", total_days: 2 }),
+      leaveRow({ id: "2", company_id: "c1", company_name: "บริษัท ก", status: "pending", total_days: 1 }),
+      leaveRow({ id: "3", company_id: "c2", company_name: "บริษัท ข", status: "approved", total_days: 5 }),
+    ];
+    const groups = summarizeLeaveByKey(rows, byCompanyKey);
+    const a = groups.find((g) => g.key === "c1")!;
+    const b = groups.find((g) => g.key === "c2")!;
+    expect(a.total).toBe(2);
+    expect(a.totalDays).toBe(3);
+    expect(a.byStatus.approved).toBe(1);
+    expect(a.byStatus.pending).toBe(1);
+    expect(b.total).toBe(1);
+    expect(b.totalDays).toBe(5);
+  });
+
+  it("เรียงจากกลุ่มที่มีใบมากที่สุดก่อน", () => {
+    const rows = [
+      leaveRow({ id: "1", branch_id: "b1", branch_name: "สาขา A" }),
+      leaveRow({ id: "2", branch_id: "b2", branch_name: "สาขา B" }),
+      leaveRow({ id: "3", branch_id: "b2", branch_name: "สาขา B" }),
+    ];
+    const groups = summarizeLeaveByKey(rows, byBranchKey);
+    expect(groups[0].key).toBe("b2");
+    expect(groups[0].total).toBe(2);
+  });
+
+  it("จัดกลุ่มตามพนักงานและตามประเภทการลาได้", () => {
+    const rows = [
+      leaveRow({ id: "1", employee_id: "e1", employee_name: "สมชาย", type_id: "t1", type_name: "ลาป่วย" }),
+      leaveRow({ id: "2", employee_id: "e1", employee_name: "สมชาย", type_id: "t2", type_name: "ลากิจ" }),
+    ];
+    expect(summarizeLeaveByKey(rows, byEmployeeKey)).toHaveLength(1);
+    expect(summarizeLeaveByKey(rows, byLeaveTypeKey)).toHaveLength(2);
+  });
+
+  it("ไม่ระบุบริษัท/สาขา จัดเป็นกลุ่มเดียวกัน", () => {
+    const rows = [
+      leaveRow({ id: "1", company_id: null, company_name: null }),
+      leaveRow({ id: "2", company_id: null, company_name: null }),
+    ];
+    const groups = summarizeLeaveByKey(rows, byCompanyKey);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe("ไม่ระบุบริษัท");
+    expect(groups[0].total).toBe(2);
+  });
+});
+
+describe("ภาพรวมใบขอเบิกเงิน (ทุกสถานะ)", () => {
+  it("รวมยอดขอและยอดอนุมัติของทุกสถานะ", () => {
+    const rows = [
+      advanceRow({ id: "1", status: "approved", amount: 5000, approved_amount: 5000 }),
+      advanceRow({ id: "2", status: "partial", amount: 4000, approved_amount: 2000 }),
+      advanceRow({ id: "3", status: "pending", amount: 1000, approved_amount: 0 }),
+      advanceRow({ id: "4", status: "rejected", amount: 2000, approved_amount: 0 }),
+    ];
+    const overview = buildAdvanceOverview(rows);
+    expect(overview.total).toBe(4);
+    expect(overview.byStatus.approved).toBe(1);
+    expect(overview.byStatus.partial).toBe(1);
+    expect(overview.totalRequested).toBe(12000);
+    expect(overview.totalApproved).toBe(7000);
+  });
+});
+
+describe("จัดกลุ่มใบขอเบิกเงินตามกุญแจที่กำหนด", () => {
+  it("สรุปยอดขอ/ยอดอนุมัติแยกตามกลุ่ม และเรียงยอดขอมากไปน้อย", () => {
+    const rows = [
+      advanceRow({ id: "1", branch_id: "b1", branch_name: "สาขา A", amount: 3000, approved_amount: 3000 }),
+      advanceRow({ id: "2", branch_id: "b2", branch_name: "สาขา B", amount: 9000, approved_amount: 5000 }),
+      advanceRow({ id: "3", branch_id: "b2", branch_name: "สาขา B", amount: 1000, approved_amount: 0, status: "rejected" }),
+    ];
+    const groups = summarizeAdvanceByKey(rows, byBranchKey);
+    expect(groups[0].key).toBe("b2");
+    expect(groups[0].total).toBe(2);
+    expect(groups[0].totalRequested).toBe(10000);
+    expect(groups[0].totalApproved).toBe(5000);
+    expect(groups[0].byStatus.rejected).toBe(1);
+    expect(groups[1].key).toBe("b1");
+  });
+});
+
+describe("จัดอันดับ N อันดับแรก", () => {
+  it("เรียงจากมากไปน้อยและตัดตามจำนวนที่กำหนด", () => {
+    const rows = [{ v: 5 }, { v: 20 }, { v: 1 }, { v: 10 }];
+    const top2 = topN(rows, (r) => r.v, 2);
+    expect(top2.map((r) => r.v)).toEqual([20, 10]);
+  });
+
+  it("จำนวนแถวน้อยกว่า n ไม่ error คืนเท่าที่มี", () => {
+    expect(topN([{ v: 1 }], (r) => r.v, 5)).toHaveLength(1);
+  });
+
+  it("ไม่แก้ไข array ต้นฉบับ", () => {
+    const rows = [{ v: 3 }, { v: 1 }, { v: 2 }];
+    topN(rows, (r) => r.v, 2);
+    expect(rows.map((r) => r.v)).toEqual([3, 1, 2]);
   });
 });

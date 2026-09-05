@@ -1,0 +1,112 @@
+import HrReportFilters, { type HrReportParams } from "@/components/hr/HrReportFilters";
+import LeaveTable from "@/components/hr/LeaveTable";
+import PrintButton from "@/components/procurement/PrintButton";
+import { listCompanies } from "@/lib/core-db";
+import { workDateOf } from "@/lib/datetime";
+import { listBranches, listEmployees } from "@/lib/db";
+import { buildLeaveOverview } from "@/lib/leave";
+import { listLeaveRequests, listLeaveTypes } from "@/lib/leave-db";
+import { LEAVE_STATUS_LABEL, LEAVE_STATUS_ORDER, type LeaveStatus } from "@/lib/leave-types";
+import { requirePermission } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
+
+/** ลิงก์ดาวน์โหลดที่พกเงื่อนไขค้นหาปัจจุบันไปด้วย */
+function exportHref(params: HrReportParams, format: "xlsx" | "csv"): string {
+  const sp = new URLSearchParams();
+  sp.set("kind", "leave");
+  for (const [key, value] of Object.entries(params)) {
+    if (value && key !== "msg" && key !== "err") sp.set(key, value);
+  }
+  sp.set("format", format);
+  return `/api/hr/export?${sp.toString()}`;
+}
+
+/** หน้าจอ 8 — สอบถามข้อมูลการลา แยกรายบริษัท/สาขา/พนักงาน พร้อมดาวน์โหลด Excel/CSV/พิมพ์เป็น PDF */
+export default async function LeaveSearchPage({
+  searchParams,
+}: {
+  searchParams: Promise<HrReportParams>;
+}) {
+  await requirePermission("HR_SEARCH_LEAVE", "read");
+  const params = await searchParams;
+  const today = workDateOf();
+
+  const status = (LEAVE_STATUS_ORDER as string[]).includes(params.status ?? "")
+    ? (params.status as LeaveStatus)
+    : undefined;
+
+  const [rows, companies, branches, employees, types] = await Promise.all([
+    listLeaveRequests({
+      companyId: params.company || undefined,
+      branchId: params.branch || undefined,
+      employeeId: params.employee || undefined,
+      typeId: params.type || undefined,
+      from: params.from || undefined,
+      to: params.to || undefined,
+      statuses: status ? [status] : undefined,
+      limit: 1000,
+    }),
+    listCompanies(true),
+    listBranches(true, params.company || undefined),
+    listEmployees({ companyId: params.company || undefined, branchId: params.branch || undefined }),
+    listLeaveTypes(),
+  ]);
+
+  const overview = buildLeaveOverview(rows);
+
+  const cards = [
+    { label: "จำนวนใบทั้งหมด", value: String(overview.total), tone: "text-slate-800" },
+    { label: "รออนุมัติ", value: String(overview.byStatus.pending), tone: "text-amber-600" },
+    { label: "อนุมัติแล้ว", value: String(overview.byStatus.approved), tone: "text-emerald-600" },
+    { label: "ไม่อนุมัติ", value: String(overview.byStatus.rejected), tone: "text-rose-600" },
+    { label: "รวมวันลา", value: `${overview.totalDays} วัน`, tone: "text-slate-800" },
+    { label: "ถือเป็นขาดงาน", value: String(overview.absentCount), tone: "text-rose-600" },
+  ];
+
+  return (
+    <main className="mx-auto max-w-[110rem] space-y-4 p-3 sm:p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">8. สอบถามข้อมูลการลา</h1>
+          <p className="text-sm text-slate-500">
+            เลือกบริษัท สาขา หรือพนักงานเพื่อกรองข้อมูล — เงื่อนไขที่กรองไว้จะติดไปกับไฟล์ที่ดาวน์โหลดด้วย
+          </p>
+        </div>
+        <div className="no-print flex w-full flex-wrap gap-2 sm:w-auto">
+          <a href={exportHref(params, "xlsx")} className="btn-primary w-full text-center sm:w-auto">
+            ⬇ ดาวน์โหลด Excel
+          </a>
+          <a href={exportHref(params, "csv")} className="btn-secondary w-full text-center sm:w-auto">
+            ⬇ CSV
+          </a>
+          <PrintButton />
+        </div>
+      </div>
+
+      <HrReportFilters
+        basePath="/hr/search/leave"
+        params={params}
+        companies={companies}
+        branches={branches}
+        employees={employees}
+        types={types}
+        statusOptions={LEAVE_STATUS_ORDER.map((s) => ({ value: s, label: LEAVE_STATUS_LABEL[s] }))}
+      />
+
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {cards.map((c) => (
+          <div key={c.label} className="card">
+            <p className="text-xs text-slate-500">{c.label}</p>
+            <p className={`mt-1 text-lg font-semibold ${c.tone}`}>{c.value}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="card space-y-3">
+        <h2 className="font-semibold text-slate-800">ผลการค้นหา ({rows.length} ใบ) · {today}</h2>
+        <LeaveTable rows={rows} today={today} emptyText="ไม่พบใบแจ้งลาที่ตรงกับเงื่อนไข" />
+      </section>
+    </main>
+  );
+}

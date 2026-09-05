@@ -11,12 +11,15 @@ export default async function HrHomePage() {
   const user = await requireProgram("HR");
   const today = workDateOf();
 
-  const [myLeave, myAdvance, canApproveLeave, canApproveAdvance] = await Promise.all([
-    listLeaveRequests({ employeeId: user.id, limit: 100 }),
-    listAdvanceRequests({ employeeId: user.id, limit: 100 }),
-    checkPermission("HR_LEAVE_APPROVE", "read"),
-    checkPermission("HR_ADV_APPROVE", "read"),
-  ]);
+  const [myLeave, myAdvance, canApproveLeave, canApproveAdvance, canSearch, canSeeDashboard] =
+    await Promise.all([
+      listLeaveRequests({ employeeId: user.id, limit: 100 }),
+      listAdvanceRequests({ employeeId: user.id, limit: 100 }),
+      checkPermission("HR_LEAVE_APPROVE", "read"),
+      checkPermission("HR_ADV_APPROVE", "read"),
+      checkPermission("HR_SEARCH_LEAVE", "read"),
+      checkPermission("HR_DASHBOARD", "read"),
+    ]);
 
   const pendingLeave = myLeave.filter((r) => r.status === "pending").length;
   const needDocs = myLeave.filter((r) => r.status === "need_docs" || isCertOverdue(r, today));
@@ -74,6 +77,20 @@ export default async function HrHomePage() {
       hint: "อนุมัติเต็มจำนวน อนุมัติบางส่วน หรือไม่อนุมัติ",
       icon: "🧮",
       show: canApproveAdvance,
+    },
+    {
+      href: "/hr/search/leave",
+      title: "สอบถามข้อมูลการลา",
+      hint: "กรองรายบริษัท/สาขา/พนักงาน/ช่วงวันที่ ดาวน์โหลด Excel หรือพิมพ์เป็น PDF",
+      icon: "🔎",
+      show: canSearch,
+    },
+    {
+      href: "/hr/dashboard",
+      title: "Dashboard สรุป",
+      hint: "ภาพรวมการลาและขอเบิกเงินทั้งหมด แยกตามบริษัท/สาขา พร้อมอันดับพนักงาน",
+      icon: "📊",
+      show: canSeeDashboard,
     },
   ].filter((l) => l.show);
 

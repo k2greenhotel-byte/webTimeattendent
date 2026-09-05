@@ -14,7 +14,9 @@ import type { Authority } from "./approval-types";
 import { withinLimit } from "./approval";
 import {
   ADVANCE_DECISION_ORDER,
+  ADVANCE_STATUS_ORDER,
   LEAVE_DECISION_ORDER,
+  LEAVE_STATUS_ORDER,
   type AdvanceRequestRow,
   type AdvanceStatus,
   type LeaveRequestRow,
@@ -406,4 +408,177 @@ export function summarizeAdvanceInbox(rows: AdvanceRequestRow[]): AdvanceInboxSu
     pending: open.length,
     totalRequested: round2(open.reduce((sum, r) => sum + r.amount, 0)),
   };
+}
+
+// ---------- หน้าจอสอบถาม / รายงาน / Dashboard (ทุกสถานะ ไม่จำกัดแค่ที่รออนุมัติ) ----------
+
+/** กุญแจของหนึ่งกลุ่ม เอาไว้ groupby แบบไหนก็ได้ (บริษัท/สาขา/พนักงาน/ประเภทการลา) */
+export type GroupKey = { key: string; label: string };
+
+export function byCompanyKey(row: { company_id: string | null; company_name: string | null }): GroupKey {
+  return { key: row.company_id ?? "none", label: row.company_name ?? "ไม่ระบุบริษัท" };
+}
+
+export function byBranchKey(row: { branch_id: string | null; branch_name: string | null }): GroupKey {
+  return { key: row.branch_id ?? "none", label: row.branch_name ?? "ไม่ระบุสาขา" };
+}
+
+export function byEmployeeKey(row: { employee_id: string | null; employee_name: string }): GroupKey {
+  return { key: row.employee_id ?? row.employee_name, label: row.employee_name };
+}
+
+export function byLeaveTypeKey(row: { type_id: string; type_icon: string | null; type_name: string }): GroupKey {
+  return { key: row.type_id, label: [row.type_icon, row.type_name].filter(Boolean).join(" ") };
+}
+
+// ---------- ภาพรวมใบแจ้งลา (ทุกสถานะ) ----------
+
+export type LeaveOverview = {
+  total: number;
+  byStatus: Record<LeaveStatus, number>;
+  totalDays: number;
+  absentCount: number;
+  lateCount: number;
+};
+
+export function buildLeaveOverview(rows: LeaveRequestRow[]): LeaveOverview {
+  const byStatus = Object.fromEntries(LEAVE_STATUS_ORDER.map((s) => [s, 0])) as Record<
+    LeaveStatus,
+    number
+  >;
+  let totalDays = 0;
+  let absentCount = 0;
+  let lateCount = 0;
+
+  for (const row of rows) {
+    byStatus[row.status] += 1;
+    if (!row.arrival_time) totalDays += row.total_days;
+    if (row.counts_as_absent) absentCount += 1;
+    if (row.is_late_notice) lateCount += 1;
+  }
+
+  return { total: rows.length, byStatus, totalDays: round2(totalDays), absentCount, lateCount };
+}
+
+export type LeaveGroupSummary = GroupKey & {
+  total: number;
+  byStatus: Record<LeaveStatus, number>;
+  totalDays: number;
+  absentCount: number;
+  lateCount: number;
+};
+
+/** จัดกลุ่มใบแจ้งลาตามกุญแจที่กำหนด (บริษัท/สาขา/พนักงาน/ประเภท) แล้วสรุปทีละกลุ่ม */
+export function summarizeLeaveByKey(
+  rows: LeaveRequestRow[],
+  keyOf: (row: LeaveRequestRow) => GroupKey,
+): LeaveGroupSummary[] {
+  const groups = new Map<string, LeaveGroupSummary>();
+
+  for (const row of rows) {
+    const { key, label } = keyOf(row);
+    const g =
+      groups.get(key) ??
+      ({
+        key,
+        label,
+        total: 0,
+        byStatus: Object.fromEntries(LEAVE_STATUS_ORDER.map((s) => [s, 0])) as Record<
+          LeaveStatus,
+          number
+        >,
+        totalDays: 0,
+        absentCount: 0,
+        lateCount: 0,
+      } satisfies LeaveGroupSummary);
+
+    g.total += 1;
+    g.byStatus[row.status] += 1;
+    if (!row.arrival_time) g.totalDays += row.total_days;
+    if (row.counts_as_absent) g.absentCount += 1;
+    if (row.is_late_notice) g.lateCount += 1;
+    groups.set(key, g);
+  }
+
+  return [...groups.values()]
+    .map((g) => ({ ...g, totalDays: round2(g.totalDays) }))
+    .sort((a, b) => b.total - a.total);
+}
+
+// ---------- ภาพรวมใบขอเบิกเงิน (ทุกสถานะ) ----------
+
+export type AdvanceOverview = {
+  total: number;
+  byStatus: Record<AdvanceStatus, number>;
+  totalRequested: number;
+  totalApproved: number;
+};
+
+export function buildAdvanceOverview(rows: AdvanceRequestRow[]): AdvanceOverview {
+  const byStatus = Object.fromEntries(ADVANCE_STATUS_ORDER.map((s) => [s, 0])) as Record<
+    AdvanceStatus,
+    number
+  >;
+  let totalRequested = 0;
+  let totalApproved = 0;
+
+  for (const row of rows) {
+    byStatus[row.status] += 1;
+    totalRequested += row.amount;
+    totalApproved += row.approved_amount;
+  }
+
+  return {
+    total: rows.length,
+    byStatus,
+    totalRequested: round2(totalRequested),
+    totalApproved: round2(totalApproved),
+  };
+}
+
+export type AdvanceGroupSummary = GroupKey & {
+  total: number;
+  byStatus: Record<AdvanceStatus, number>;
+  totalRequested: number;
+  totalApproved: number;
+};
+
+/** จัดกลุ่มใบขอเบิกเงินตามกุญแจที่กำหนด แล้วสรุปทีละกลุ่ม */
+export function summarizeAdvanceByKey(
+  rows: AdvanceRequestRow[],
+  keyOf: (row: AdvanceRequestRow) => GroupKey,
+): AdvanceGroupSummary[] {
+  const groups = new Map<string, AdvanceGroupSummary>();
+
+  for (const row of rows) {
+    const { key, label } = keyOf(row);
+    const g =
+      groups.get(key) ??
+      ({
+        key,
+        label,
+        total: 0,
+        byStatus: Object.fromEntries(ADVANCE_STATUS_ORDER.map((s) => [s, 0])) as Record<
+          AdvanceStatus,
+          number
+        >,
+        totalRequested: 0,
+        totalApproved: 0,
+      } satisfies AdvanceGroupSummary);
+
+    g.total += 1;
+    g.byStatus[row.status] += 1;
+    g.totalRequested += row.amount;
+    g.totalApproved += row.approved_amount;
+    groups.set(key, g);
+  }
+
+  return [...groups.values()]
+    .map((g) => ({ ...g, totalRequested: round2(g.totalRequested), totalApproved: round2(g.totalApproved) }))
+    .sort((a, b) => b.totalRequested - a.totalRequested);
+}
+
+/** N อันดับแรกที่เรียงจากมาก→น้อยด้วยคีย์ที่กำหนด (ใช้ทำอันดับพนักงานบน dashboard) */
+export function topN<T>(rows: T[], by: (row: T) => number, n: number): T[] {
+  return [...rows].sort((a, b) => by(b) - by(a)).slice(0, n);
 }

@@ -10,6 +10,9 @@ const NAV = [
   { href: "/hr/approvals/leave", label: "5. อนุมัติการลา", menu: "HR_LEAVE_APPROVE" },
   { href: "/hr/approvals/advance", label: "6. อนุมัติขอเบิกเงิน", menu: "HR_ADV_APPROVE" },
   { href: "/hr/setup/leave-types", label: "7. ตั้งค่าประเภทการลา", menu: "HR_TYPES" },
+  { href: "/hr/search/leave", label: "8. สอบถามข้อมูลการลา", menu: "HR_SEARCH_LEAVE" },
+  { href: "/hr/search/advance", label: "9. สอบถามข้อมูลขอเบิกเงิน", menu: "HR_SEARCH_ADV" },
+  { href: "/hr/dashboard", label: "10. Dashboard สรุป", menu: "HR_DASHBOARD" },
 ];
 
 export default function HrHeader({
