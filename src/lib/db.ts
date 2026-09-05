@@ -1394,3 +1394,76 @@ export async function deleteFieldPunch(taskId: string, employeeId: string, type:
     .eq("punch_type", type);
   if (error) throw new Error(`ลบการลงเวลาภารกิจไม่สำเร็จ: ${error.message}`);
 }
+
+// ---------- งานนอกสถานที่: จัดตารางแบบ พนักงาน × วันที่ ----------
+
+/**
+ * หา "งานเดียวกัน" ของวันนั้น (ประเภท + สถานที่ + เวลาแผนเริ่มเท่ากัน ยังไม่ยกเลิก)
+ * ถ้าไม่มีให้สร้างใหม่ — ตารางบูธจึงรวมคนที่ประจำบูธเดียวกันไว้ในงานเดียว ไม่แตกเป็นงานละคน
+ */
+export async function findOrCreateFieldTask(input: FieldTaskInput): Promise<FieldTask> {
+  let query = getSupabase()
+    .from("field_tasks")
+    .select("id")
+    .eq("work_date", input.work_date)
+    .eq("type_id", input.type_id)
+    .eq("is_cancelled", false)
+    .limit(1);
+  query = input.company_id ? query.eq("company_id", input.company_id) : query.is("company_id", null);
+  query = input.site_id ? query.eq("site_id", input.site_id) : query.is("site_id", null);
+  if (!input.site_id) query = query.eq("place_text", input.place_text ?? "");
+  query = input.planned_start ? query.eq("planned_start", input.planned_start) : query.is("planned_start", null);
+
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error(`ค้นหาภารกิจไม่สำเร็จ: ${error.message}`);
+  if (data) return (await getFieldTask(String((data as { id: string }).id)))!;
+  return createFieldTask(input, []);
+}
+
+/** เพิ่มสมาชิกเข้าภารกิจ (คนที่อยู่แล้วข้ามไป) */
+export async function addFieldTaskMembers(taskId: string, employeeIds: string[]): Promise<number> {
+  const unique = [...new Set(employeeIds)];
+  if (unique.length === 0) return 0;
+  const { data, error } = await getSupabase()
+    .from("field_task_members")
+    .upsert(
+      unique.map((employee_id) => ({ task_id: taskId, employee_id })),
+      { onConflict: "task_id,employee_id", ignoreDuplicates: true },
+    )
+    .select("employee_id");
+  if (error) throw new Error(`เพิ่มสมาชิกภารกิจไม่สำเร็จ: ${error.message}`);
+  return data?.length ?? 0;
+}
+
+/**
+ * เอาคนออกจากภารกิจ (ลบการลงเวลาและรูปของคนนั้นในงานนั้นด้วย)
+ * ถ้างานไม่เหลือใครแล้ว ลบงานทิ้งเพื่อไม่ให้มีงานว่างค้างในรายงาน
+ */
+export async function removeFieldTaskMember(taskId: string, employeeId: string): Promise<{ taskDeleted: boolean }> {
+  const supabase = getSupabase();
+  const { data: punches } = await supabase
+    .from("field_punches")
+    .select("photo_path")
+    .eq("task_id", taskId)
+    .eq("employee_id", employeeId);
+  await removePhotos(
+    ((punches ?? []) as { photo_path: string | null }[]).map((p) => p.photo_path).filter((p): p is string => Boolean(p)),
+  );
+  await supabase.from("field_punches").delete().eq("task_id", taskId).eq("employee_id", employeeId);
+  const { error } = await supabase
+    .from("field_task_members")
+    .delete()
+    .eq("task_id", taskId)
+    .eq("employee_id", employeeId);
+  if (error) throw new Error(`เอาสมาชิกออกไม่สำเร็จ: ${error.message}`);
+
+  const { count } = await supabase
+    .from("field_task_members")
+    .select("employee_id", { count: "exact", head: true })
+    .eq("task_id", taskId);
+  if ((count ?? 0) === 0) {
+    await deleteFieldTask(taskId);
+    return { taskDeleted: true };
+  }
+  return { taskDeleted: false };
+}

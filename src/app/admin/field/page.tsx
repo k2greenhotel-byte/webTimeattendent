@@ -188,13 +188,21 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
 
   return (
     <main className="mx-auto max-w-7xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">งานนอกสถานที่</h1>
-        <p className="text-sm text-slate-500">
-          มอบหมายงานออกบูธ ส่งรถ หรืองานพิเศษนอกเวลา · พนักงานกดเริ่ม/จบพร้อมถ่ายรูปจากหน้าลงเวลา ·
-          งานที่ &quot;นับชั่วโมง&quot; จะรวมเป็น <strong>ชั่วโมงงานพิเศษ</strong> แยกจาก OT ปกติ
-          {scope.companyName ? ` · ${scope.companyName}` : ""}
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">งานนอกสถานที่</h1>
+          <p className="text-sm text-slate-500">
+            มอบหมายงานออกบูธ ส่งรถ หรืองานพิเศษนอกเวลา · พนักงานกดเริ่ม/จบพร้อมถ่ายรูปจากหน้าลงเวลา ·
+            งานที่ &quot;นับชั่วโมง&quot; จะรวมเป็น <strong>ชั่วโมงงานพิเศษ</strong> แยกจาก OT ปกติ
+            {scope.companyName ? ` · ${scope.companyName}` : ""}
+          </p>
+        </div>
+        <div className="flex gap-2 text-sm">
+          <Link href={`/admin/field/roster?company=${scope.companyId ?? ""}`} className="btn-secondary">
+            ตารางรายวัน (ใครประจำบูธไหน)
+          </Link>
+          <span className="btn-primary pointer-events-none">รายการงาน</span>
+        </div>
       </div>
 
       {params.msg && (
