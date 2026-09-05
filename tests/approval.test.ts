@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   amountText,
   applyDecision,
+  autoApprovable,
+  autoApproveNote,
+  buildUserLimits,
+  groupLimitsByUser,
   canDecideFinal,
   hasAnyAuthority,
   isOverdue,
@@ -10,8 +14,10 @@ import {
   sortByUrgency,
   splitByAuthority,
   summarizeInbox,
+  userAuthorityFrom,
   validateDecision,
   validateRequest,
+  validateUserAuthority,
   withinLimit,
   type DecisionInput,
 } from "../src/lib/approval";
@@ -428,5 +434,154 @@ describe("ข้อความจำนวนเงินบนหน้าจ�
 
   it("ปกติแสดงจำนวนที่ขอ", () => {
     expect(amountText(request({ requested_amount: 12000 }))).toBe("12,000");
+  });
+});
+
+describe("อนุมัติอัตโนมัติ: ยอดไม่เกินวงเงินที่ไม่ต้องขออนุมัติ", () => {
+  const salary = { has_amount: true, auto_approve_limit: 3000 };
+
+  it("ไม่เกิน 3,000 ผ่านเอง · เท่ากับ 3,000 ก็ผ่าน · เกินต้องขออนุมัติ", () => {
+    expect(autoApprovable(salary, 2500)).toBe(true);
+    expect(autoApprovable(salary, 3000)).toBe(true);
+    expect(autoApprovable(salary, 3000.01)).toBe(false);
+  });
+
+  it("ไม่ได้ตั้งวงเงิน (null) = ต้องขออนุมัติทุกใบ", () => {
+    expect(autoApprovable({ has_amount: true, auto_approve_limit: null }, 1)).toBe(false);
+  });
+
+  it("เรื่องที่ไม่มีจำนวนเงิน ไม่มีอะไรให้เทียบ ต้องขออนุมัติเสมอ", () => {
+    expect(autoApprovable({ has_amount: false, auto_approve_limit: 3000 }, 100)).toBe(false);
+  });
+
+  it("ยอด 0 หรือติดลบไม่ถือว่าผ่าน", () => {
+    expect(autoApprovable(salary, 0)).toBe(false);
+    expect(autoApprovable(salary, -5)).toBe(false);
+  });
+
+  it("หมายเหตุบอกวงเงินที่ใช้ตัดสิน", () => {
+    expect(autoApproveNote(3000)).toContain("3,000");
+  });
+
+  it("บันทึกผลอนุมัติอัตโนมัติได้โดยไม่มีรหัสผู้ตัดสิน (ระบบเป็นคนตัดสิน)", () => {
+    const patch = applyDecision(
+      request({ requested_amount: 2500 }),
+      { decision: "approve", approvedAmount: 0, reasonId: null, note: "" },
+      { id: null, name: "ระบบอนุมัติอัตโนมัติ" },
+      new Date("2026-09-05T03:00:00.000Z"),
+    );
+    expect(patch.status).toBe("approved");
+    expect(patch.approved_amount).toBe(2500);
+    expect(patch.decided_by).toBeNull();
+    expect(patch.decided_by_name).toBe("ระบบอนุมัติอัตโนมัติ");
+    expect(patch.decided_at).toBe("2026-09-05T03:00:00.000Z");
+  });
+});
+
+describe("ตั้งค่าผู้มีอำนาจอนุมัติรายบุคคล (เลือกคน → ติ๊กเรื่อง → ใส่วงเงิน)", () => {
+  const types = [
+    { id: TYPE_MONEY, has_amount: true },
+    { id: TYPE_LEAVE, has_amount: false },
+    { id: "type-disc", has_amount: true },
+  ];
+
+  it("สร้างแถวกฎเฉพาะเรื่องที่ติ๊ก เรื่องที่ไม่ติ๊กไม่มีแถว", () => {
+    const rows = buildUserLimits({
+      userId: "u1",
+      companyId: COMPANY_A,
+      canReject: true,
+      isFinal: false,
+      entries: [
+        { typeId: TYPE_MONEY, enabled: true, maxAmount: 5000 },
+        { typeId: TYPE_LEAVE, enabled: true, maxAmount: null },
+        { typeId: "type-disc", enabled: false, maxAmount: 999 },
+      ],
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      level: null,
+      user_id: "u1",
+      type_id: TYPE_MONEY,
+      company_id: COMPANY_A,
+      max_amount: 5000,
+      can_reject: true,
+      is_final: false,
+      is_active: true,
+    });
+    expect(rows[1]).toMatchObject({ type_id: TYPE_LEAVE, max_amount: null });
+  });
+
+  it("แถวที่สร้างใช้กับ resolveAuthority ได้ทันที: เรื่องที่ติ๊กมีอำนาจ เรื่องที่ไม่ติ๊กไม่มี", () => {
+    const rows = buildUserLimits({
+      userId: "u1",
+      companyId: null,
+      canReject: false,
+      isFinal: false,
+      entries: [{ typeId: TYPE_MONEY, enabled: true, maxAmount: 8000 }],
+    }).map((r, i) => ({ ...r, id: `gen-${i}` }));
+
+    const money = resolveAuthority(rows, { userId: "u1", level: "user", typeId: TYPE_MONEY });
+    expect(money.maxAmount).toBe(8000);
+    expect(money.canReject).toBe(false);
+    expect(hasAnyAuthority(resolveAuthority(rows, { userId: "u1", level: "user", typeId: TYPE_LEAVE }))).toBe(
+      false,
+    );
+  });
+
+  it("ตรวจฟอร์ม: ต้องเลือกคน · วงเงินติดลบไม่ได้ · เว้นว่าง (null) ได้", () => {
+    const base = { userId: "u1", companyId: null, canReject: true, isFinal: false, entries: [] };
+    expect(validateUserAuthority({ ...base, userId: "" })).toContain("เลือกผู้ใช้");
+    expect(
+      validateUserAuthority({ ...base, entries: [{ typeId: TYPE_MONEY, enabled: true, maxAmount: -1 }] }),
+    ).toContain("ติดลบ");
+    expect(
+      validateUserAuthority({ ...base, entries: [{ typeId: TYPE_MONEY, enabled: true, maxAmount: null }] }),
+    ).toBeNull();
+    // เรื่องที่ไม่ติ๊ก ค่าที่ค้างในช่องไม่ต้องสน
+    expect(
+      validateUserAuthority({ ...base, entries: [{ typeId: TYPE_MONEY, enabled: false, maxAmount: -1 }] }),
+    ).toBeNull();
+  });
+
+  it("อ่านกฎเดิมกลับมาเป็นค่าเริ่มต้นของฟอร์ม ครบทุกประเภทเรื่อง", () => {
+    const limits = [
+      limit({ id: "a", user_id: "u1", type_id: TYPE_MONEY, max_amount: 5000, company_id: COMPANY_A, is_final: true }),
+      limit({ id: "b", user_id: "u1", type_id: TYPE_LEAVE, max_amount: null, company_id: COMPANY_A, is_final: true }),
+      limit({ id: "c", user_id: "u2", type_id: "type-disc", max_amount: 100 }),
+      limit({ id: "d", user_id: "u1", type_id: "type-disc", max_amount: 100, is_active: false }),
+    ];
+    const form = userAuthorityFrom("u1", limits, types);
+    expect(form.companyId).toBe(COMPANY_A);
+    expect(form.isFinal).toBe(true);
+    expect(form.entries).toEqual([
+      { typeId: TYPE_MONEY, enabled: true, maxAmount: 5000 },
+      { typeId: TYPE_LEAVE, enabled: true, maxAmount: null },
+      { typeId: "type-disc", enabled: false, maxAmount: null }, // ปิดใช้งานอยู่ = ไม่ติ๊ก
+    ]);
+  });
+
+  it("กฎเก่าแบบ 'ทุกประเภทเรื่อง' ของคนนั้น อ่านมาเป็นติ๊กทุกเรื่องด้วยวงเงินเดียวกัน", () => {
+    const form = userAuthorityFrom("u1", [limit({ user_id: "u1", type_id: null, max_amount: 2000 })], types);
+    expect(form.entries.every((e) => e.enabled)).toBe(true);
+    expect(form.entries[0].maxAmount).toBe(2000);
+    expect(form.entries[1].maxAmount).toBeNull(); // เรื่องที่ไม่มีจำนวนเงิน
+  });
+
+  it("คนที่ยังไม่มีกฎ ได้ฟอร์มว่าง ปฏิเสธได้เป็นค่าเริ่มต้น", () => {
+    const form = userAuthorityFrom("nobody", [], types);
+    expect(form.entries.every((e) => !e.enabled)).toBe(true);
+    expect(form.canReject).toBe(true);
+    expect(form.isFinal).toBe(false);
+  });
+
+  it("จัดกลุ่มกฎตามคน โดยไม่รวมกฎตามระดับ", () => {
+    const groups = groupLimitsByUser([
+      limit({ id: "a", user_id: "u1", type_id: TYPE_MONEY }),
+      limit({ id: "b", level: "supervisor" }),
+      limit({ id: "c", user_id: "u1", type_id: TYPE_LEAVE }),
+      limit({ id: "d", user_id: "u2" }),
+    ]);
+    expect([...groups.keys()]).toEqual(["u1", "u2"]);
+    expect(groups.get("u1")?.map((l) => l.id)).toEqual(["a", "c"]);
   });
 });

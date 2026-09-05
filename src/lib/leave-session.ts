@@ -37,8 +37,16 @@ export function requireAdvanceApprover(): Promise<SessionUser> {
 export const getAdvanceAuthorityContext = cache(async () => {
   const [types, limits] = await Promise.all([listTypes(false), listLimits(true)]);
   const type = types.find((t) => t.code === "SALARY_ADV") ?? null;
-  return { typeId: type?.id ?? null, limits };
+  return { typeId: type?.id ?? null, limits, autoApproveLimit: type?.auto_approve_limit ?? null };
 });
+
+/**
+ * วงเงินที่ "ไม่ต้องขออนุมัติ" ของใบขอเบิกเงินเดือน (ตั้งที่ระบบอนุมัติกลาง → ตั้งค่าอำนาจอนุมัติ)
+ * null = ต้องขออนุมัติทุกใบ
+ */
+export async function advanceAutoApproveLimit(): Promise<number | null> {
+  return (await getAdvanceAuthorityContext()).autoApproveLimit;
+}
 
 export async function advanceAuthorityFor(
   user: SessionUser,

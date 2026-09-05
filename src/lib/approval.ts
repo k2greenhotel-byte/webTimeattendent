@@ -22,6 +22,7 @@ import {
   type ApvLimit,
   type ApvRequestRow,
   type ApvStatus,
+  type ApvType,
   type Authority,
   type InboxSummary,
 } from "./approval-types";
@@ -121,6 +122,120 @@ export function hasAnyAuthority(authority: Authority): boolean {
   return authority.isFinal || authority.maxAmount === null || authority.maxAmount > 0;
 }
 
+// ---------- อนุมัติอัตโนมัติ (ไม่ต้องขออนุมัติ) ----------
+
+/** ชื่อที่บันทึกเป็นผู้ตัดสิน เมื่อระบบอนุมัติให้เองเพราะยอดไม่เกินวงเงินที่ตั้งไว้ */
+export const AUTO_APPROVER_NAME = "ระบบอนุมัติอัตโนมัติ";
+
+/**
+ * ยอดนี้ไม่ต้องขออนุมัติใช่ไหม — ผ่านเองทันทีเมื่อไม่เกิน auto_approve_limit ของประเภทเรื่อง
+ * ใช้เฉพาะเรื่องที่มีจำนวนเงิน (เรื่องที่ไม่มีจำนวน ไม่มีอะไรให้เทียบ ต้องขออนุมัติเสมอ)
+ * ยอด 0 หรือติดลบไม่ถือว่าผ่าน — ฟอร์มควรกันไว้ก่อนแล้ว แต่กันซ้ำที่นี่เผื่อโมดูลอื่นเรียกตรง
+ */
+export function autoApprovable(
+  type: Pick<ApvType, "has_amount" | "auto_approve_limit">,
+  amount: number,
+): boolean {
+  if (!type.has_amount || type.auto_approve_limit === null) return false;
+  return amount > 0 && amount <= type.auto_approve_limit;
+}
+
+/** หมายเหตุที่บันทึกลงประวัติการพิจารณา ให้ดูย้อนหลังได้ว่าทำไมไม่มีคนอนุมัติ */
+export function autoApproveNote(limit: number): string {
+  return `ยอดไม่เกินวงเงินที่ไม่ต้องขออนุมัติ (${limit.toLocaleString("th-TH")} บาท) ระบบอนุมัติให้ทันที`;
+}
+
+// ---------- ตั้งค่าผู้มีอำนาจอนุมัติรายบุคคล ----------
+
+/** หนึ่งบรรทัดในฟอร์มติ๊กประเภทเรื่องของคนหนึ่งคน */
+export type UserAuthorityEntry = {
+  typeId: string;
+  enabled: boolean;
+  /** null = ไม่จำกัดวงเงิน (เรื่องที่ไม่มีจำนวนเงินจะเป็น null เสมอ) */
+  maxAmount: number | null;
+};
+
+export type UserAuthorityInput = {
+  userId: string;
+  companyId: string | null;
+  canReject: boolean;
+  isFinal: boolean;
+  entries: UserAuthorityEntry[];
+};
+
+export function validateUserAuthority(input: UserAuthorityInput): string | null {
+  if (!input.userId) return "กรุณาเลือกผู้ใช้ที่จะให้อำนาจอนุมัติ";
+  for (const entry of input.entries) {
+    if (!entry.enabled || entry.maxAmount === null) continue;
+    if (!Number.isFinite(entry.maxAmount) || entry.maxAmount < 0) {
+      return "วงเงินต้องเป็นตัวเลขและไม่ติดลบ (เว้นว่าง = ไม่จำกัด)";
+    }
+  }
+  return null;
+}
+
+/**
+ * แปลงฟอร์ม "เลือกคน → ติ๊กเรื่อง → ใส่วงเงิน" เป็นแถว apv_limits
+ * หนึ่งแถวต่อหนึ่งเรื่องที่ติ๊ก · เรื่องที่ไม่ติ๊กไม่มีแถว = อนุมัติเรื่องนั้นไม่ได้
+ * บริษัท / ปฏิเสธได้ / ตัดสินขั้นสุดท้าย ใช้ค่าเดียวกันทุกเรื่องของคนนั้น (ตั้งครั้งเดียวจบ)
+ */
+export function buildUserLimits(input: UserAuthorityInput): Omit<ApvLimit, "id">[] {
+  return input.entries
+    .filter((entry) => entry.enabled)
+    .map((entry) => ({
+      level: null,
+      user_id: input.userId,
+      type_id: entry.typeId,
+      company_id: input.companyId,
+      max_amount: entry.maxAmount === null ? null : round2(entry.maxAmount),
+      can_reject: input.canReject,
+      is_final: input.isFinal,
+      note: null,
+      is_active: true,
+    }));
+}
+
+/**
+ * อ่านกฎที่มีอยู่ของคนหนึ่งคนกลับมาเป็นค่าเริ่มต้นของฟอร์ม (ทุกประเภทเรื่องในทะเบียน)
+ * กฎแบบ "ทุกประเภทเรื่อง" (type_id ว่าง) ที่ตั้งไว้แต่เดิม ให้ถือว่าติ๊กทุกเรื่องด้วยวงเงินนั้น
+ */
+export function userAuthorityFrom(
+  userId: string,
+  limits: ApvLimit[],
+  types: Pick<ApvType, "id" | "has_amount">[],
+): UserAuthorityInput {
+  const mine = limits.filter((l) => l.user_id === userId && l.is_active);
+  const catchAll = mine.find((l) => !l.type_id) ?? null;
+  const first = mine[0] ?? null;
+
+  return {
+    userId,
+    companyId: first?.company_id ?? null,
+    canReject: first ? first.can_reject : true,
+    isFinal: first ? first.is_final : false,
+    entries: types.map((type) => {
+      const own = mine.find((l) => l.type_id === type.id) ?? catchAll;
+      return {
+        typeId: type.id,
+        enabled: own !== null,
+        maxAmount: own && type.has_amount ? own.max_amount : null,
+      };
+    }),
+  };
+}
+
+/** จัดกลุ่มกฎเฉพาะบุคคลตามคน สำหรับรายชื่อผู้มีอำนาจอนุมัติ (กฎตามระดับไม่รวม) */
+export function groupLimitsByUser(limits: ApvLimit[]): Map<string, ApvLimit[]> {
+  const groups = new Map<string, ApvLimit[]>();
+  for (const limit of limits) {
+    if (!limit.user_id) continue;
+    const list = groups.get(limit.user_id) ?? [];
+    list.push(limit);
+    groups.set(limit.user_id, list);
+  }
+  return groups;
+}
+
 // ---------- ตรวจก่อนบันทึก ----------
 
 export type DecisionInput = {
@@ -205,7 +320,7 @@ export type RequestPatch = {
 export function applyDecision(
   row: ApvRequestRow,
   input: DecisionInput,
-  approver: { id: string; name: string },
+  approver: { id: string | null; name: string },
   now: Date = new Date(),
 ): RequestPatch {
   const at = now.toISOString();

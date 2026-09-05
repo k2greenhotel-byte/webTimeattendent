@@ -472,6 +472,11 @@ export type NewAdvanceRequest = {
   companyId: string | null;
   branchId: string | null;
   requestDate: string;
+  /**
+   * ยอดไม่เกินวงเงินที่ไม่ต้องขออนุมัติ (ตั้งที่ระบบอนุมัติกลาง) → บันทึกเป็นอนุมัติแล้วทันที
+   * ผู้ตัดสิน = ระบบ (decided_by ว่าง) แต่ยังลงวันเวลาและหมายเหตุไว้ให้ตรวจย้อนหลังได้
+   */
+  autoApprove?: { approverName: string; note: string } | null;
 };
 
 export async function createAdvanceRequest(input: NewAdvanceRequest): Promise<AdvanceRequestRow> {
@@ -486,6 +491,16 @@ export async function createAdvanceRequest(input: NewAdvanceRequest): Promise<Ad
     company_id: input.companyId,
     branch_id: input.branchId,
     amount: input.amount,
+    ...(input.autoApprove
+      ? {
+          status: "approved" as const,
+          approved_amount: input.amount,
+          decided_at: new Date().toISOString(),
+          decided_by: null,
+          decided_by_name: input.autoApprove.approverName,
+          decision_note: input.autoApprove.note,
+        }
+      : {}),
   };
 
   const { data, error } = await getSupabase()

@@ -9,6 +9,7 @@ import {
   updateRejectReason,
   updateType,
 } from "@/lib/approval-db";
+import { parseAmount } from "@/lib/approval";
 import type { ApvType } from "@/lib/approval-types";
 import { logAudit } from "@/lib/db";
 import { requirePermission } from "@/lib/session";
@@ -27,7 +28,10 @@ function back(message: string, isError = false): never {
 }
 
 function readType(form: FormData): Omit<ApvType, "id"> {
+  const rawAuto = str(form, "auto_approve_limit");
   return {
+    // ว่าง = ต้องขออนุมัติทุกใบ · เรื่องที่ไม่มีจำนวนเงินไม่มีอะไรให้เทียบ เก็บเป็นว่างเสมอ
+    auto_approve_limit: rawAuto === "" || form.get("has_amount") !== "on" ? null : parseAmount(rawAuto),
     code: str(form, "code").toUpperCase(),
     name: str(form, "name"),
     description: str(form, "description") || null,
@@ -71,6 +75,9 @@ export async function updateTypeForm(form: FormData): Promise<void> {
 
   if (!id) back("ไม่พบประเภทเรื่อง", true);
   if (!patch.code || !patch.name) back("กรุณากรอกรหัสและชื่อประเภทเรื่อง", true);
+  if (patch.auto_approve_limit !== null && patch.auto_approve_limit < 0) {
+    back("วงเงินไม่ต้องขออนุมัติต้องไม่ติดลบ (เว้นว่าง = ต้องขออนุมัติทุกใบ)", true);
+  }
 
   try {
     await updateType(id, patch);

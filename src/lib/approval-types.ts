@@ -81,6 +81,8 @@ export type ApvType = {
   icon: string | null;
   sort_order: number;
   is_active: boolean;
+  /** ยอดที่ไม่เกินนี้ระบบอนุมัติให้เองทันที ไม่ต้องรอผู้มีอำนาจ (null = ต้องขออนุมัติทุกใบ) */
+  auto_approve_limit: number | null;
 };
 
 export type ApvRejectReason = {

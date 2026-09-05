@@ -1,5 +1,11 @@
 import "server-only";
-import { applyDecision, type DecisionInput } from "./approval";
+import {
+  applyDecision,
+  AUTO_APPROVER_NAME,
+  autoApprovable,
+  autoApproveNote,
+  type DecisionInput,
+} from "./approval";
 import type {
   ApvDecisionRow,
   ApvLimit,
@@ -34,7 +40,10 @@ export async function listTypes(activeOnly = false): Promise<ApvType[]> {
 
   const { data, error } = await query;
   if (error) throw new Error(`อ่านประเภทเรื่องไม่สำเร็จ: ${error.message}`);
-  return (data ?? []) as ApvType[];
+  return (data ?? []).map((t) => ({
+    ...(t as ApvType),
+    auto_approve_limit: t.auto_approve_limit === null ? null : Number(t.auto_approve_limit),
+  }));
 }
 
 export async function insertType(row: Omit<ApvType, "id">): Promise<void> {
@@ -124,6 +133,28 @@ export async function updateLimit(id: string, patch: Partial<ApvLimit>): Promise
 export async function deleteLimit(id: string): Promise<void> {
   const { error } = await getSupabase().from("apv_limits").delete().eq("id", id);
   if (error) throw new Error(`ลบกฎอำนาจอนุมัติไม่สำเร็จ: ${error.message}`);
+}
+
+/** ลบกฎเฉพาะบุคคลทั้งหมดของคนหนึ่งคน (= ถอนอำนาจอนุมัติ กลับไปใช้ค่าตามระดับ) */
+export async function deleteLimitsOfUser(userId: string): Promise<number> {
+  const { data, error } = await getSupabase()
+    .from("apv_limits")
+    .delete()
+    .eq("user_id", userId)
+    .select("id");
+  if (error) throw new Error(`ถอนอำนาจอนุมัติไม่สำเร็จ: ${error.message}`);
+  return data?.length ?? 0;
+}
+
+/**
+ * บันทึกอำนาจของคนหนึ่งคนทั้งชุด (จากฟอร์มเลือกคน → ติ๊กเรื่อง → ใส่วงเงิน)
+ * ล้างกฎเดิมของคนนั้นทิ้งแล้วใส่ชุดใหม่ทั้งหมด จะได้ตรงกับหน้าจอเป๊ะ ไม่มีแถวค้าง
+ */
+export async function replaceUserLimits(userId: string, rows: Omit<ApvLimit, "id">[]): Promise<void> {
+  await deleteLimitsOfUser(userId);
+  if (rows.length === 0) return;
+  const { error } = await getSupabase().from("apv_limits").insert(rows);
+  if (error) throw new Error(`บันทึกอำนาจอนุมัติไม่สำเร็จ: ${error.message}`);
 }
 
 // ---------- ใบขออนุมัติ ----------
@@ -247,7 +278,7 @@ export async function createApprovalRequest(input: NewRequest): Promise<ApvReque
 
   const { data: type, error: typeError } = await supabase
     .from("apv_types")
-    .select("id, is_active, name")
+    .select("id, is_active, name, has_amount, auto_approve_limit")
     .eq("code", input.typeCode)
     .maybeSingle();
   if (typeError) throw new Error(`อ่านประเภทเรื่องไม่สำเร็จ: ${typeError.message}`);
@@ -283,6 +314,19 @@ export async function createApprovalRequest(input: NewRequest): Promise<ApvReque
 
   const created = await getRequest(data.id as string);
   if (!created) throw new Error("สร้างใบขออนุมัติแล้วแต่อ่านกลับไม่ได้");
+
+  // ยอดไม่เกินวงเงินที่ไม่ต้องขออนุมัติ → ระบบอนุมัติให้เลย แต่ยังบันทึกประวัติการพิจารณาไว้
+  // เหมือนคนตัดสิน (วันเวลา + ชื่อ "ระบบอนุมัติอัตโนมัติ") จะได้ตรวจย้อนหลังได้ว่าผ่านเพราะอะไร
+  const autoLimit = type.auto_approve_limit === null ? null : Number(type.auto_approve_limit);
+  if (autoApprovable({ has_amount: type.has_amount, auto_approve_limit: autoLimit }, row.requested_amount)) {
+    await writeDecision(
+      created,
+      { decision: "approve", approvedAmount: 0, reasonId: null, note: autoApproveNote(autoLimit ?? 0) },
+      { approverId: null, approverName: AUTO_APPROVER_NAME, approverLevel: null, authorityLimit: autoLimit },
+      "apv_auto_approve",
+    );
+    return (await getRequest(created.id)) ?? created;
+  }
   return created;
 }
 
@@ -333,9 +377,10 @@ export async function cancelRequest(id: string, userId: string): Promise<void> {
 // ---------- บันทึกการตัดสิน (ผู้เขียนสถานะเพียงตัวเดียว) ----------
 
 export type DecisionContext = {
-  approverId: string;
+  /** null = ระบบตัดสินเอง (อนุมัติอัตโนมัติ) */
+  approverId: string | null;
   approverName: string;
-  approverLevel: AccessLevel;
+  approverLevel: AccessLevel | null;
   authorityLimit: number | null;
 };
 
@@ -347,6 +392,15 @@ export async function createDecision(
   row: ApvRequestRow,
   input: DecisionInput,
   context: DecisionContext,
+): Promise<void> {
+  await writeDecision(row, input, context, "apv_decision");
+}
+
+async function writeDecision(
+  row: ApvRequestRow,
+  input: DecisionInput,
+  context: DecisionContext,
+  auditAction: "apv_decision" | "apv_auto_approve",
 ): Promise<void> {
   const supabase = getSupabase();
   const seq = (row.decision_count ?? 0) + 1;
@@ -375,7 +429,7 @@ export async function createDecision(
 
   await logAudit({
     actor_id: context.approverId,
-    action: "apv_decision",
+    action: auditAction,
     target_table: "apv_requests",
     target_id: row.id,
     after: {

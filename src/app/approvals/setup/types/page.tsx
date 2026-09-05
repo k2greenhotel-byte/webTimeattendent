@@ -151,6 +151,16 @@ export default async function ApprovalTypesPage({
                   className="input"
                 />
               </div>
+              <div className="sm:col-span-3">
+                <label className="label">วงเงินไม่ต้องขออนุมัติ (บาท · ว่าง = ต้องขออนุมัติทุกใบ)</label>
+                <input
+                  name="auto_approve_limit"
+                  className="input"
+                  inputMode="decimal"
+                  defaultValue={t.auto_approve_limit ?? ""}
+                  placeholder="เช่น 3000 — ยอดไม่เกินนี้ระบบอนุมัติให้ทันที"
+                />
+              </div>
 
               <div className="flex flex-wrap gap-4 pb-2 text-sm text-slate-600 sm:col-span-5">
                 <label className="flex items-center gap-2">

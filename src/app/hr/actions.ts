@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { AUTO_APPROVER_NAME, autoApprovable, autoApproveNote } from "@/lib/approval";
 import { verifyEmployeePin } from "@/lib/auth";
 import { workDateOf } from "@/lib/datetime";
 import { logAudit } from "@/lib/db";
@@ -33,7 +34,12 @@ import {
   usedLeaveDays,
   type NewLeaveFile,
 } from "@/lib/leave-db";
-import { advanceAuthorityFor, requireAdvanceApprover, requireLeaveApprover } from "@/lib/leave-session";
+import {
+  advanceAuthorityFor,
+  advanceAutoApproveLimit,
+  requireAdvanceApprover,
+  requireLeaveApprover,
+} from "@/lib/leave-session";
 import {
   ADVANCE_DECISION_ORDER,
   ADVANCE_STATUS_LABEL,
@@ -354,6 +360,10 @@ export async function createAdvanceForm(form: FormData): Promise<void> {
   const problem = validateAdvanceInput(input);
   if (problem) back("/hr/advance/new", problem, true);
 
+  // ยอดไม่เกินวงเงินที่ไม่ต้องขออนุมัติ (ตั้งที่ระบบอนุมัติกลาง เช่น 3,000 บาท) → ผ่านเลยไม่ต้องรอใคร
+  const autoLimit = await advanceAutoApproveLimit();
+  const autoApproved = autoApprovable({ has_amount: true, auto_approve_limit: autoLimit }, input.amount);
+
   let docNo = "";
   try {
     const created = await createAdvanceRequest({
@@ -363,15 +373,23 @@ export async function createAdvanceForm(form: FormData): Promise<void> {
       companyId: user.company_id ?? null,
       branchId: user.branch_id ?? null,
       requestDate: workDateOf(),
+      autoApprove: autoApproved
+        ? { approverName: AUTO_APPROVER_NAME, note: autoApproveNote(autoLimit ?? 0) }
+        : null,
     });
     docNo = created.doc_no;
 
     await logAudit({
       actor_id: user.id,
-      action: "hr_advance_create",
+      action: autoApproved ? "hr_advance_auto_approve" : "hr_advance_create",
       target_table: "hr_advance_requests",
       target_id: created.id,
-      after: { doc_no: created.doc_no, amount: created.amount, purpose: created.purpose },
+      after: {
+        doc_no: created.doc_no,
+        amount: created.amount,
+        purpose: created.purpose,
+        ...(autoApproved ? { auto_approve_limit: autoLimit } : {}),
+      },
     });
   } catch (err) {
     back("/hr/advance/new", err instanceof Error ? err.message : "บันทึกใบขอเบิกไม่สำเร็จ", true);
@@ -379,7 +397,12 @@ export async function createAdvanceForm(form: FormData): Promise<void> {
 
   revalidatePath("/hr/advance");
   revalidatePath("/hr/approvals/advance");
-  back("/hr/advance", `บันทึกใบขอเบิกเรียบร้อยแล้ว เลขที่ ${docNo} — รอผู้มีอำนาจพิจารณา`);
+  back(
+    "/hr/advance",
+    autoApproved
+      ? `บันทึกใบขอเบิกเลขที่ ${docNo} แล้ว — ยอดไม่เกิน ${(autoLimit ?? 0).toLocaleString("th-TH")} บาท อนุมัติอัตโนมัติ ไม่ต้องรอผู้มีอำนาจ`
+      : `บันทึกใบขอเบิกเรียบร้อยแล้ว เลขที่ ${docNo} — รอผู้มีอำนาจพิจารณา`,
+  );
 }
 
 export async function cancelAdvanceForm(form: FormData): Promise<void> {
