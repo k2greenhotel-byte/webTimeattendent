@@ -6,7 +6,9 @@ import { formatBaht, sortByUrgency, splitByAuthority, summarizeInbox } from "@/l
 import { countEndorsedBy, listPrPending, listRequests, listTypes } from "@/lib/approval-db";
 import { authorityFor, getLimits } from "@/lib/approval-session";
 import type { ApvRequestRow } from "@/lib/approval-types";
-import { formatThaiDate, workDateOf } from "@/lib/datetime";
+import { formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
+import { leaveFlags, leaveRangeText } from "@/lib/leave";
+import { listHrPending } from "@/lib/leave-db";
 import { checkPermission, isApproverAuthed, requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -27,12 +29,19 @@ export default async function ApprovalInboxPage({
   const canDecideAtAll = await checkPermission("APV_INBOX", "write");
   const today = workDateOf();
 
-  const [limits, types, open, endorsedByMe, pr] = await Promise.all([
+  // เมนูขอลา/ขอเบิกเงินเป็นของโปรแกรม HR — แสดงเฉพาะคนที่มีสิทธิ์เข้าหน้าอนุมัติของโปรแกรมนั้น
+  const [canSeeLeave, canSeeAdvance] = await Promise.all([
+    checkPermission("HR_LEAVE_APPROVE", "read"),
+    checkPermission("HR_ADV_APPROVE", "read"),
+  ]);
+
+  const [limits, types, open, endorsedByMe, pr, hr] = await Promise.all([
     getLimits(),
     listTypes(true),
     listRequests({ statuses: ["pending", "endorsed"], typeId: params.type || undefined }),
     countEndorsedBy(user.id),
     listPrPending(),
+    listHrPending(),
   ]);
 
   const { canDecide, overLimit } = splitByAuthority(open, (row) => authorityFor(limits, user, row));
@@ -225,6 +234,155 @@ export default async function ApprovalInboxPage({
           </div>
         )}
       </section>
+
+      {/* ใบแจ้งลา/หยุดงาน/เข้างานสาย จากโปรแกรมขอลา — โปรแกรมนั้นเป็นเจ้าของสถานะเอง หน้านี้อ่านมาแสดงและลิงก์ไป */}
+      {canSeeLeave && (
+        <section className="card space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="font-semibold text-slate-800">
+                ใบแจ้งลา / หยุดงาน / เข้างานสาย ที่รออนุมัติ ({hr.leave.length})
+              </h2>
+              <p className="text-sm text-slate-500">
+                มาจากโปรแกรมขอลา/ขอเบิกเงินเดือน — กดแล้วไปพิจารณาที่หน้าอนุมัติของโปรแกรมนั้น
+              </p>
+            </div>
+            <Link href="/hr/approvals/leave" className="text-sm text-brand-600 hover:underline">
+              เปิดหน้าอนุมัติการลา →
+            </Link>
+          </div>
+
+          {hr.failed ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              อ่านข้อมูลจากโปรแกรมขอลาไม่ได้ชั่วคราว — เรื่องอื่นในกล่องยังใช้งานได้ตามปกติ
+            </p>
+          ) : hr.leave.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบแจ้งลารออนุมัติ</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="table-report">
+                <thead>
+                  <tr>
+                    <th>เลขที่</th>
+                    <th>ประเภท</th>
+                    <th>ผู้แจ้ง</th>
+                    <th className="text-left">ช่วงที่ลา / เหตุผล</th>
+                    <th>เวลาที่แจ้ง</th>
+                    <th>บริษัท/สาขา</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hr.leave.map((row) => (
+                    <tr key={row.id}>
+                      <td className="whitespace-nowrap font-medium">{row.doc_no}</td>
+                      <td>
+                        <span className="badge bg-slate-100 text-slate-600">
+                          {row.type_icon ? `${row.type_icon} ` : ""}
+                          {row.type_name}
+                        </span>
+                      </td>
+                      <td className="text-xs">{row.employee_name}</td>
+                      <td className="whitespace-normal text-left">
+                        <p className="font-medium text-slate-700">{leaveRangeText(row)}</p>
+                        <p className="text-xs text-slate-500">{row.detail}</p>
+                        {leaveFlags(row, today).map((flag) => (
+                          <p key={flag} className="text-xs text-amber-700">
+                            ⚠ {flag}
+                          </p>
+                        ))}
+                      </td>
+                      <td className="whitespace-nowrap text-xs">
+                        {formatThaiDate(row.request_date)} {formatTime(row.reported_at)} น.
+                      </td>
+                      <td className="text-xs text-slate-500">
+                        {row.company_name ?? "-"}
+                        {row.branch_name ? ` · ${row.branch_name}` : ""}
+                      </td>
+                      <td>
+                        <Link
+                          href={`/hr/leave/${row.id}`}
+                          className="text-sm text-brand-600 hover:underline"
+                        >
+                          พิจารณา
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ใบขอเบิกเงินเดือนจากโปรแกรมขอลา */}
+      {canSeeAdvance && (
+        <section className="card space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="font-semibold text-slate-800">
+                ใบขอเบิกเงินเดือน ที่รออนุมัติ ({hr.advance.length})
+              </h2>
+              <p className="text-sm text-slate-500">
+                อนุมัติเต็มจำนวน อนุมัติบางส่วน หรือไม่อนุมัติได้ที่หน้าอนุมัติของโปรแกรมนั้น
+              </p>
+            </div>
+            <Link href="/hr/approvals/advance" className="text-sm text-brand-600 hover:underline">
+              เปิดหน้าอนุมัติขอเบิกเงิน →
+            </Link>
+          </div>
+
+          {hr.failed ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              อ่านข้อมูลจากโปรแกรมขอเบิกเงินไม่ได้ชั่วคราว
+            </p>
+          ) : hr.advance.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบขอเบิกเงินรออนุมัติ</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="table-report">
+                <thead>
+                  <tr>
+                    <th>เลขที่</th>
+                    <th>วันที่ขอเบิก</th>
+                    <th>ผู้ขอเบิก</th>
+                    <th className="text-left">ขอเบิกเพื่อ</th>
+                    <th>บริษัท/สาขา</th>
+                    <th>ยอดที่ขอ</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hr.advance.map((row) => (
+                    <tr key={row.id}>
+                      <td className="whitespace-nowrap font-medium">{row.doc_no}</td>
+                      <td className="whitespace-nowrap text-xs">
+                        {formatThaiDate(row.request_date)}
+                      </td>
+                      <td className="text-xs">{row.employee_name}</td>
+                      <td className="whitespace-normal text-left">{row.purpose}</td>
+                      <td className="text-xs text-slate-500">
+                        {row.company_name ?? "-"}
+                        {row.branch_name ? ` · ${row.branch_name}` : ""}
+                      </td>
+                      <td className="font-semibold">{formatBaht(row.amount)}</td>
+                      <td>
+                        <Link
+                          href={`/hr/advance/${row.id}`}
+                          className="text-sm text-brand-600 hover:underline"
+                        >
+                          พิจารณา
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }

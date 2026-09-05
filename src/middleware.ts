@@ -64,5 +64,8 @@ export const config = {
     "/leads",
     "/leads/:path*",
     "/api/lead/:path*",
+    "/hr",
+    "/hr/:path*",
+    "/api/hr/:path*",
   ],
 };
