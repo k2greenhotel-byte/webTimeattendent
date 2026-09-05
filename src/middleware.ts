@@ -36,6 +36,8 @@ export const config = {
   matcher: [
     "/punch/:path*",
     "/apps",
+    "/approvals",
+    "/approvals/:path*",
     "/customers",
     "/customers/:path*",
     "/api/customer/:path*",
@@ -56,5 +58,11 @@ export const config = {
     "/booking",
     "/booking/:path*",
     "/api/booking/:path*",
+    "/procurement",
+    "/procurement/:path*",
+    "/api/procurement/:path*",
+    "/leads",
+    "/leads/:path*",
+    "/api/lead/:path*",
   ],
 };
