@@ -13,7 +13,7 @@ import {
   upsertManualFieldPunch,
   type FieldTaskInput,
 } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { requireMenuAccess } from "@/lib/att-access";
 import type { FieldPunchType } from "@/lib/types";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -89,13 +89,14 @@ async function readTaskForm(form: FormData): Promise<{ input: FieldTaskInput; me
 }
 
 export async function createFieldTaskForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD", "write");
+  const actorId = access.user?.id ?? null;
   const { input, memberIds } = await readTaskForm(form);
 
   try {
     const task = await createFieldTask(input, memberIds);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "create_field_task",
       target_table: "field_tasks",
       target_id: task.id,
@@ -110,7 +111,8 @@ export async function createFieldTaskForm(form: FormData): Promise<void> {
 }
 
 export async function updateFieldTaskForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD", "edit");
+  const actorId = access.user?.id ?? null;
   const id = str(form, "id");
   if (!id) back(form, "ไม่พบภารกิจ", true);
   const { input, memberIds } = await readTaskForm(form);
@@ -118,7 +120,7 @@ export async function updateFieldTaskForm(form: FormData): Promise<void> {
   try {
     await updateFieldTask(id, input, memberIds);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "update_field_task",
       target_table: "field_tasks",
       target_id: id,
@@ -133,7 +135,8 @@ export async function updateFieldTaskForm(form: FormData): Promise<void> {
 }
 
 export async function cancelFieldTaskForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD", "edit");
+  const actorId = access.user?.id ?? null;
   const id = str(form, "id");
   const cancelled = str(form, "cancelled") !== "false";
   if (!id) back(form, "ไม่พบภารกิจ", true);
@@ -141,7 +144,7 @@ export async function cancelFieldTaskForm(form: FormData): Promise<void> {
   try {
     await setFieldTaskCancelled(id, cancelled);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: cancelled ? "cancel_field_task" : "restore_field_task",
       target_table: "field_tasks",
       target_id: id,
@@ -155,7 +158,8 @@ export async function cancelFieldTaskForm(form: FormData): Promise<void> {
 }
 
 export async function deleteFieldTaskForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD", "delete");
+  const actorId = access.user?.id ?? null;
   const id = str(form, "id");
   if (!id) back(form, "ไม่พบภารกิจ", true);
   if (form.get("confirm") !== "on") back(form, "กรุณาติ๊กยืนยันก่อนลบภารกิจ", true);
@@ -164,7 +168,7 @@ export async function deleteFieldTaskForm(form: FormData): Promise<void> {
   try {
     ({ photosDeleted: photos } = await deleteFieldTask(id));
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "delete_field_task",
       target_table: "field_tasks",
       target_id: id,
@@ -180,7 +184,8 @@ export async function deleteFieldTaskForm(form: FormData): Promise<void> {
 
 /** แอดมินบันทึกเวลาเริ่ม/จบให้สมาชิก (กรณีมือถือมีปัญหา หรือลืมกดจบ) */
 export async function manualFieldPunchForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD", "edit");
+  const actorId = access.user?.id ?? null;
   const taskId = str(form, "task_id");
   const employeeId = str(form, "employee_id");
   const workDate = str(form, "work_date");
@@ -218,7 +223,7 @@ export async function manualFieldPunchForm(form: FormData): Promise<void> {
       });
     }
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "manual_field_punch",
       target_table: "field_punches",
       target_id: taskId,
@@ -233,7 +238,8 @@ export async function manualFieldPunchForm(form: FormData): Promise<void> {
 }
 
 export async function deleteFieldPunchForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD", "delete");
+  const actorId = access.user?.id ?? null;
   const taskId = str(form, "task_id");
   const employeeId = str(form, "employee_id");
   const type = str(form, "punch_type") as FieldPunchType;
@@ -242,7 +248,7 @@ export async function deleteFieldPunchForm(form: FormData): Promise<void> {
   try {
     await deleteFieldPunch(taskId, employeeId, type);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "delete_field_punch",
       target_table: "field_punches",
       target_id: taskId,

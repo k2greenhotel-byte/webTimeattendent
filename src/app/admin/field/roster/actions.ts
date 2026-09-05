@@ -12,7 +12,7 @@ import {
   removeFieldTaskMember,
   type FieldTaskInput,
 } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { requireMenuAccess } from "@/lib/att-access";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
@@ -82,7 +82,8 @@ async function readTaskSpec(form: FormData): Promise<Omit<FieldTaskInput, "work_
 
 /** จัดเป็นชุด: หลายคน × ช่วงวันที่ × เฉพาะวันในสัปดาห์ → งานเดียวกันต่อวัน คนที่เลือกเป็นสมาชิก */
 export async function assignFieldRosterForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD_ROSTER", "write");
+  const actorId = access.user?.id ?? null;
 
   const employeeIds = ids(form, "employee_ids");
   const from = str(form, "from");
@@ -106,7 +107,7 @@ export async function assignFieldRosterForm(form: FormData): Promise<void> {
       added += await addFieldTaskMembers(task.id, employeeIds);
     }
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "assign_field_roster",
       target_table: "field_task_members",
       after: { employees: employeeIds.length, from, to, weekdays, days: dates.length, spec, added },
@@ -122,7 +123,8 @@ export async function assignFieldRosterForm(form: FormData): Promise<void> {
 
 /** แก้ทีละช่อง: เพิ่มคนเข้างานที่มีอยู่ หรือสร้างงานใหม่ให้วันนั้น */
 export async function addCellForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD_ROSTER", "edit");
+  const actorId = access.user?.id ?? null;
   const employeeId = str(form, "employee_id");
   const workDate = str(form, "work_date");
   const existingTaskId = str(form, "task_id");
@@ -136,7 +138,7 @@ export async function addCellForm(form: FormData): Promise<void> {
     }
     await addFieldTaskMembers(taskId, [employeeId]);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "assign_field_roster",
       target_table: "field_task_members",
       target_id: taskId,
@@ -153,7 +155,8 @@ export async function addCellForm(form: FormData): Promise<void> {
 
 /** เอาคนออกจากงานในช่องนั้น (งานที่ไม่เหลือใครจะถูกลบ) */
 export async function removeCellForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD_ROSTER", "edit");
+  const actorId = access.user?.id ?? null;
   const employeeId = str(form, "employee_id");
   const taskId = str(form, "task_id");
   if (!employeeId || !taskId) back(form, "ข้อมูลไม่ครบ", true);
@@ -162,7 +165,7 @@ export async function removeCellForm(form: FormData): Promise<void> {
   try {
     ({ taskDeleted } = await removeFieldTaskMember(taskId, employeeId));
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "unassign_field_roster",
       target_table: "field_task_members",
       target_id: taskId,
@@ -179,7 +182,8 @@ export async function removeCellForm(form: FormData): Promise<void> {
 
 /** คัดลอกตารางจากช่วงก่อนหน้า (ยาวเท่ากัน) มาช่วงที่กำลังดู — งานเดียวกัน สมาชิกเดิม วันต่อวัน */
 export async function copyPreviousFieldRosterForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD_ROSTER", "write");
+  const actorId = access.user?.id ?? null;
   const companyId = str(form, "view_company") || null;
   const siteId = str(form, "view_site") || null;
   const employeeIds = ids(form, "employee_ids");
@@ -216,7 +220,7 @@ export async function copyPreviousFieldRosterForm(form: FormData): Promise<void>
       copied += await addFieldTaskMembers(target.id, members);
     }
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "copy_field_roster",
       target_table: "field_task_members",
       after: { from, days, sourceFrom, copied },
@@ -232,7 +236,8 @@ export async function copyPreviousFieldRosterForm(form: FormData): Promise<void>
 
 /** ล้างตารางของทุกคนในมุมมองนี้ทั้งช่วง (เอาออกจากงาน งานที่ว่างถูกลบ) */
 export async function clearFieldRosterForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_FIELD_ROSTER", "delete");
+  const actorId = access.user?.id ?? null;
   const companyId = str(form, "view_company") || null;
   const siteId = str(form, "view_site") || null;
   const employeeIds = ids(form, "employee_ids");
@@ -256,7 +261,7 @@ export async function clearFieldRosterForm(form: FormData): Promise<void> {
       }
     }
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "clear_field_roster",
       target_table: "field_task_members",
       after: { from, to, employees: employeeIds.length, removed },

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
+import { requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import {
   addDays,
@@ -67,6 +69,7 @@ export default async function RosterPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  const access = await requireMenuAccess("ATT_ROSTER", "read");
   const scope = await getCompanyScope(params.company);
   const today = workDateOf();
 
@@ -88,13 +91,16 @@ export default async function RosterPage({
   const branchId = params.branch || undefined;
   const positionId = params.position || undefined;
 
-  const [branches, positions, schedules, allEmployees, sites] = await Promise.all([
+  const [allBranches, positions, schedules, allEmployees, sites] = await Promise.all([
     listBranches(true, scope.companyId),
     listPositions(scope.companyId),
     listSchedules(scope.companyId),
     listEmployees({ activeOnly: true, branchId, companyId: scope.companyId }),
     listSites(scope.companyId, true),
   ]);
+  // ผู้ใช้ที่เข้าด้วยสิทธิ์รายเมนู เห็นเฉพาะสาขาในขอบเขตของตัวเอง
+  const branches = access.branchIds ? allBranches.filter((b) => access.branchIds!.has(b.id)) : allBranches;
+  const { can_write: canWrite, can_edit: canEdit, can_delete: canDelete } = access.rights;
 
   /** ช่องเลือกสถานที่ (ว่าง = สาขาตัวเอง) ใช้ทั้งฟอร์มจัดเป็นชุดและแก้ทีละช่อง */
   const SiteSelect = ({ id, value }: { id: string; value?: string | null }) => (
@@ -112,9 +118,11 @@ export default async function RosterPage({
       </select>
     </div>
   );
-  const employees = positionId
-    ? allEmployees.filter((e) => e.position_id === positionId)
-    : allEmployees;
+  const employees = allEmployees.filter(
+    (e) =>
+      (!positionId || e.position_id === positionId) &&
+      (!access.branchIds || (e.branch_id !== null && access.branchIds.has(e.branch_id))),
+  );
   const employeeIds = employees.map((e) => e.id);
 
   const assignments =
@@ -172,6 +180,8 @@ export default async function RosterPage({
       : `${formatThaiDate(from)} – ${formatThaiDate(to)}`;
 
   return (
+    <>
+    {!access.viaAdmin && access.user && <AttStaffNav user={access.user} />}
     <main className="mx-auto max-w-7xl space-y-4 p-4">
       <div>
         <h1 className="text-xl font-bold text-slate-800">ตารางเวร</h1>
@@ -236,6 +246,7 @@ export default async function RosterPage({
       )}
 
       {/* ---------- จัดเวรเป็นชุด ---------- */}
+      {canWrite && (
       <details className="card" open={!editing}>
         <summary className="cursor-pointer font-semibold text-slate-800">
           จัดเวรเป็นชุด (หลายคน หลายวัน ครั้งเดียว)
@@ -323,9 +334,10 @@ export default async function RosterPage({
           </div>
         </form>
       </details>
+      )}
 
       {/* ---------- แก้ทีละช่อง ---------- */}
-      {editing && (
+      {canEdit && editing && (
         <form action={saveCellForm} className="card space-y-3 border-brand-500 ring-2 ring-brand-100">
           {viewHidden}
           <input type="hidden" name="employee_id" value={editing.employee.id} />
@@ -488,6 +500,7 @@ export default async function RosterPage({
       {/* ---------- เครื่องมือช่วยจัด ---------- */}
       {employees.length > 0 && (
         <section className="grid gap-3 md:grid-cols-2">
+          {canWrite && (
           <form action={copyPreviousForm} className="card space-y-2">
             {viewHidden}
             {employeeIds.map((id) => (
@@ -505,6 +518,8 @@ export default async function RosterPage({
             </button>
           </form>
 
+          )}
+          {canDelete && (
           <form action={clearRangeForm} className="card space-y-2">
             {viewHidden}
             {employeeIds.map((id) => (
@@ -523,8 +538,10 @@ export default async function RosterPage({
               ล้างตารางเวร
             </button>
           </form>
+          )}
         </section>
       )}
     </main>
+    </>
   );
 }

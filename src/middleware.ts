@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ADMIN_COOKIE, SESSION_COOKIE, verifyAdminToken, verifySessionToken } from "@/lib/session-token";
 
+/** เส้นทางใต้ /admin ที่ผู้ใช้ทั่วไปเข้าได้ด้วยสิทธิ์รายเมนู (ไม่ต้องผ่าน PIN) */
+const SHARED_ADMIN_PATHS = ["/admin/roster", "/admin/field", "/admin/reports/field"];
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -11,6 +14,18 @@ export async function middleware(req: NextRequest) {
 
     const adminToken = req.cookies.get(ADMIN_COOKIE)?.value;
     if (adminToken && (await verifyAdminToken(adminToken))) return NextResponse.next();
+
+    // หน้าจัดตาราง (ตารางเวร/ตารางบูธ/งานนอกสถานที่/รายงานนอกสถานที่) เปิดให้ผู้ใช้ที่ล็อกอิน
+    // และมีสิทธิ์รายเมนูจากระบบส่วนกลางด้วย — ตัวหน้าเป็นคนตรวจสิทธิ์ (requireMenuAccess)
+    if (SHARED_ADMIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      const token = req.cookies.get(SESSION_COOKIE)?.value;
+      if (token && (await verifySessionToken(token))) return NextResponse.next();
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      url.search = "";
+      url.searchParams.set("next", pathname);
+      return NextResponse.redirect(url);
+    }
 
     const url = req.nextUrl.clone();
     url.pathname = "/admin";

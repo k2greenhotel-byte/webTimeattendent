@@ -10,7 +10,7 @@ import {
   upsertAssignments,
   type AssignmentInput,
 } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { requireMenuAccess } from "@/lib/att-access";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 62;
@@ -59,7 +59,8 @@ function siteOf(form: FormData): string | null {
 
 /** จัดเวรเป็นชุด: หลายคน × ช่วงวันที่ × เฉพาะวันในสัปดาห์ที่ติ๊ก */
 export async function assignShiftsForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_ROSTER", "write");
+  const actorId = access.user?.id ?? null;
 
   const employeeIds = ids(form, "employee_ids");
   const from = str(form, "from");
@@ -93,7 +94,7 @@ export async function assignShiftsForm(form: FormData): Promise<void> {
       count = await upsertAssignments(rows);
     }
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: shift === "clear" ? "clear_roster" : "upsert_roster",
       target_table: "shift_assignments",
       after: { employees: employeeIds.length, from, to, weekdays, shift, days: dates.length },
@@ -113,7 +114,8 @@ export async function assignShiftsForm(form: FormData): Promise<void> {
 
 /** แก้ทีละช่อง (1 คน 1 วัน) */
 export async function saveCellForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_ROSTER", "edit");
+  const actorId = access.user?.id ?? null;
 
   const employee_id = str(form, "employee_id");
   const work_date = str(form, "work_date");
@@ -133,7 +135,7 @@ export async function saveCellForm(form: FormData): Promise<void> {
       await upsertAssignments([{ employee_id, work_date, note, site_id, ...shift }]);
     }
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: shift === "clear" ? "clear_roster" : "upsert_roster",
       target_table: "shift_assignments",
       target_id: employee_id,
@@ -149,7 +151,8 @@ export async function saveCellForm(form: FormData): Promise<void> {
 
 /** คัดลอกตารางเวรจากช่วงก่อนหน้า (ยาวเท่ากัน) มาทับช่วงที่กำลังดู */
 export async function copyPreviousForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_ROSTER", "write");
+  const actorId = access.user?.id ?? null;
 
   const employeeIds = ids(form, "employee_ids");
   const from = str(form, "from");
@@ -169,7 +172,7 @@ export async function copyPreviousForm(form: FormData): Promise<void> {
       days,
     });
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "copy_roster",
       target_table: "shift_assignments",
       after: { employees: employeeIds.length, from, days, copied: count },
@@ -187,7 +190,8 @@ export async function copyPreviousForm(form: FormData): Promise<void> {
 
 /** ล้างตารางเวรของทุกคนในมุมมองนี้ทั้งช่วง (ต้องติ๊กยืนยัน) */
 export async function clearRangeForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_ROSTER", "delete");
+  const actorId = access.user?.id ?? null;
 
   const employeeIds = ids(form, "employee_ids");
   const from = str(form, "from");
@@ -201,7 +205,7 @@ export async function clearRangeForm(form: FormData): Promise<void> {
   try {
     count = await deleteAssignments({ employeeIds, from, to });
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "clear_roster",
       target_table: "shift_assignments",
       after: { employees: employeeIds.length, from, to, deleted: count },

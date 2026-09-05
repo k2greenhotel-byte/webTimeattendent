@@ -1,7 +1,9 @@
+import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
 import ExportButtons from "@/components/ExportButtons";
 import FieldReportTable from "@/components/FieldReportTable";
+import { requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import { formatDuration, formatThaiDate, monthBounds, workDateOf } from "@/lib/datetime";
 import { listBranches, listEmployees, listFieldTaskTypes } from "@/lib/db";
@@ -30,13 +32,18 @@ export default async function FieldReportPage({
   const employeeId = params.employeeId || undefined;
   const typeId = params.type || undefined;
 
+  const access = await requireMenuAccess("ATT_REP_FIELD", "read");
   const scope = await getCompanyScope(params.company);
-  const [branches, employees, types, report] = await Promise.all([
+  const [allBranches, allEmployees, types, report] = await Promise.all([
     listBranches(false, scope.companyId),
     listEmployees({ companyId: scope.companyId, branchId }),
     listFieldTaskTypes(scope.companyId),
     buildFieldReport({ from, to, companyId: scope.companyId, branchId, employeeId, typeId }),
   ]);
+  const branches = access.branchIds ? allBranches.filter((b) => access.branchIds!.has(b.id)) : allBranches;
+  const employees = access.branchIds
+    ? allEmployees.filter((e) => e.branch_id !== null && access.branchIds!.has(e.branch_id))
+    : allEmployees;
 
   const query = new URLSearchParams({ kind: "field", from, to });
   if (scope.companyId) query.set("company", scope.companyId);
@@ -45,6 +52,8 @@ export default async function FieldReportPage({
   if (typeId) query.set("type", typeId);
 
   return (
+    <>
+    {!access.viaAdmin && access.user && <AttStaffNav user={access.user} />}
     <main className="mx-auto max-w-7xl space-y-4 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -124,5 +133,6 @@ export default async function FieldReportPage({
         <FieldReportTable rows={report.rows} showEmployee />
       </section>
     </main>
+    </>
   );
 }

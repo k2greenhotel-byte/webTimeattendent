@@ -7,7 +7,7 @@ import {
   buildFieldReport,
   buildMonthlyReport,
 } from "@/lib/reports";
-import { getSessionUser, isAdminAuthed } from "@/lib/session";
+import { checkPermission, getSessionUser, isAdminAuthed } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,9 +50,10 @@ export async function GET(req: Request) {
       );
       filename = `attendance-${report.employee?.emp_code ?? employeeId}-${from}_${to}`;
     } else if (kind === "field") {
-      // งานนอกสถานที่: แอดมินดูได้ทุกคน พนักงานดูได้เฉพาะของตัวเอง
-      const employeeId = sp.get("employeeId") || (isAdmin ? undefined : user?.id);
-      if (!isAdmin && employeeId !== user?.id) {
+      // งานนอกสถานที่: แอดมินหรือผู้มีสิทธิ์อ่านรายงานดูได้ทุกคน พนักงานทั่วไปดูได้เฉพาะของตัวเอง
+      const canSeeAll = isAdmin || (await checkPermission("ATT_REP_FIELD", "read"));
+      const employeeId = sp.get("employeeId") || (canSeeAll ? undefined : user?.id);
+      if (!canSeeAll && employeeId !== user?.id) {
         return NextResponse.json({ error: "ไม่มีสิทธิ์ดูข้อมูลผู้อื่น" }, { status: 403 });
       }
       const today = workDateOf();

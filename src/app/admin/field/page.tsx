@@ -1,7 +1,9 @@
 import Link from "next/link";
+import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
 import FieldReportTable from "@/components/FieldReportTable";
+import { requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import { addDays, formatDuration, formatThaiDate, workDateOf } from "@/lib/datetime";
 import { getFieldTask, listBranches, listEmployees, listFieldTaskTypes, listSites } from "@/lib/db";
@@ -32,6 +34,7 @@ type SearchParams = {
 
 export default async function FieldPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
+  const access = await requireMenuAccess("ATT_FIELD", "read");
   const scope = await getCompanyScope(params.company);
   const today = workDateOf();
 
@@ -40,13 +43,19 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
   const branchId = params.branch || undefined;
   const typeId = params.type || undefined;
 
-  const [branches, employees, types, sites, report] = await Promise.all([
+  const [allBranches, allEmployees, types, sites, report] = await Promise.all([
     listBranches(true, scope.companyId),
     listEmployees({ activeOnly: true, companyId: scope.companyId }),
     listFieldTaskTypes(scope.companyId),
     listSites(scope.companyId, true),
     buildFieldReport({ from, to, companyId: scope.companyId, branchId, typeId }),
   ]);
+  // ผู้ใช้ที่เข้าด้วยสิทธิ์รายเมนู เห็นเฉพาะสาขา/พนักงานในขอบเขตของตัวเอง
+  const branches = access.branchIds ? allBranches.filter((b) => access.branchIds!.has(b.id)) : allBranches;
+  const employees = access.branchIds
+    ? allEmployees.filter((e) => e.branch_id !== null && access.branchIds!.has(e.branch_id))
+    : allEmployees;
+  const { can_write: canWrite, can_edit: canEdit, can_delete: canDelete } = access.rights;
 
   // ภารกิจที่กำลังแก้ไข / สมาชิกที่กำลังบันทึกเวลาให้
   const editing: FieldTask | null = params.edit ? await getFieldTask(params.edit) : null;
@@ -187,6 +196,8 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
   );
 
   return (
+    <>
+    {!access.viaAdmin && access.user && <AttStaffNav user={access.user} />}
     <main className="mx-auto max-w-7xl space-y-4 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -257,19 +268,19 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
       </form>
 
       {/* ---------- สร้าง / แก้ไข ---------- */}
-      {editing ? (
+      {editing && canEdit ? (
         <TaskForm task={editing} />
-      ) : (
+      ) : canWrite ? (
         <details className="card" open={!punching}>
           <summary className="cursor-pointer font-semibold text-slate-800">สร้างภารกิจใหม่</summary>
           <div className="mt-3 -m-4">
             <TaskForm task={null} />
           </div>
         </details>
-      )}
+      ) : null}
 
       {/* ---------- บันทึกเวลาให้ ---------- */}
-      {punching && punchMember && (
+      {canEdit && punching && punchMember && (
         <form action={manualFieldPunchForm} className="card space-y-3 border-amber-400 ring-2 ring-amber-100">
           {viewHidden}
           <input type="hidden" name="task_id" value={punching.id} />
@@ -340,6 +351,7 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
           showEmployee
           renderActions={(r) => (
             <div className="flex flex-col gap-1 text-xs">
+              {canEdit && (<>
               <Link href={baseQuery({ edit: r.task.id, punch: "" })} className="text-brand-600 hover:underline">
                 แก้ไขงาน
               </Link>
@@ -357,6 +369,8 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
                   {r.task.is_cancelled ? "นำกลับมา" : "ยกเลิกงาน"}
                 </button>
               </form>
+              </>)}
+              {canDelete && (
               <form action={deleteFieldTaskForm} className="flex items-center gap-1">
                 {viewHidden}
                 <input type="hidden" name="id" value={r.task.id} />
@@ -365,6 +379,7 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
                   ลบงาน
                 </button>
               </form>
+              )}
             </div>
           )}
         />
@@ -383,5 +398,6 @@ export default async function FieldPage({ searchParams }: { searchParams: Promis
         )}
       </section>
     </main>
+    </>
   );
 }

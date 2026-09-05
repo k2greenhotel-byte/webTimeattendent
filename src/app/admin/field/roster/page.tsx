@@ -1,6 +1,8 @@
 import Link from "next/link";
+import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
+import { requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import { computeFieldSession } from "@/lib/attendance";
 import {
@@ -70,6 +72,7 @@ type SearchParams = {
 
 export default async function FieldRosterPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
+  const access = await requireMenuAccess("ATT_FIELD_ROSTER", "read");
   const scope = await getCompanyScope(params.company);
   const today = workDateOf();
 
@@ -92,7 +95,7 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
   const positionId = params.position || undefined;
   const siteFilter = params.site || undefined;
 
-  const [branches, positions, sites, types, allEmployees, tasks] = await Promise.all([
+  const [allBranches, positions, sites, types, allEmployees, tasks] = await Promise.all([
     listBranches(true, scope.companyId),
     listPositions(scope.companyId),
     listSites(scope.companyId, true),
@@ -100,7 +103,14 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
     listEmployees({ activeOnly: true, branchId, companyId: scope.companyId }),
     listFieldTasks({ from, to, companyId: scope.companyId }),
   ]);
-  const employees = positionId ? allEmployees.filter((e) => e.position_id === positionId) : allEmployees;
+  // ผู้ใช้ที่เข้าด้วยสิทธิ์รายเมนู เห็นเฉพาะสาขาในขอบเขตของตัวเอง
+  const branches = access.branchIds ? allBranches.filter((b) => access.branchIds!.has(b.id)) : allBranches;
+  const employees = allEmployees.filter(
+    (e) =>
+      (!positionId || e.position_id === positionId) &&
+      (!access.branchIds || (e.branch_id !== null && access.branchIds.has(e.branch_id))),
+  );
+  const { can_write: canWrite, can_edit: canEdit, can_delete: canDelete } = access.rights;
   const employeeIds = employees.map((e) => e.id);
   const visibleTasks = siteFilter ? tasks.filter((t) => t.site_id === siteFilter) : tasks;
 
@@ -210,6 +220,8 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
   );
 
   return (
+    <>
+    {!access.viaAdmin && access.user && <AttStaffNav user={access.user} />}
     <main className="mx-auto max-w-7xl space-y-4 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -295,6 +307,7 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
       </form>
 
       {/* ---------- จัดเป็นชุด ---------- */}
+      {canWrite && (
       <details className="card" open={!editing}>
         <summary className="cursor-pointer font-semibold text-slate-800">จัดเป็นชุด (หลายคน หลายวัน ครั้งเดียว)</summary>
         <form action={assignFieldRosterForm} className="mt-3 grid gap-3 md:grid-cols-[minmax(14rem,1fr)_2fr]">
@@ -363,9 +376,10 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
           </div>
         </form>
       </details>
+      )}
 
       {/* ---------- แก้ทีละช่อง ---------- */}
-      {editing && (
+      {canEdit && editing && (
         <section className="card space-y-3 border-brand-500 ring-2 ring-brand-100">
           <p className="font-semibold text-slate-800">
             {editing.employee.full_name} · {formatThaiDate(editing.date)}
@@ -534,6 +548,7 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
       {/* ---------- เครื่องมือช่วยจัด ---------- */}
       {employees.length > 0 && (
         <section className="grid gap-3 md:grid-cols-2">
+          {canWrite && (
           <form action={copyPreviousFieldRosterForm} className="card space-y-2">
             {viewHidden}
             {employeeIds.map((id) => (
@@ -551,6 +566,8 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
             </button>
           </form>
 
+          )}
+          {canDelete && (
           <form action={clearFieldRosterForm} className="card space-y-2">
             {viewHidden}
             {employeeIds.map((id) => (
@@ -570,8 +587,10 @@ export default async function FieldRosterPage({ searchParams }: { searchParams: 
               ล้างตาราง
             </button>
           </form>
+          )}
         </section>
       )}
     </main>
+    </>
   );
 }
