@@ -45,6 +45,7 @@ export default function ReportTable({
             <th>สาย<br />(นาที)</th>
             <th>กลับก่อน<br />(นาที)</th>
             <th>พัก<br />(นาที)</th>
+            <th>ธุระ<br />(นาที)</th>
             <th>ชั่วโมงทำงาน</th>
             <th>OT<br />(นาที)</th>
             <th>สถานะ</th>
@@ -82,6 +83,9 @@ export default function ReportTable({
                 <td>{s.earlyLeaveMinutes || "-"}</td>
                 <td className={s.overBreakMinutes > 0 ? "text-amber-600" : ""}>
                   {s.breakMinutes || "-"}
+                </td>
+                <td className={s.overBreakMinutes > 0 ? "text-amber-600" : ""} title={s.errandRounds > 0 ? `ออกทำธุระ ${s.errandRounds} ครั้ง` : ""}>
+                  {s.errandMinutes ? `${s.errandMinutes} (${s.errandRounds})` : "-"}
                 </td>
                 <td>{s.workMinutes > 0 ? formatDuration(s.workMinutes) : "-"}</td>
                 <td>{s.otMinutes || "-"}</td>

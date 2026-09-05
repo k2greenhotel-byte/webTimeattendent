@@ -197,6 +197,43 @@ export type WorkSettings = {
   timezone: string;
 };
 
+// ---------- ออกไปทำธุระระหว่างวัน (ออก → กลับ ได้หลายรอบ) ----------
+
+export type ErrandPunchType = "out" | "in";
+
+export const ERRAND_PUNCH_LABEL: Record<ErrandPunchType, string> = {
+  out: "ออกไปทำธุระ",
+  in: "กลับเข้างาน",
+};
+
+export type ErrandPunch = {
+  id: string;
+  employee_id: string;
+  work_date: string;
+  round: number;
+  punch_type: ErrandPunchType;
+  punched_at: string;
+  reason: string | null;
+  photo_path: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  distance_m: number | null;
+  note: string | null;
+  is_manual: boolean;
+};
+
+/** 1 รอบ = ออก 1 ครั้ง + กลับ 1 ครั้ง (รอบที่ยังไม่กลับ in = null) */
+export type ErrandRound = {
+  round: number;
+  reason: string | null;
+  out: ErrandPunch | null;
+  in: ErrandPunch | null;
+  /** นาทีที่ใช้ไป (0 ถ้ายังไม่กลับ) */
+  minutes: number;
+  isOpen: boolean;
+};
+
 export type AttendanceRecord = {
   id: string;
   employee_id: string;
@@ -274,6 +311,12 @@ export type DaySummary = {
   lateMinutes: number;
   earlyLeaveMinutes: number;
   breakMinutes: number;
+  /** เวลาออกไปทำธุระระหว่างวัน (รวมทุกรอบที่กลับเข้ามาแล้ว) */
+  errandMinutes: number;
+  /** จำนวนรอบที่ออกไปทำธุระ */
+  errandRounds: number;
+  /** เวลาส่วนตัวรวม = พักเที่ยง + ธุระ (ตัวที่เอาไปเทียบกับโควตา) */
+  personalMinutes: number;
   overBreakMinutes: number;
   workMinutes: number;
   otMinutes: number;

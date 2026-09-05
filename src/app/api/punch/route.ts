@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canPunch } from "@/lib/attendance";
+import { canErrand, canPunch } from "@/lib/attendance";
 import {
   getBranchById,
   getEmployeeById,
@@ -8,15 +8,23 @@ import {
   getPunchesOfDay,
   getResolvedDay,
   getSiteById,
+  insertErrandPunch,
   insertFieldPunch,
   insertPunch,
+  listErrandRounds,
   resolveWorkDateForPunch,
   uploadPhoto,
 } from "@/lib/db";
 import { workDateOf } from "@/lib/datetime";
 import { distanceMeters } from "@/lib/geo";
 import { getSessionUser } from "@/lib/session";
-import { PUNCH_ORDER, type FieldPunchType, type PunchType, type SessionUser } from "@/lib/types";
+import {
+  PUNCH_ORDER,
+  type ErrandPunchType,
+  type FieldPunchType,
+  type PunchType,
+  type SessionUser,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +64,13 @@ export async function POST(req: Request) {
   const taskId = String(form.get("task_id") ?? "").trim();
   if (taskId) return punchFieldTask(user, taskId, form, photo, now, geo);
 
-  const type = String(form.get("punch_type") ?? "") as PunchType;
+  // ออกไปทำธุระระหว่างวัน (ออก/กลับ ได้หลายรอบ) แยกจากการลงเวลาปกติเช่นกัน
+  const rawType = String(form.get("punch_type") ?? "");
+  if (rawType === "errand_out" || rawType === "errand_in") {
+    return punchErrand(user, rawType === "errand_out" ? "out" : "in", form, photo, now, geo);
+  }
+
+  const type = rawType as PunchType;
   if (!PUNCH_ORDER.includes(type)) return fail("ประเภทการลงเวลาไม่ถูกต้อง");
 
   const employee = await getEmployeeById(user.id);
@@ -118,6 +132,86 @@ export async function POST(req: Request) {
       site_id: assignment?.site_id ?? null,
     });
     return NextResponse.json({ ok: true, record });
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : "บันทึกการลงเวลาไม่สำเร็จ", 500);
+  }
+}
+
+/**
+ * ลงเวลาออกไปทำธุระระหว่างวัน (ออก → กลับ ได้หลายรอบ)
+ * ใช้พิกัด/รัศมีชุดเดียวกับการลงเวลาปกติ เพราะทั้งตอนออกและตอนกลับพนักงานอยู่ที่ทำงาน
+ * เวลาที่ใช้จะถูกรวมกับพักเที่ยงเทียบโควตาเดียวกันตอนคำนวณรายงาน
+ */
+async function punchErrand(
+  user: SessionUser,
+  type: ErrandPunchType,
+  form: FormData,
+  photo: File,
+  now: Date,
+  geo: { lat: number | null; lng: number | null; accuracy: number | null; device: string | null },
+) {
+  const employee = await getEmployeeById(user.id);
+  const branch = await getBranchById(employee?.branch_id ?? null);
+  const workDate = await resolveWorkDateForPunch(user.id, branch?.id ?? null, now);
+
+  const [punches, rounds, { settings }] = await Promise.all([
+    getPunchesOfDay(user.id, workDate),
+    listErrandRounds(user.id, workDate),
+    getResolvedDay(branch?.id ?? null, user.id, workDate),
+  ]);
+
+  const open = rounds.find((r) => r.isOpen) ?? null;
+  const check = canErrand(
+    type,
+    punches.map((p) => p.punch_type),
+    Boolean(open),
+  );
+  if (!check.ok) return fail(check.reason ?? "ลงเวลาไม่ได้");
+
+  // ---- พิกัด: เกณฑ์เดียวกับการลงเวลาปกติ ----
+  let distance: number | null = null;
+  if (settings.site_lat !== null && settings.site_lng !== null && geo.lat !== null && geo.lng !== null) {
+    distance = distanceMeters(geo.lat, geo.lng, settings.site_lat, settings.site_lng);
+  }
+  if (settings.require_gps) {
+    if (geo.lat === null || geo.lng === null) {
+      return fail("ระบบกำหนดให้ต้องเปิด GPS ก่อนลงเวลา กรุณาอนุญาตการเข้าถึงตำแหน่ง");
+    }
+    if (distance !== null && distance > settings.radius_m) {
+      return fail(
+        `คุณอยู่ห่างจาก${settings.site_name ?? "ที่ทำงาน"} ${distance} เมตร (อนุญาตไม่เกิน ${settings.radius_m} เมตร)`,
+      );
+    }
+  }
+
+  const round = type === "out" ? Math.max(0, ...rounds.map((r) => r.round)) + 1 : open!.round;
+  const reason = String(form.get("reason") ?? "").trim() || null;
+
+  const month = workDate.slice(0, 7);
+  const path = `${user.emp_code}/${month}/${workDate}_errand${round}_${type}_${globalThis.crypto.randomUUID()}.jpg`;
+  try {
+    await uploadPhoto(path, await photo.arrayBuffer());
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : "อัปโหลดรูปไม่สำเร็จ", 500);
+  }
+
+  try {
+    const record = await insertErrandPunch({
+      employee_id: user.id,
+      work_date: workDate,
+      round,
+      punch_type: type,
+      punched_at: now.toISOString(),
+      reason: type === "out" ? reason : null,
+      photo_path: path,
+      lat: geo.lat,
+      lng: geo.lng,
+      accuracy_m: geo.accuracy,
+      distance_m: distance,
+      device_info: geo.device,
+      branch_id: branch?.id ?? null,
+    });
+    return NextResponse.json({ ok: true, record, workDate });
   } catch (err) {
     return fail(err instanceof Error ? err.message : "บันทึกการลงเวลาไม่สำเร็จ", 500);
   }

@@ -1,19 +1,22 @@
 import { redirect } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
-import { canPunch } from "@/lib/attendance";
+import { canErrand, canPunch } from "@/lib/attendance";
 import {
   getEmployeeById,
   getFieldTask,
   getOrgSettings,
   getPunchesOfDay,
   getResolvedSettings,
+  listErrandRounds,
   resolveWorkDateForPunch,
 } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import {
+  ERRAND_PUNCH_LABEL,
   FIELD_PUNCH_LABEL,
   PUNCH_LABEL,
   PUNCH_ORDER,
+  type ErrandPunchType,
   type FieldPunchType,
   type PunchType,
 } from "@/lib/types";
@@ -23,10 +26,40 @@ export const dynamic = "force-dynamic";
 export default async function CapturePage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; task?: string }>;
+  searchParams: Promise<{ type?: string; task?: string; reason?: string }>;
 }) {
-  const { type, task: taskId } = await searchParams;
+  const { type, task: taskId, reason } = await searchParams;
   const user = await requireUser();
+
+  // ---- ออกไปทำธุระระหว่างวัน ----
+  if (type === "errand_out" || type === "errand_in") {
+    const errandType: ErrandPunchType = type === "errand_out" ? "out" : "in";
+    const employee = await getEmployeeById(user.id);
+    const workDate = await resolveWorkDateForPunch(user.id, employee?.branch_id ?? null);
+    const [punches, rounds, settings] = await Promise.all([
+      getPunchesOfDay(user.id, workDate),
+      listErrandRounds(user.id, workDate),
+      getResolvedSettings(employee?.branch_id ?? null, user.id, workDate),
+    ]);
+
+    const check = canErrand(
+      errandType,
+      punches.map((p) => p.punch_type),
+      rounds.some((r) => r.isOpen),
+    );
+    if (!check.ok) redirect(`/punch?error=${encodeURIComponent(check.reason ?? "ลงเวลาไม่ได้")}`);
+
+    return (
+      <CameraCapture
+        punchType={type}
+        punchLabel={ERRAND_PUNCH_LABEL[errandType] + (reason ? ` · ${reason}` : "")}
+        empCode={user.emp_code}
+        fullName={user.full_name}
+        requireGps={settings.require_gps}
+        reason={reason}
+      />
+    );
+  }
 
   // ---- ภารกิจนอกสถานที่: เริ่ม/จบ ----
   if (taskId) {

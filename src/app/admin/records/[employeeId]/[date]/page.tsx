@@ -2,9 +2,21 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { computeDaySummary } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime } from "@/lib/datetime";
-import { getBranchById, getEmployeeById, getPunchesOfDay, getResolvedSettings } from "@/lib/db";
+import {
+  getBranchById,
+  getEmployeeById,
+  getPunchesOfDay,
+  getResolvedSettings,
+  listErrandRounds,
+} from "@/lib/db";
 import { PUNCH_LABEL, PUNCH_ORDER } from "@/lib/types";
-import { deleteDayForm, deletePunchForm, savePunchForm } from "./actions";
+import {
+  deleteDayForm,
+  deleteErrandRoundForm,
+  deletePunchForm,
+  saveErrandTimeForm,
+  savePunchForm,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +32,10 @@ export default async function EditRecordPage({
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
 
-  const [employee, punches] = await Promise.all([
+  const [employee, punches, errandRounds] = await Promise.all([
     getEmployeeById(employeeId),
     getPunchesOfDay(employeeId, date),
+    listErrandRounds(employeeId, date),
   ]);
 
   if (!employee) notFound();
@@ -38,6 +51,8 @@ export default async function EditRecordPage({
       break_out_at: byType.get("break_out")?.punched_at ?? null,
       break_in_at: byType.get("break_in")?.punched_at ?? null,
       check_out_at: byType.get("check_out")?.punched_at ?? null,
+      errand_minutes: errandRounds.reduce((sum, r) => sum + r.minutes, 0),
+      errand_rounds: errandRounds.length,
     },
     settings,
   );
@@ -130,6 +145,71 @@ export default async function EditRecordPage({
           </section>
         );
       })}
+
+      {errandRounds.length > 0 && (
+        <section className="card space-y-3">
+          <div>
+            <h2 className="font-semibold text-slate-800">ออกไปทำธุระระหว่างวัน</h2>
+            <p className="text-xs text-slate-500">
+              รวม {summary.errandMinutes} นาที · เวลาส่วนตัว (พักเที่ยง + ธุระ) {summary.personalMinutes} นาที
+              จากโควตา {settings.break_allow_minutes} นาที
+              {summary.overBreakMinutes > 0 ? ` — เกิน ${summary.overBreakMinutes} นาที` : ""}
+            </p>
+          </div>
+
+          {errandRounds.map((r) => (
+            <div key={r.round} className="space-y-2 rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium text-slate-700">
+                รอบที่ {r.round}
+                {r.reason ? ` · ${r.reason}` : ""}
+                {r.isOpen ? " · ยังไม่ได้กดกลับ" : ` · ${r.minutes} นาที`}
+              </p>
+
+              <div className="flex flex-wrap gap-3">
+                {([r.out, r.in] as const).map((p, i) =>
+                  p ? (
+                    <form key={p.id} action={saveErrandTimeForm} className="flex flex-wrap items-end gap-2">
+                      <input type="hidden" name="employee_id" value={employeeId} />
+                      <input type="hidden" name="work_date" value={date} />
+                      <input type="hidden" name="punch_id" value={p.id} />
+                      <div>
+                        <label className="label">{i === 0 ? "เวลาออก" : "เวลากลับ"}</label>
+                        <input
+                          name="time"
+                          type="time"
+                          defaultValue={formatTime(p.punched_at)}
+                          className="input w-32"
+                          required
+                        />
+                      </div>
+                      <div className="min-w-40 flex-1">
+                        <label className="label">หมายเหตุ</label>
+                        <input name="note" defaultValue={p.note ?? ""} className="input" />
+                      </div>
+                      <button type="submit" className="btn-secondary">
+                        บันทึก
+                      </button>
+                    </form>
+                  ) : (
+                    <p key={i} className="self-end text-xs text-amber-600">
+                      ไม่มีเวลากลับ (พนักงานลืมกด) — ลบรอบนี้หรือให้พนักงานกดกลับ
+                    </p>
+                  ),
+                )}
+              </div>
+
+              <form action={deleteErrandRoundForm}>
+                <input type="hidden" name="employee_id" value={employeeId} />
+                <input type="hidden" name="work_date" value={date} />
+                <input type="hidden" name="round" value={r.round} />
+                <button type="submit" className="text-xs text-rose-600 hover:underline">
+                  ลบธุระรอบนี้
+                </button>
+              </form>
+            </div>
+          ))}
+        </section>
+      )}
 
       {punches.length > 0 && (
         <form action={deleteDayForm} className="card space-y-3 border-rose-200">

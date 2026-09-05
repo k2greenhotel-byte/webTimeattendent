@@ -1,5 +1,5 @@
 import "server-only";
-import { expectedTimes, resolveSettings } from "./attendance";
+import { expectedTimes, groupErrandRounds, resolveSettings } from "./attendance";
 import { addDays, workDateOf } from "./datetime";
 import { getSupabase, PHOTO_BUCKET } from "./supabase-server";
 import type {
@@ -8,6 +8,9 @@ import type {
   Branch,
   Department,
   Employee,
+  ErrandPunch,
+  ErrandPunchType,
+  ErrandRound,
   FieldPunch,
   FieldPunchType,
   FieldTask,
@@ -927,8 +930,16 @@ export async function deleteAttendanceRange(
   const { data, error } = await query;
   if (error) throw new Error(`อ่านข้อมูลการลงเวลาไม่สำเร็จ: ${error.message}`);
 
+  // ธุระระหว่างวันอยู่คนละตาราง ต้องลบตามไปด้วยเสมอ แม้วันนั้นจะไม่เหลือการลงเวลาปกติแล้ว
+  const errand = await deleteErrandRange({
+    from: filter.from,
+    to: filter.to,
+    employeeId: filter.employeeId,
+    branchIds,
+  });
+
   const rows = (data ?? []) as { id: string; photo_path: string | null }[];
-  if (rows.length === 0) return { deleted: 0, photosDeleted: 0 };
+  if (rows.length === 0) return { deleted: errand.deleted, photosDeleted: errand.photosDeleted };
 
   const paths = rows.map((r) => r.photo_path).filter((p): p is string => Boolean(p));
   await removePhotos(paths);
@@ -943,7 +954,10 @@ export async function deleteAttendanceRange(
     if (deleteError) throw new Error(`ลบข้อมูลการลงเวลาไม่สำเร็จ: ${deleteError.message}`);
   }
 
-  return { deleted: rows.length, photosDeleted: paths.length };
+  return {
+    deleted: rows.length + errand.deleted,
+    photosDeleted: paths.length + errand.photosDeleted,
+  };
 }
 
 /** ลบการลงเวลาทั้งวันของพนักงานหนึ่งคน */
@@ -1466,4 +1480,177 @@ export async function removeFieldTaskMember(taskId: string, employeeId: string):
     return { taskDeleted: true };
   }
   return { taskDeleted: false };
+}
+
+// ---------- ออกไปทำธุระระหว่างวัน ----------
+
+const ERRAND_COLUMNS =
+  "id, employee_id, work_date, round, punch_type, punched_at, reason, photo_path, lat, lng, accuracy_m, distance_m, note, is_manual";
+
+/** การลงเวลาธุระทั้งหมดของคนหนึ่งในวันหนึ่ง (เรียงตามรอบ) */
+export async function listErrandPunches(employeeId: string, workDate: string): Promise<ErrandPunch[]> {
+  const { data, error } = await getSupabase()
+    .from("errand_punches")
+    .select(ERRAND_COLUMNS)
+    .eq("employee_id", employeeId)
+    .eq("work_date", workDate)
+    .order("round")
+    .order("punch_type", { ascending: false }); // out ก่อน in
+  if (error) throw new Error(`อ่านการลงเวลาธุระไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as ErrandPunch[];
+}
+
+/** รอบธุระของคนหนึ่งในวันหนึ่ง พร้อมนาทีที่ใช้ไปแต่ละรอบ */
+export async function listErrandRounds(employeeId: string, workDate: string): Promise<ErrandRound[]> {
+  return groupErrandRounds(await listErrandPunches(employeeId, workDate));
+}
+
+/** บันทึกการกดออก/กลับ 1 ครั้ง — รอบที่กดออกแล้วยังไม่กลับ ห้ามออกซ้ำ */
+export async function insertErrandPunch(row: {
+  employee_id: string;
+  work_date: string;
+  round: number;
+  punch_type: ErrandPunchType;
+  punched_at: string;
+  reason?: string | null;
+  photo_path: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  distance_m: number | null;
+  device_info: string | null;
+  branch_id?: string | null;
+  note?: string | null;
+  is_manual?: boolean;
+  edited_by?: string | null;
+}): Promise<ErrandPunch> {
+  const { data, error } = await getSupabase()
+    .from("errand_punches")
+    .insert(row)
+    .select(ERRAND_COLUMNS)
+    .single();
+  if (error) {
+    if (error.code === "23505") throw new Error("คุณลงเวลาช่วงนี้ของรอบนี้ไปแล้ว");
+    throw new Error(`บันทึกการลงเวลาธุระไม่สำเร็จ: ${error.message}`);
+  }
+  return data as ErrandPunch;
+}
+
+/** เวลาธุระรวมต่อคนต่อวันในช่วงที่เลือก — ใช้ในรายงาน (อ่านจาก view ครั้งเดียว ไม่ยิงทีละวัน) */
+export async function getErrandSummaryMap(params: {
+  from: string;
+  to: string;
+  employeeIds?: string[] | null;
+}): Promise<Map<string, { minutes: number; rounds: number }>> {
+  let query = getSupabase()
+    .from("v_errand_days")
+    .select("employee_id, work_date, rounds, completed_rounds, minutes")
+    .gte("work_date", params.from)
+    .lte("work_date", params.to);
+  if (params.employeeIds) {
+    if (params.employeeIds.length === 0) return new Map();
+    query = query.in("employee_id", params.employeeIds);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านสรุปเวลาธุระไม่สำเร็จ: ${error.message}`);
+
+  const map = new Map<string, { minutes: number; rounds: number }>();
+  for (const r of (data ?? []) as {
+    employee_id: string;
+    work_date: string;
+    rounds: number;
+    minutes: number | string;
+  }[]) {
+    map.set(`${r.employee_id}|${r.work_date}`, {
+      minutes: Math.max(0, Math.round(Number(r.minutes) || 0)),
+      rounds: Number(r.rounds) || 0,
+    });
+  }
+  return map;
+}
+
+/** แอดมินแก้เวลาออก/กลับให้ (กรณีลืมกด) */
+export async function updateErrandPunchTime(
+  id: string,
+  punchedAt: string,
+  note: string | null,
+  editedBy: string | null,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("errand_punches")
+    .update({ punched_at: punchedAt, note, is_manual: true, edited_by: editedBy })
+    .eq("id", id);
+  if (error) throw new Error(`แก้เวลาธุระไม่สำเร็จ: ${error.message}`);
+}
+
+/** ลบธุระทั้งรอบ (พร้อมรูปทั้งขาออกและขากลับ) */
+export async function deleteErrandRound(
+  employeeId: string,
+  workDate: string,
+  round: number,
+): Promise<{ photosDeleted: number }> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("errand_punches")
+    .select("photo_path")
+    .eq("employee_id", employeeId)
+    .eq("work_date", workDate)
+    .eq("round", round);
+  const paths = ((data ?? []) as { photo_path: string | null }[])
+    .map((p) => p.photo_path)
+    .filter((p): p is string => Boolean(p));
+  await removePhotos(paths);
+
+  const { error } = await supabase
+    .from("errand_punches")
+    .delete()
+    .eq("employee_id", employeeId)
+    .eq("work_date", workDate)
+    .eq("round", round);
+  if (error) throw new Error(`ลบรอบธุระไม่สำเร็จ: ${error.message}`);
+  return { photosDeleted: paths.length };
+}
+
+/** ลบการลงเวลาธุระตามเงื่อนไขเดียวกับการลบข้อมูลลงเวลา (ใช้คู่กับ deleteAttendanceRange) */
+export async function deleteErrandRange(filter: {
+  from: string;
+  to: string;
+  employeeId?: string;
+  employeeIds?: string[] | null;
+  branchIds?: string[] | null;
+}): Promise<{ deleted: number; photosDeleted: number }> {
+  const supabase = getSupabase();
+  let query = supabase
+    .from("errand_punches")
+    .select("id, photo_path")
+    .gte("work_date", filter.from)
+    .lte("work_date", filter.to);
+  if (filter.employeeId) query = query.eq("employee_id", filter.employeeId);
+  if (filter.employeeIds) {
+    if (filter.employeeIds.length === 0) return { deleted: 0, photosDeleted: 0 };
+    query = query.in("employee_id", filter.employeeIds);
+  }
+  if (filter.branchIds) {
+    if (filter.branchIds.length === 0) return { deleted: 0, photosDeleted: 0 };
+    query = query.in("branch_id", filter.branchIds);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านการลงเวลาธุระไม่สำเร็จ: ${error.message}`);
+  const rows = (data ?? []) as { id: string; photo_path: string | null }[];
+  if (rows.length === 0) return { deleted: 0, photosDeleted: 0 };
+
+  const paths = rows.map((r) => r.photo_path).filter((p): p is string => Boolean(p));
+  await removePhotos(paths);
+
+  const ids = rows.map((r) => r.id);
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error: deleteError } = await supabase
+      .from("errand_punches")
+      .delete()
+      .in("id", ids.slice(i, i + 200));
+    if (deleteError) throw new Error(`ลบการลงเวลาธุระไม่สำเร็จ: ${deleteError.message}`);
+  }
+  return { deleted: rows.length, photosDeleted: paths.length };
 }

@@ -178,6 +178,70 @@ describe("computeDaySummary", () => {
   });
 });
 
+describe("ออกไปทำธุระระหว่างวัน (ใช้โควตาร่วมกับพักเที่ยง)", () => {
+  const day = (extra: Partial<Parameters<typeof computeDaySummary>[0]>) => ({
+    work_date: D,
+    check_in_at: at(D, "08:00"),
+    break_out_at: at(D, "12:00"),
+    break_in_at: at(D, "12:40"),
+    check_out_at: at(D, "17:00"),
+    ...extra,
+  });
+
+  it("พัก 40 + ธุระ 20 = 60 นาทีพอดี ไม่เกินโควตา", () => {
+    const s = computeDaySummary(day({ errand_minutes: 20, errand_rounds: 1 }), settings);
+    expect(s.breakMinutes).toBe(40);
+    expect(s.errandMinutes).toBe(20);
+    expect(s.personalMinutes).toBe(60);
+    expect(s.overBreakMinutes).toBe(0);
+    expect(s.workMinutes).toBe(540 - 60);
+    expect(s.flags).toContain("ออกทำธุระ 1 ครั้ง");
+    expect(s.flags).not.toContain("พักเกินเวลา");
+  });
+
+  it("พัก 40 + ธุระ 2 รอบรวม 35 = 75 นาที → พักเกิน 15 นาที และหักจากชั่วโมงทำงาน", () => {
+    const s = computeDaySummary(day({ errand_minutes: 35, errand_rounds: 2 }), settings);
+    expect(s.personalMinutes).toBe(75);
+    expect(s.overBreakMinutes).toBe(15);
+    expect(s.workMinutes).toBe(540 - 75);
+    expect(s.flags).toContain("ออกทำธุระ 2 ครั้ง");
+    expect(s.flags).toContain("พักเกินเวลา");
+  });
+
+  it("ไม่ได้ลงเวลาพักเที่ยง = ถือว่าใช้เต็มโควตา ออกธุระ 30 นาทีจึงเกิน 30", () => {
+    const s = computeDaySummary(
+      day({ break_out_at: null, break_in_at: null, errand_minutes: 30, errand_rounds: 1 }),
+      settings,
+    );
+    expect(s.personalMinutes).toBe(90);
+    expect(s.overBreakMinutes).toBe(30);
+  });
+
+  it("รอบที่ยังไม่กลับเข้างาน ยังไม่ถูกนับเวลา", () => {
+    const s = computeDaySummary(day({ errand_minutes: 0, errand_rounds: 1 }), settings);
+    expect(s.errandMinutes).toBe(0);
+    expect(s.overBreakMinutes).toBe(0);
+  });
+
+  it("นโยบายหักพักแบบคงที่: หักเต็มโควตาเสมอ แต่ถ้ารวมธุระเกินโควตาหักตามจริง", () => {
+    const fixed: WorkSettings = { ...settings, break_policy: "fixed" };
+    const short = computeDaySummary(day({ errand_minutes: 0, errand_rounds: 0 }), fixed);
+    expect(short.workMinutes).toBe(540 - 60);
+
+    const over = computeDaySummary(day({ errand_minutes: 35, errand_rounds: 1 }), fixed);
+    expect(over.workMinutes).toBe(540 - 75);
+    expect(over.overBreakMinutes).toBe(15);
+  });
+
+  it("ไม่ออกธุระเลย ผลลัพธ์เท่าเดิมทุกอย่าง", () => {
+    const s = computeDaySummary(day({}), settings);
+    expect(s.errandMinutes).toBe(0);
+    expect(s.errandRounds).toBe(0);
+    expect(s.overBreakMinutes).toBe(0);
+    expect(s.workMinutes).toBe(540 - 40);
+  });
+});
+
 describe("summarizePeriod", () => {
   it("รวมยอดหลายวันได้ถูกต้อง", () => {
     const days = [

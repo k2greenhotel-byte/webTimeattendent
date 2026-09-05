@@ -6,6 +6,9 @@
 import { bangkokAt, dayOfWeek, parseTimeToMinutes, toDate } from "./datetime";
 import {
   PUNCH_ORDER,
+  type ErrandPunch,
+  type ErrandPunchType,
+  type ErrandRound,
   type Branch,
   type DayStatus,
   type DaySummary,
@@ -61,6 +64,10 @@ export type DayPunches = {
   break_out_at?: string | null;
   break_in_at?: string | null;
   check_out_at?: string | null;
+  /** เวลาออกไปทำธุระระหว่างวันรวมทุกรอบ (นาที) — มาจากตาราง errand_punches */
+  errand_minutes?: number | null;
+  /** จำนวนรอบที่ออกไปทำธุระ */
+  errand_rounds?: number | null;
 };
 
 function diffMinutes(from: string | null | undefined, to: string | null | undefined): number | null {
@@ -97,8 +104,9 @@ function minutesFrom(from: Date, to: string | null | undefined): number | null {
  * - สาย        = เวลาเข้างานจริง − เวลาเริ่มงานมาตรฐาน − นาทีผ่อนผัน
  * - กลับก่อน   = เวลาเลิกงานมาตรฐาน − เวลาออกจริง − นาทีผ่อนผัน
  * - เวลาพัก    = เข้าบ่าย − ออกพัก (ถ้าลงไม่ครบใช้โควตามาตรฐานแทน)
- * - พักเกิน    = เวลาพักจริง − โควตาพัก (พักกลางวันยืดหยุ่น แต่โควตา 1 ชม.)
- * - ชม.ทำงาน   = (ออกงาน − เข้างาน) − เวลาพักที่หัก
+ * - ธุระ       = รวมทุกรอบที่ออกไปทำธุระแล้วกลับเข้ามา (errand_punches)
+ * - พักเกิน    = (เวลาพัก + ธุระ) − โควตา (พักกลางวันและธุระใช้โควตาก้อนเดียวกัน ปกติ 1 ชม.)
+ * - ชม.ทำงาน   = (ออกงาน − เข้างาน) − เวลาส่วนตัวที่หัก
  * - OT         = ออกงาน − เลิกงานมาตรฐาน − นาทีผ่อนผัน OT
  * - isDayOff   = วันหยุดตามตารางเวร → สถานะ "off" ไม่นับขาดงาน (ถ้ามาทำงานก็ยังคำนวณให้)
  */
@@ -134,15 +142,26 @@ export function computeDaySummary(
   const earlyLeaveMinutes =
     outOffset === null ? 0 : Math.max(0, Math.round(-outOffset - settings.early_leave_grace_min));
 
-  // ---- เวลาพัก ----
+  // ---- เวลาพักเที่ยง (ไม่ลงเวลาพัก = ถือว่าใช้เต็มโควตา) ----
   const breakActual = diffMinutes(breakOutAt, breakInAt);
   const breakMinutes =
     breakActual === null ? settings.break_allow_minutes : Math.max(0, Math.round(breakActual));
-  const overBreakMinutes = Math.max(0, breakMinutes - settings.break_allow_minutes);
+
+  // ---- ออกไปทำธุระระหว่างวัน (นับเฉพาะรอบที่กลับเข้ามาแล้ว) ----
+  const errandMinutes = Math.max(0, Math.round(punches.errand_minutes ?? 0));
+  const errandRounds = Math.max(0, Math.round(punches.errand_rounds ?? 0));
+
+  // ---- เวลาส่วนตัวรวม: พักเที่ยง + ธุระ ใช้โควตาก้อนเดียวกัน (ปกติ 60 นาที) ----
+  const personalMinutes = breakMinutes + errandMinutes;
+  const overBreakMinutes = Math.max(0, personalMinutes - settings.break_allow_minutes);
 
   // ---- ชั่วโมงทำงานสุทธิ ----
+  // นโยบาย fixed = หักพักเที่ยงเต็มโควตาเสมอ แต่ถ้าออกไปทำธุระจนรวมเกินโควตา ต้องหักตามจริง
   const span = diffMinutes(checkInAt, checkOutAt);
-  const deduct = settings.break_policy === "fixed" ? settings.break_allow_minutes : breakMinutes;
+  const deduct =
+    settings.break_policy === "fixed"
+      ? Math.max(settings.break_allow_minutes, personalMinutes)
+      : personalMinutes;
   const workMinutes = span === null ? 0 : Math.max(0, Math.round(span - deduct));
 
   // ---- OT: ออกจริงช้ากว่าเวลาเลิกที่คาดหวัง ----
@@ -165,6 +184,7 @@ export function computeDaySummary(
   const flags: string[] = [];
   if (lateMinutes > 0) flags.push("มาสาย");
   if (earlyLeaveMinutes > 0) flags.push("กลับก่อนเวลา");
+  if (errandRounds > 0) flags.push(`ออกทำธุระ ${errandRounds} ครั้ง`);
   if (overBreakMinutes > 0) flags.push("พักเกินเวลา");
   if (status === "incomplete") flags.push("ลงเวลาไม่ครบ");
   if (otMinutes > 0) flags.push("มี OT");
@@ -179,6 +199,10 @@ export function computeDaySummary(
     lateMinutes,
     earlyLeaveMinutes,
     breakMinutes: breakActual === null ? 0 : breakMinutes,
+    errandMinutes,
+    errandRounds,
+    // เวลาส่วนตัวที่ใช้คำนวณจริง (นับพักเต็มโควตาให้วันที่ไม่ได้ลงเวลาพัก)
+    personalMinutes,
     overBreakMinutes,
     workMinutes,
     otMinutes,
@@ -203,6 +227,8 @@ export type PeriodTotals = {
   overBreakMinutes: number;
   workMinutes: number;
   otMinutes: number;
+  /** เวลาออกไปทำธุระรวม (นาที) */
+  errandMinutes: number;
   /** ชั่วโมงงานพิเศษ (นาที) จากภารกิจนอกสถานที่ที่นับชั่วโมง — เติมโดยชั้นรายงาน ไม่ได้มาจาก DaySummary */
   fieldMinutes: number;
 };
@@ -224,6 +250,7 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
     overBreakMinutes: 0,
     workMinutes: 0,
     otMinutes: 0,
+    errandMinutes: 0,
     fieldMinutes: 0,
   };
 
@@ -247,9 +274,68 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
     }
     totals.workMinutes += s.workMinutes;
     totals.otMinutes += s.otMinutes;
+    totals.errandMinutes += s.errandMinutes;
   }
 
   return totals;
+}
+
+// ---------- ออกไปทำธุระระหว่างวัน ----------
+
+/**
+ * จับคู่การกดออก/กลับให้เป็นรอบ ๆ พร้อมนาทีที่ใช้ไป
+ * รอบที่ยังไม่กดกลับ (isOpen) ยังไม่นับเวลา เพราะยังไม่รู้ว่าจะใช้เท่าไร
+ */
+export function groupErrandRounds(punches: ErrandPunch[]): ErrandRound[] {
+  const byRound = new Map<number, ErrandRound>();
+
+  for (const p of punches) {
+    const current =
+      byRound.get(p.round) ??
+      ({ round: p.round, reason: null, out: null, in: null, minutes: 0, isOpen: true } as ErrandRound);
+    if (p.punch_type === "out") {
+      current.out = p;
+      current.reason = p.reason ?? current.reason;
+    } else {
+      current.in = p;
+    }
+    byRound.set(p.round, current);
+  }
+
+  return [...byRound.values()]
+    .map((r) => {
+      const span = r.out && r.in ? (toDate(r.in.punched_at)!.getTime() - toDate(r.out.punched_at)!.getTime()) / 60_000 : null;
+      return { ...r, minutes: span === null ? 0 : Math.max(0, Math.round(span)), isOpen: Boolean(r.out && !r.in) };
+    })
+    .sort((a, b) => a.round - b.round);
+}
+
+/** รวมเวลาธุระทุกรอบที่กลับเข้ามาแล้ว */
+export function sumErrandMinutes(rounds: ErrandRound[]): number {
+  return rounds.reduce((sum, r) => sum + r.minutes, 0);
+}
+
+/**
+ * ตรวจว่ากด "ออกไปทำธุระ" หรือ "กลับเข้างาน" ได้ไหม
+ * ต้องเข้างานแล้ว ยังไม่เลิกงาน และไม่อยู่ระหว่างพักเที่ยง (พักเที่ยงมีปุ่มของตัวเอง)
+ */
+export function canErrand(
+  type: ErrandPunchType,
+  done: PunchType[],
+  hasOpenRound: boolean,
+): { ok: boolean; reason?: string } {
+  if (!done.includes("check_in")) return { ok: false, reason: "กรุณาลงเวลาเข้างานก่อน" };
+  if (done.includes("check_out")) return { ok: false, reason: "เลิกงานแล้ว ลงเวลาธุระไม่ได้" };
+
+  const onLunch = done.includes("break_out") && !done.includes("break_in");
+  if (type === "out") {
+    if (hasOpenRound) return { ok: false, reason: "คุณออกไปทำธุระอยู่แล้ว กรุณากดกลับเข้างานก่อน" };
+    if (onLunch) return { ok: false, reason: "กำลังพักเที่ยงอยู่ กรุณากดเข้างานบ่ายก่อน" };
+    return { ok: true };
+  }
+
+  if (!hasOpenRound) return { ok: false, reason: "ยังไม่ได้กดออกไปทำธุระ" };
+  return { ok: true };
 }
 
 // ---------- งานนอกสถานที่ (ภารกิจ: เริ่ม → จบ) ----------

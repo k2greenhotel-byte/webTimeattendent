@@ -1,14 +1,16 @@
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import Clock from "@/components/Clock";
+import ErrandCard from "@/components/ErrandCard";
 import FieldTaskCard from "@/components/FieldTaskCard";
-import { computeDaySummary, nextPunchType } from "@/lib/attendance";
+import { canErrand, computeDaySummary, nextPunchType, sumErrandMinutes } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
 import {
   getBranchById,
   getEmployeeById,
   getPunchesOfDay,
   getResolvedDay,
+  listErrandRounds,
   listMyFieldTasks,
   resolveWorkDateForPunch,
 } from "@/lib/db";
@@ -32,10 +34,11 @@ export default async function PunchPage({
   const workDate = await resolveWorkDateForPunch(user.id, branch?.id ?? null);
   const isYesterdayShift = workDate !== calendarDate;
 
-  const [punches, { settings, isDayOff, assignment }, fieldTasks] = await Promise.all([
+  const [punches, { settings, isDayOff, assignment }, fieldTasks, errandRounds] = await Promise.all([
     getPunchesOfDay(user.id, workDate),
     getResolvedDay(branch?.id ?? null, user.id, workDate),
     listMyFieldTasks(user.id, calendarDate),
+    listErrandRounds(user.id, workDate),
   ]);
   const siteToday = assignment?.site_id ? (assignment.site_name ?? settings.site_name) : null;
 
@@ -50,9 +53,14 @@ export default async function PunchPage({
       break_out_at: byType.get("break_out")?.punched_at ?? null,
       break_in_at: byType.get("break_in")?.punched_at ?? null,
       check_out_at: byType.get("check_out")?.punched_at ?? null,
+      errand_minutes: sumErrandMinutes(errandRounds),
+      errand_rounds: errandRounds.length,
     },
     settings,
   );
+
+  // ปุ่ม "ออกไปทำธุระ" ใช้ได้เฉพาะตอนที่กดได้จริง (เข้างานแล้ว ยังไม่เลิกงาน ไม่ได้พักเที่ยงอยู่)
+  const errandGate = canErrand("out", done, errandRounds.some((r) => r.isOpen));
 
   const standardTime: Record<PunchType, string> = {
     check_in: settings.work_start,
@@ -98,8 +106,16 @@ export default async function PunchPage({
           )}
         </section>
 
+        {done.includes("check_in") && (
+        <ErrandCard
+          rounds={errandRounds}
+          breakMinutes={summary.breakMinutes}
+          quotaMinutes={settings.break_allow_minutes}
+          blockedReason={errandGate.ok ? undefined : errandGate.reason}
+        />
+        )}
+
         <FieldTaskCard tasks={fieldTasks} employeeId={user.id} />
-        {params.ok && fieldTasks.length === 0 && null}
 
         {params.ok && (
           <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -167,6 +183,12 @@ export default async function PunchPage({
               <span className="text-slate-500">มาสาย</span>
               <span>{summary.lateMinutes > 0 ? `${summary.lateMinutes} นาที` : "ไม่สาย"}</span>
             </p>
+            {summary.errandRounds > 0 && (
+              <p className="flex justify-between">
+                <span className="text-slate-500">ออกทำธุระ {summary.errandRounds} ครั้ง</span>
+                <span>{formatDuration(summary.errandMinutes)}</span>
+              </p>
+            )}
             <p className="flex justify-between">
               <span className="text-slate-500">เวลาพัก</span>
               <span>

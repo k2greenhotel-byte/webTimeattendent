@@ -6,14 +6,16 @@ import { formatStampThai } from "@/lib/datetime";
 import type { FieldPunchType, PunchType } from "@/lib/types";
 
 type Props = {
-  /** ประเภทการลงเวลาปกติ (เข้าเช้า…) หรือของภารกิจ (start/end) เมื่อมี taskId */
-  punchType: PunchType | FieldPunchType;
+  /** ประเภทการลงเวลาปกติ (เข้าเช้า…), ของภารกิจ (start/end) เมื่อมี taskId, หรือธุระ (errand_out/errand_in) */
+  punchType: PunchType | FieldPunchType | "errand_out" | "errand_in";
   punchLabel: string;
   empCode: string;
   fullName: string;
   requireGps: boolean;
   /** ลงเวลาให้ภารกิจนอกสถานที่แทนการลงเวลาปกติ */
   taskId?: string;
+  /** เหตุผลที่ออกไปทำธุระ (ส่งไปกับการกดออก) */
+  reason?: string;
   /** หน้าที่จะกลับไปหลังบันทึกสำเร็จ (ค่าเริ่มต้น /punch) */
   returnTo?: string;
 };
@@ -29,6 +31,7 @@ export default function CameraCapture({
   fullName,
   requireGps,
   taskId,
+  reason,
   returnTo = "/punch",
 }: Props) {
   const router = useRouter();
@@ -174,6 +177,7 @@ export default function CameraCapture({
     const form = new FormData();
     form.append("punch_type", punchType);
     if (taskId) form.append("task_id", taskId);
+    if (reason) form.append("reason", reason);
     form.append("photo", blobRef.current, "punch.jpg");
     if (coords) {
       form.append("lat", String(coords.lat));
@@ -196,7 +200,7 @@ export default function CameraCapture({
       setError("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่");
       setBusy(false);
     }
-  }, [coords, punchType, requireGps, router, returnTo, taskId]);
+  }, [coords, punchType, reason, requireGps, router, returnTo, taskId]);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">

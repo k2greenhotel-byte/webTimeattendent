@@ -16,6 +16,9 @@ export default function TotalsCards({ totals }: { totals: PeriodTotals }) {
       tone: totals.lateDays > 0 ? "text-rose-600" : undefined,
     },
     { label: "พักเกินเวลา", value: `${totals.overBreakMinutes} นาที`, tone: "text-amber-600" },
+    ...(totals.errandMinutes > 0
+      ? [{ label: "ออกทำธุระ", value: formatDuration(totals.errandMinutes), tone: "text-slate-700" }]
+      : []),
     { label: "OT รวม", value: formatDuration(totals.otMinutes) },
     ...(totals.fieldMinutes > 0
       ? [{ label: "งานพิเศษนอกสถานที่", value: formatDuration(totals.fieldMinutes), tone: "text-violet-700" }]
