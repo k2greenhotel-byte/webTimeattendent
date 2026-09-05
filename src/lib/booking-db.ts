@@ -61,9 +61,10 @@ export async function listBookings(query: BookingQuery = {}): Promise<BookingRow
   if (query.pickup_from) q = q.gte("pickup_date", query.pickup_from);
   if (query.pickup_to) q = q.lte("pickup_date", query.pickup_to);
 
+  // ใบที่จองก่อนขึ้นก่อน — ใบที่ค้างนานที่สุดต้องอยู่บนสุดของทุกหน้าจอ
   const { data, error } = await q
-    .order("booking_date", { ascending: false })
-    .order("doc_no", { ascending: false })
+    .order("booking_date", { ascending: true })
+    .order("doc_no", { ascending: true })
     .limit(query.limit ?? 500);
   if (error) throw new Error(`อ่านรายการใบจองไม่สำเร็จ: ${error.message}`);
 

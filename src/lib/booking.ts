@@ -3,7 +3,14 @@
  * หน้าเว็บ · server action · dashboard · ไฟล์ export เรียกใช้ชุดเดียวกันหมด
  * ตัวเลขบนจอกับในรายงานจะได้ตรงกันเสมอเมื่อกฎเปลี่ยน
  */
-import { addDays, dateRange, monthBounds, thaiMonthShort, workDateOf } from "./datetime";
+import {
+  addDays,
+  dateRange,
+  daysBetween,
+  monthBounds,
+  thaiMonthShort,
+  workDateOf,
+} from "./datetime";
 import {
   BOOKING_STATUS_LABEL,
   BOOKING_STATUS_ORDER,
@@ -414,20 +421,41 @@ export function isAwaitingDelivery(
   return row.contract_status === "approved" && row.booking_status === "wait_delivery";
 }
 
+/**
+ * จำนวนวันที่ใบจองใบนี้รอมาแล้ว = วันนี้ − วันที่จอง
+ * ใบที่เพิ่งจองวันนี้ = 0 วัน · ไม่คืนค่าติดลบ (กันกรณีคีย์วันที่จองล่วงหน้า)
+ */
+export function daysWaiting(
+  row: Pick<BookingRow, "booking_date">,
+  today = workDateOf(),
+): number {
+  if (!row.booking_date) return 0;
+  return Math.max(0, daysBetween(row.booking_date, today));
+}
+
 /** ใบที่รอส่งมอบ แยกตามว่ารถอยู่ไหนแล้ว (มีในสต็อก / สั่งมาแล้ว / ยังต้องสั่ง) */
 export type DeliveryPipeline = {
   total: number;
   byVehicleStatus: Record<VehicleStatus, number>;
   /** เงินมัดจำที่ผูกอยู่กับใบแต่ละกลุ่ม */
   depositByVehicleStatus: Record<VehicleStatus, number>;
+  /** ใบที่รอส่งมอบทั้งหมด เรียงจากรอนานที่สุดขึ้นก่อน (วันที่จองเก่าสุดอยู่บน) */
+  rows: BookingRow[];
+  /** จำนวนวันที่รอนานที่สุดในกลุ่มนี้ */
+  maxDaysWaiting: number;
 };
 
-/** นับใบที่รอส่งมอบแยกตามสถานะรถ — ตอบว่า "ที่ขายจบแล้วติดอยู่ที่รถกี่ใบ" */
-export function deliveryPipeline(rows: BookingRow[]): DeliveryPipeline {
+/**
+ * นับใบที่รอส่งมอบแยกตามสถานะรถ — ตอบว่า "ที่ขายจบแล้วติดอยู่ที่รถกี่ใบ"
+ * และเรียงรายการจากใบที่รอนานที่สุดลงมา เพื่อให้ตามงานใบที่ค้างนานก่อน
+ */
+export function deliveryPipeline(rows: BookingRow[], today = workDateOf()): DeliveryPipeline {
   const pipeline: DeliveryPipeline = {
     total: 0,
     byVehicleStatus: emptyCounts(VEHICLE_STATUS_LABEL),
     depositByVehicleStatus: emptyCounts(VEHICLE_STATUS_LABEL),
+    rows: [],
+    maxDaysWaiting: 0,
   };
 
   for (const row of rows) {
@@ -435,7 +463,17 @@ export function deliveryPipeline(rows: BookingRow[]): DeliveryPipeline {
     pipeline.total += 1;
     pipeline.byVehicleStatus[row.vehicle_status] += 1;
     pipeline.depositByVehicleStatus[row.vehicle_status] += Number(row.deposit_amount ?? 0);
+    pipeline.rows.push(row);
   }
+
+  // รอนานสุดขึ้นก่อน = วันที่จองเก่าสุดขึ้นก่อน · วันเดียวกันเรียงตามเลขที่ใบจอง
+  pipeline.rows.sort(
+    (a, b) =>
+      (a.booking_date ?? "").localeCompare(b.booking_date ?? "") ||
+      a.doc_no.localeCompare(b.doc_no),
+  );
+  pipeline.maxDaysWaiting = pipeline.rows.length > 0 ? daysWaiting(pipeline.rows[0], today) : 0;
+
   return pipeline;
 }
 

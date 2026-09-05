@@ -102,7 +102,7 @@ export default async function BookingDashboardPage({
   const overview = buildOverview(allRows, today);
   const trend = monthlyTrend(allRows, year, month, 12);
   const rankings = buildRankings(allRows, today);
-  const pipeline = deliveryPipeline(allRows);
+  const pipeline = deliveryPipeline(allRows, today);
 
   const summary = summarize(rows);
   const prev = shiftMonth(year, month, -1);
@@ -180,7 +180,7 @@ export default async function BookingDashboardPage({
 
       <OverviewPanel overview={overview} />
 
-      <DeliveryPipelinePanel pipeline={pipeline} />
+      <DeliveryPipelinePanel pipeline={pipeline} today={today} />
 
       <RankingPanel rankings={rankings} />
 

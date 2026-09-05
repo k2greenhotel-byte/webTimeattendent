@@ -95,7 +95,7 @@ export default function UpdateForm({
           ))}
         </select>
         <p className="mt-1 text-xs text-slate-400">
-          รายการแสดงใบจองที่ยังไม่ปิดงาน เรียงจากใบล่าสุด
+          รายการแสดงใบจองที่ยังไม่ปิดงาน เรียงจากใบที่จองก่อนขึ้นก่อน
         </p>
       </div>
 

@@ -121,6 +121,18 @@ export function addDays(dateStr: string, days: number): string {
   return `${moved.getUTCFullYear()}-${pad(moved.getUTCMonth() + 1)}-${pad(moved.getUTCDate())}`;
 }
 
+/**
+ * จำนวนวันเต็มจาก from ถึง to (to อยู่หลัง from = ค่าบวก)
+ * นับเป็นวันปฏิทิน ไม่สนใจเวลา — 1 ม.ค. ถึง 2 ม.ค. = 1 วัน
+ */
+export function daysBetween(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const start = Date.UTC(fy, fm - 1, fd);
+  const end = Date.UTC(ty, tm - 1, td);
+  return Math.round((end - start) / 86_400_000);
+}
+
 /** รายการวันที่ทั้งหมดระหว่าง from ถึง to (รวมปลายทั้งสองด้าน) */
 export function dateRange(from: string, to: string): string[] {
   const out: string[] = [];

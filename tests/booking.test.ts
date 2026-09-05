@@ -11,6 +11,7 @@ import {
   buildCalendar,
   countByBrandModel,
   countByKey,
+  daysWaiting,
   deliveryPipeline,
   describeUpdate,
   describeVehicle,
@@ -607,6 +608,39 @@ describe("รอส่งมอบ: สัญญาผ่านแล้ว + �
     const p = deliveryPipeline([]);
     expect(p.total).toBe(0);
     expect(p.byVehicleStatus).toEqual({ in_stock: 0, need_order: 0, ordered: 0 });
+    expect(p.rows).toEqual([]);
+    expect(p.maxDaysWaiting).toBe(0);
+  });
+
+  it("จำนวนวันที่รอ = วันนี้ − วันที่จอง", () => {
+    expect(daysWaiting({ booking_date: "2026-09-01" }, "2026-09-10")).toBe(9);
+    expect(daysWaiting({ booking_date: "2026-09-10" }, "2026-09-10")).toBe(0);
+    // ข้ามเดือน/ข้ามปีต้องไม่เพี้ยน
+    expect(daysWaiting({ booking_date: "2026-12-25" }, "2027-01-05")).toBe(11);
+  });
+
+  it("วันที่จองล่วงหน้า (ยังไม่ถึงวันนี้) ไม่คืนค่าติดลบ", () => {
+    expect(daysWaiting({ booking_date: "2026-09-20" }, "2026-09-10")).toBe(0);
+  });
+
+  it("เรียงรายการจากรอนานสุดขึ้นก่อน และบอกวันที่รอนานสุด", () => {
+    const rows = [
+      awaiting({ id: "new", doc_no: "BK-3", booking_date: "2026-09-09" }),
+      awaiting({ id: "old", doc_no: "BK-1", booking_date: "2026-08-01" }),
+      awaiting({ id: "mid", doc_no: "BK-2", booking_date: "2026-09-01" }),
+    ];
+    const p = deliveryPipeline(rows, "2026-09-10");
+
+    expect(p.rows.map((r) => r.id)).toEqual(["old", "mid", "new"]);
+    expect(p.maxDaysWaiting).toBe(40);
+  });
+
+  it("วันที่จองวันเดียวกัน เรียงตามเลขที่ใบจองให้ลำดับคงที่", () => {
+    const rows = [
+      awaiting({ id: "b", doc_no: "BK-2569-0002", booking_date: "2026-09-01" }),
+      awaiting({ id: "a", doc_no: "BK-2569-0001", booking_date: "2026-09-01" }),
+    ];
+    expect(deliveryPipeline(rows, "2026-09-10").rows.map((r) => r.id)).toEqual(["a", "b"]);
   });
 });
 
