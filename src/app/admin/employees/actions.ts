@@ -65,14 +65,17 @@ export async function createEmployeeAction(
   }
 
   // หน้านี้ไม่มีช่องเลือกบริษัท/สาขา/โปรแกรมที่เข้าได้ (ต่างจาก /core/users) —
-  // ให้เข้าสาขาของตัวเองกับบริษัทของสาขานั้นได้ทันที และให้สิทธิ์โปรแกรมลงเวลา (ATT)
-  // เป็นค่าเริ่มต้น ไม่งั้นพนักงานที่เพิ่งเพิ่มจะล็อกอินไม่ได้เพราะไม่มีบริษัท/สาขาให้เลือก
+  // ให้เข้าสาขาของตัวเองกับบริษัทของสาขานั้นได้ทันที และให้สิทธิ์โปรแกรมที่เปิดกว้างสำหรับ
+  // พนักงานทุกคนเป็นค่าเริ่มต้น (ลงเวลา + ขอลา/ขอเบิกเงิน) ไม่งั้นพนักงานที่เพิ่งเพิ่มจะ
+  // ล็อกอินไม่ได้เพราะไม่มีบริษัท/สาขาให้เลือก และมองไม่เห็นโปรแกรมขอลาที่ควรใช้ได้ทุกคน
   const branch = row.branch_id ? await getBranchById(row.branch_id) : null;
-  const attProgramId = (await listPrograms(true)).find((p) => p.code === "ATT")?.id;
+  const defaultPrograms = (await listPrograms(true))
+    .filter((p) => p.code === "ATT" || p.code === "HR")
+    .map((p) => p.id);
   await Promise.all([
     row.branch_id ? setUserBranches(data.id, [row.branch_id]) : Promise.resolve(),
     branch?.company_id ? setUserCompanies(data.id, [branch.company_id]) : Promise.resolve(),
-    attProgramId ? setUserPrograms(data.id, [attProgramId]) : Promise.resolve(),
+    defaultPrograms.length ? setUserPrograms(data.id, defaultPrograms) : Promise.resolve(),
   ]);
 
   await logAudit({

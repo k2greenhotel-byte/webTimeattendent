@@ -1,13 +1,14 @@
 import Link from "next/link";
 import ApvApproverGate from "@/components/approval/ApproverGate";
 import RequestTable from "@/components/approval/RequestTable";
+import AdvanceTable from "@/components/hr/AdvanceTable";
+import LeaveTable from "@/components/hr/LeaveTable";
 import { apvApproverLogoutAction } from "@/app/approvals/actions";
 import { formatBaht, sortByUrgency, splitByAuthority, summarizeInbox } from "@/lib/approval";
 import { countEndorsedBy, listPrPending, listRequests, listTypes } from "@/lib/approval-db";
 import { authorityFor, getLimits } from "@/lib/approval-session";
 import type { ApvRequestRow } from "@/lib/approval-types";
-import { formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
-import { leaveFlags, leaveRangeText } from "@/lib/leave";
+import { formatThaiDate, workDateOf } from "@/lib/datetime";
 import { listHrPending } from "@/lib/leave-db";
 import { checkPermission, isApproverAuthed, requirePermission } from "@/lib/session";
 
@@ -193,49 +194,78 @@ export default async function ApprovalInboxPage({
         ) : pr.rows.length === 0 ? (
           <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบขอซ่อม/ขอซื้อรออนุมัติ</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table-report">
-              <thead>
-                <tr>
-                  <th>เลขที่</th>
-                  <th>ประเภท</th>
-                  <th className="text-left">รายการ</th>
-                  <th>ผู้ขอ</th>
-                  <th>สาขา</th>
-                  <th>จำนวนเงิน</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {pr.rows.map((row) => (
-                  <tr key={`${row.kind}-${row.id}`}>
-                    <td className="whitespace-nowrap font-medium">{row.doc_no}</td>
-                    <td>
-                      <span className="badge bg-orange-50 text-orange-700">
-                        {row.kind === "repair" ? "🛠 ใบขอซ่อม" : "🧾 ใบขอจัดซื้อ"}
-                      </span>
-                    </td>
-                    <td className="whitespace-normal text-left">{row.item_name}</td>
-                    <td className="text-xs">{row.created_by_name ?? "-"}</td>
-                    <td className="text-xs text-slate-500">{row.branch_name ?? "-"}</td>
-                    <td className="font-semibold">{formatBaht(row.requested_amount)}</td>
-                    <td>
-                      <Link
-                        href={`/procurement/approvals/${row.kind}/${row.id}`}
-                        className="text-sm text-brand-600 hover:underline"
-                      >
-                        พิจารณา
-                      </Link>
-                    </td>
+          <>
+            {/* จอเล็ก: การ์ด (แพตเทิร์นเดียวกับ RequestTable/LeaveTable/AdvanceTable) */}
+            <div className="space-y-2 md:hidden">
+              {pr.rows.map((row) => (
+                <Link
+                  key={`${row.kind}-${row.id}`}
+                  href={`/procurement/approvals/${row.kind}/${row.id}`}
+                  className="block rounded-xl border border-slate-200 p-3 hover:border-brand-300"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium text-slate-800">{row.item_name}</p>
+                    <span className="badge bg-orange-50 text-orange-700">
+                      {row.kind === "repair" ? "🛠 ซ่อม" : "🧾 ซื้อ"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {row.doc_no} · {row.created_by_name ?? "-"}
+                    {row.branch_name ? ` · ${row.branch_name}` : ""}
+                  </p>
+                  <p className="mt-2 font-semibold text-slate-800">
+                    {formatBaht(row.requested_amount)}
+                  </p>
+                </Link>
+              ))}
+            </div>
+
+            {/* จอใหญ่: ตาราง */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="table-report">
+                <thead>
+                  <tr>
+                    <th>เลขที่</th>
+                    <th>ประเภท</th>
+                    <th className="text-left">รายการ</th>
+                    <th>ผู้ขอ</th>
+                    <th>สาขา</th>
+                    <th>จำนวนเงิน</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pr.rows.map((row) => (
+                    <tr key={`${row.kind}-${row.id}`}>
+                      <td className="whitespace-nowrap font-medium">{row.doc_no}</td>
+                      <td>
+                        <span className="badge bg-orange-50 text-orange-700">
+                          {row.kind === "repair" ? "🛠 ใบขอซ่อม" : "🧾 ใบขอจัดซื้อ"}
+                        </span>
+                      </td>
+                      <td className="whitespace-normal text-left">{row.item_name}</td>
+                      <td className="text-xs">{row.created_by_name ?? "-"}</td>
+                      <td className="text-xs text-slate-500">{row.branch_name ?? "-"}</td>
+                      <td className="font-semibold">{formatBaht(row.requested_amount)}</td>
+                      <td>
+                        <Link
+                          href={`/procurement/approvals/${row.kind}/${row.id}`}
+                          className="text-sm text-brand-600 hover:underline"
+                        >
+                          พิจารณา
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 
-      {/* ใบแจ้งลา/หยุดงาน/เข้างานสาย จากโปรแกรมขอลา — โปรแกรมนั้นเป็นเจ้าของสถานะเอง หน้านี้อ่านมาแสดงและลิงก์ไป */}
+      {/* ใบแจ้งลา/หยุดงาน/เข้างานสาย จากโปรแกรมขอลา — โปรแกรมนั้นเป็นเจ้าของสถานะเอง หน้านี้อ่านมาแสดงและลิงก์ไป
+          ใช้ LeaveTable ตัวเดียวกับที่โปรแกรม HR ใช้เอง จะได้จอเล็กเป็นการ์ดเหมือนกันทั้งระบบ */}
       {canSeeLeave && (
         <section className="card space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -256,67 +286,18 @@ export default async function ApprovalInboxPage({
             <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
               อ่านข้อมูลจากโปรแกรมขอลาไม่ได้ชั่วคราว — เรื่องอื่นในกล่องยังใช้งานได้ตามปกติ
             </p>
-          ) : hr.leave.length === 0 ? (
-            <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบแจ้งลารออนุมัติ</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table-report">
-                <thead>
-                  <tr>
-                    <th>เลขที่</th>
-                    <th>ประเภท</th>
-                    <th>ผู้แจ้ง</th>
-                    <th className="text-left">ช่วงที่ลา / เหตุผล</th>
-                    <th>เวลาที่แจ้ง</th>
-                    <th>บริษัท/สาขา</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hr.leave.map((row) => (
-                    <tr key={row.id}>
-                      <td className="whitespace-nowrap font-medium">{row.doc_no}</td>
-                      <td>
-                        <span className="badge bg-slate-100 text-slate-600">
-                          {row.type_icon ? `${row.type_icon} ` : ""}
-                          {row.type_name}
-                        </span>
-                      </td>
-                      <td className="text-xs">{row.employee_name}</td>
-                      <td className="whitespace-normal text-left">
-                        <p className="font-medium text-slate-700">{leaveRangeText(row)}</p>
-                        <p className="text-xs text-slate-500">{row.detail}</p>
-                        {leaveFlags(row, today).map((flag) => (
-                          <p key={flag} className="text-xs text-amber-700">
-                            ⚠ {flag}
-                          </p>
-                        ))}
-                      </td>
-                      <td className="whitespace-nowrap text-xs">
-                        {formatThaiDate(row.request_date)} {formatTime(row.reported_at)} น.
-                      </td>
-                      <td className="text-xs text-slate-500">
-                        {row.company_name ?? "-"}
-                        {row.branch_name ? ` · ${row.branch_name}` : ""}
-                      </td>
-                      <td>
-                        <Link
-                          href={`/hr/leave/${row.id}`}
-                          className="text-sm text-brand-600 hover:underline"
-                        >
-                          พิจารณา
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <LeaveTable
+              rows={hr.leave}
+              today={today}
+              actionLabel="พิจารณา"
+              emptyText="ไม่มีใบแจ้งลารออนุมัติ"
+            />
           )}
         </section>
       )}
 
-      {/* ใบขอเบิกเงินเดือนจากโปรแกรมขอลา */}
+      {/* ใบขอเบิกเงินเดือนจากโปรแกรมขอลา — ใช้ AdvanceTable ตัวเดียวกับโปรแกรม HR */}
       {canSeeAdvance && (
         <section className="card space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -337,49 +318,8 @@ export default async function ApprovalInboxPage({
             <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
               อ่านข้อมูลจากโปรแกรมขอเบิกเงินไม่ได้ชั่วคราว
             </p>
-          ) : hr.advance.length === 0 ? (
-            <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบขอเบิกเงินรออนุมัติ</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table-report">
-                <thead>
-                  <tr>
-                    <th>เลขที่</th>
-                    <th>วันที่ขอเบิก</th>
-                    <th>ผู้ขอเบิก</th>
-                    <th className="text-left">ขอเบิกเพื่อ</th>
-                    <th>บริษัท/สาขา</th>
-                    <th>ยอดที่ขอ</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hr.advance.map((row) => (
-                    <tr key={row.id}>
-                      <td className="whitespace-nowrap font-medium">{row.doc_no}</td>
-                      <td className="whitespace-nowrap text-xs">
-                        {formatThaiDate(row.request_date)}
-                      </td>
-                      <td className="text-xs">{row.employee_name}</td>
-                      <td className="whitespace-normal text-left">{row.purpose}</td>
-                      <td className="text-xs text-slate-500">
-                        {row.company_name ?? "-"}
-                        {row.branch_name ? ` · ${row.branch_name}` : ""}
-                      </td>
-                      <td className="font-semibold">{formatBaht(row.amount)}</td>
-                      <td>
-                        <Link
-                          href={`/hr/advance/${row.id}`}
-                          className="text-sm text-brand-600 hover:underline"
-                        >
-                          พิจารณา
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AdvanceTable rows={hr.advance} actionLabel="พิจารณา" emptyText="ไม่มีใบขอเบิกเงินรออนุมัติ" />
           )}
         </section>
       )}
