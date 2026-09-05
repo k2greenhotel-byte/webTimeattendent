@@ -11,20 +11,21 @@ export type FormDraft = Record<string, string[]>;
 
 const STORAGE_KEY = "kk-form-draft";
 
-/** ชนิดข้อมูลเบื้องต้นที่กดออกไปเพิ่มระหว่างทำใบจองได้ */
-export type PickKind = "customer" | "brand" | "model" | "variant" | "color";
+/** ชนิดข้อมูลเบื้องต้นที่กดออกไปเพิ่มระหว่างทำใบจอง/ใบ Lead ได้ */
+export type PickKind = "customer" | "brand" | "model" | "variant" | "color" | "channel";
 
-/** ช่องบนใบจองที่ค่าที่เพิ่งเพิ่มจะถูกเติมกลับเข้าไป */
+/** ช่องบนใบจอง/ใบ Lead ที่ค่าที่เพิ่งเพิ่มจะถูกเติมกลับเข้าไป */
 export const PICK_FIELD: Record<PickKind, string> = {
   customer: "customer_id",
   brand: "brand_id",
   model: "model_id",
   variant: "variant_id",
   color: "color_id",
+  channel: "channel_id",
 };
 
 export function isPickKind(value: string | null | undefined): value is PickKind {
-  return value === "customer" || value === "brand" || value === "model" || value === "variant" || value === "color";
+  return typeof value === "string" && value in PICK_FIELD;
 }
 
 /**

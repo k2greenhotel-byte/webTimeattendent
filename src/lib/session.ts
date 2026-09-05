@@ -5,11 +5,15 @@ import { redirect } from "next/navigation";
 import {
   ADMIN_COOKIE,
   ADMIN_MAX_AGE_SEC,
+  APPROVER_COOKIE,
+  APPROVER_MAX_AGE_SEC,
   SESSION_COOKIE,
   SESSION_MAX_AGE_SEC,
   signAdminToken,
+  signApproverToken,
   signSessionToken,
   verifyAdminToken,
+  verifyApproverToken,
   verifySessionToken,
 } from "./session-token";
 import { getEffectivePermissions, getLiveAccount as getLiveAccountRow } from "./core-db";
@@ -146,6 +150,48 @@ export async function requireCoreAdmin(): Promise<SessionUser> {
   if (!isCoreAdmin(user.level) && !(await isAdminAuthed())) {
     redirect(`/apps?err=${encodeURIComponent("ระบบส่วนกลางเปิดให้เฉพาะผู้ดูแลระบบและผู้ช่วยผู้ดูแลระบบ")}`);
   }
+  return user;
+}
+
+// ---------- ประตูหน้าจออนุมัติซ่อม/จัดซื้อ (ข้อ 3.1) ----------
+
+/**
+ * หน้าจออนุมัติต้องยืนยันรหัสผ่านของผู้อนุมัติซ้ำ แม้จะล็อกอินอยู่แล้ว
+ * เพราะเครื่องที่เปิดค้างไว้อาจถูกคนอื่นมากดอนุมัติแทน
+ * ผ่านแล้วออก cookie อายุ 30 นาที ผูกกับบัญชีคนนั้นโดยเฉพาะ
+ */
+export async function createApproverSession(userId: string): Promise<void> {
+  const store = await cookies();
+  store.set(APPROVER_COOKIE, await signApproverToken(userId), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: APPROVER_MAX_AGE_SEC,
+  });
+}
+
+export async function clearApproverSession(): Promise<void> {
+  const store = await cookies();
+  store.delete(APPROVER_COOKIE);
+}
+
+/** ผู้ใช้ที่ล็อกอินอยู่ผ่านประตูรหัสผ่านของหน้าอนุมัติมาแล้วหรือยัง */
+export async function isApproverAuthed(): Promise<boolean> {
+  const user = await getSessionUser();
+  if (!user) return false;
+
+  const token = (await cookies()).get(APPROVER_COOKIE)?.value;
+  return token ? verifyApproverToken(token, user.id) : false;
+}
+
+/**
+ * ใช้ในทุกหน้า/action ที่อนุมัติเอกสารได้จริง
+ * ต้องมีสิทธิ์เมนู PR_APPROVE และผ่านการยืนยันรหัสผ่านมาแล้ว
+ */
+export async function requireApprover(): Promise<SessionUser> {
+  const user = await requirePermission("PR_APPROVE", "write");
+  if (!(await isApproverAuthed())) redirect("/procurement/approvals");
   return user;
 }
 

@@ -18,7 +18,7 @@ const HANDLED_ELSEWHERE = new Set([
   "color_id",
 ]);
 
-export default function DraftRestorer() {
+export default function DraftRestorer({ skip = [] }: { skip?: string[] }) {
   const anchor = useRef<HTMLSpanElement>(null);
   const [restored, setRestored] = useState(false);
 
@@ -29,9 +29,12 @@ export default function DraftRestorer() {
     const draft = takeFormDraft(window.location.pathname);
     if (!form || !draft) return;
 
+    // ช่องที่หน้าจอนั้น ๆ กู้ค่าเอง (React คุมค่าอยู่) ห้ามแตะซ้ำ ไม่งั้นค่าที่เห็นกับค่าที่ส่งจะไม่ตรงกัน
+    const handled = new Set([...HANDLED_ELSEWHERE, ...skip]);
+
     let touched = 0;
     for (const [name, values] of Object.entries(draft)) {
-      if (HANDLED_ELSEWHERE.has(name) || name.startsWith("file_")) continue;
+      if (handled.has(name) || name.startsWith("file_")) continue;
 
       const field = form.elements.namedItem(name);
       const element =
@@ -49,6 +52,8 @@ export default function DraftRestorer() {
     }
 
     if (touched > 0) setRestored(true);
+    // อ่านร่างครั้งเดียวตอน mount เท่านั้น
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

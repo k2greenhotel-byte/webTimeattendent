@@ -10,6 +10,14 @@ export const SESSION_MAX_AGE_SEC = 12 * 60 * 60; // 12 ชั่วโมง
 export const ADMIN_COOKIE = "wta_admin";
 export const ADMIN_MAX_AGE_SEC = 8 * 60 * 60; // 8 ชั่วโมง
 
+/**
+ * cookie ของหน้าจออนุมัติซ่อม/จัดซื้อ (ข้อ 3.1)
+ * ผู้อนุมัติต้องกรอกรหัสผ่านของตัวเองซ้ำก่อนเข้าหน้านี้ แม้จะล็อกอินอยู่แล้ว
+ * อายุสั้นกว่า session ปกติมาก เพราะมักเปิดทิ้งไว้บนเครื่องส่วนกลาง
+ */
+export const APPROVER_COOKIE = "wta_approver";
+export const APPROVER_MAX_AGE_SEC = 30 * 60; // 30 นาที
+
 function secretKey(): Uint8Array {
   const secret = process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
@@ -49,6 +57,25 @@ export async function verifyAdminToken(token: string): Promise<boolean> {
   try {
     const { payload } = await jwtVerify(token, secretKey());
     return payload.kind === "admin-console";
+  } catch {
+    return false;
+  }
+}
+
+/** โทเคนผูกกับบัญชีที่ยืนยันรหัสผ่าน จะได้ใช้ข้ามบัญชีกันไม่ได้ */
+export async function signApproverToken(userId: string): Promise<string> {
+  return new SignJWT({ kind: "approver" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime(`${APPROVER_MAX_AGE_SEC}s`)
+    .sign(secretKey());
+}
+
+export async function verifyApproverToken(token: string, userId: string): Promise<boolean> {
+  try {
+    const { payload } = await jwtVerify(token, secretKey());
+    return payload.kind === "approver" && payload.sub === userId;
   } catch {
     return false;
   }

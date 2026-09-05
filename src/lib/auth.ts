@@ -100,6 +100,30 @@ export async function loginWithPhone(phoneInput: string, pin: string): Promise<L
   };
 }
 
+/**
+ * ยืนยันรหัสผ่านของบัญชีที่ล็อกอินอยู่แล้ว (ไม่ใช่การเข้าสู่ระบบ จึงไม่นับครั้งที่ผิด)
+ * ใช้กับหน้าจอที่ต้องยืนยันตัวตนซ้ำ เช่น เปลี่ยนรหัสผ่าน และหน้าอนุมัติซ่อม/จัดซื้อ (ข้อ 3.1)
+ */
+export async function verifyEmployeePin(
+  employeeId: string,
+  pin: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!pin) return { ok: false, error: "กรุณากรอกรหัสผ่าน" };
+
+  const { data, error } = await getSupabase()
+    .from("employees")
+    .select("id, pin_hash, is_active")
+    .eq("id", employeeId)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: `ตรวจสอบรหัสผ่านไม่สำเร็จ: ${error.message}` };
+  if (!data || !data.is_active) return { ok: false, error: "ไม่พบบัญชีนี้ หรือบัญชีถูกปิดการใช้งาน" };
+  if (!(await bcrypt.compare(pin, data.pin_hash))) {
+    return { ok: false, error: "รหัสผ่านไม่ถูกต้อง" };
+  }
+  return { ok: true };
+}
+
 /** พนักงานเปลี่ยนรหัสผ่านของตัวเอง (ต้องยืนยันรหัสเดิมก่อน) */
 export async function changeOwnPin(
   employeeId: string,
@@ -113,19 +137,12 @@ export async function changeOwnPin(
     return { ok: false, error: "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม" };
   }
 
+  const verified = await verifyEmployeePin(employeeId, currentPin);
+  if (!verified.ok) {
+    return { ok: false, error: currentPin ? "รหัสผ่านเดิมไม่ถูกต้อง" : verified.error };
+  }
+
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("id, pin_hash, is_active")
-    .eq("id", employeeId)
-    .maybeSingle();
-
-  if (error) return { ok: false, error: `เปลี่ยนรหัสผ่านไม่สำเร็จ: ${error.message}` };
-  if (!data || !data.is_active) return { ok: false, error: "ไม่พบบัญชีนี้" };
-
-  const match = await bcrypt.compare(currentPin, data.pin_hash);
-  if (!match) return { ok: false, error: "รหัสผ่านเดิมไม่ถูกต้อง" };
-
   const { error: updateError } = await supabase
     .from("employees")
     .update({ pin_hash: await hashPin(newPin), failed_attempts: 0, locked_until: null })

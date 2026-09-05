@@ -29,10 +29,18 @@ describe("เส้นทางที่ให้เด้งกลับได�
 });
 
 describe("ชนิดข้อมูลเบื้องต้นที่กดออกไปเพิ่มได้", () => {
-  it("รู้จักครบ 5 ชนิดตามช่องบนใบจอง", () => {
-    expect(Object.keys(PICK_FIELD)).toEqual(["customer", "brand", "model", "variant", "color"]);
+  it("รู้จักครบทุกชนิดตามช่องบนใบจองและใบ Lead", () => {
+    expect(Object.keys(PICK_FIELD)).toEqual([
+      "customer",
+      "brand",
+      "model",
+      "variant",
+      "color",
+      "channel",
+    ]);
     expect(PICK_FIELD.customer).toBe("customer_id");
     expect(PICK_FIELD.color).toBe("color_id");
+    expect(PICK_FIELD.channel).toBe("channel_id");
   });
 
   it("ค่าที่ไม่รู้จักถูกปฏิเสธ", () => {
