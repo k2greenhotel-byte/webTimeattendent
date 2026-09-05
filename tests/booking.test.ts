@@ -11,10 +11,12 @@ import {
   buildCalendar,
   countByBrandModel,
   countByKey,
+  deliveryPipeline,
   describeUpdate,
   describeVehicle,
   formatBaht,
   groupByDate,
+  isAwaitingDelivery,
   isOpenBooking,
   isOutOfStock,
   monthlyTrend,
@@ -549,6 +551,62 @@ describe("อันดับสูงสุดและรายการเฝ�
     expect(
       buildRankings(rows, TODAY, { pickupWithinDays: 7 }).pickupSoonNoStock.map((r) => r.id),
     ).toEqual(["d7"]);
+  });
+});
+
+describe("รอส่งมอบ: สัญญาผ่านแล้ว + รอรับรถ แยกตามสถานะรถ", () => {
+  const awaiting = (over: Partial<BookingRow>) =>
+    booking({ contract_status: "approved", booking_status: "wait_delivery", ...over });
+
+  it("นับแยก 3 กลุ่มตามสถานะรถ พร้อมยอดมัดจำของแต่ละกลุ่ม", () => {
+    const rows = [
+      awaiting({ id: "1", vehicle_status: "need_order", deposit_amount: 3000 }),
+      awaiting({ id: "2", vehicle_status: "need_order", deposit_amount: 2000 }),
+      awaiting({ id: "3", vehicle_status: "ordered", deposit_amount: 5000 }),
+      awaiting({ id: "4", vehicle_status: "in_stock", deposit_amount: 1000 }),
+    ];
+    const p = deliveryPipeline(rows);
+
+    expect(p.total).toBe(4);
+    expect(p.byVehicleStatus.need_order).toBe(2);
+    expect(p.byVehicleStatus.ordered).toBe(1);
+    expect(p.byVehicleStatus.in_stock).toBe(1);
+    expect(p.depositByVehicleStatus.need_order).toBe(5000);
+    expect(p.depositByVehicleStatus.in_stock).toBe(1000);
+  });
+
+  it("ต้องเข้าครบทั้งสัญญาผ่านแล้วและรอรับรถเท่านั้น", () => {
+    expect(isAwaitingDelivery({ contract_status: "approved", booking_status: "wait_delivery" })).toBe(true);
+    // สัญญายังไม่ผ่าน
+    expect(isAwaitingDelivery({ contract_status: "pending", booking_status: "wait_delivery" })).toBe(false);
+    // รับรถไปแล้ว
+    expect(isAwaitingDelivery({ contract_status: "approved", booking_status: "delivered" })).toBe(false);
+    // ยกเลิกไปแล้ว
+    expect(isAwaitingDelivery({ contract_status: "approved", booking_status: "cancelled" })).toBe(false);
+  });
+
+  it("ใบที่ไม่เข้าเงื่อนไขไม่ถูกนับเข้ามาเลย", () => {
+    const rows = [
+      booking({ id: "1", contract_status: "pending", booking_status: "wait_contract" }),
+      booking({ id: "2", contract_status: "approved", booking_status: "delivered" }),
+      booking({
+        id: "3",
+        contract_status: "rejected",
+        booking_status: "cancelled",
+        cancel_reason: "contract_rejected",
+      }),
+    ];
+    const p = deliveryPipeline(rows);
+
+    expect(p.total).toBe(0);
+    expect(p.byVehicleStatus.in_stock).toBe(0);
+    expect(p.depositByVehicleStatus.in_stock).toBe(0);
+  });
+
+  it("ไม่มีใบจองเลย ทุกกลุ่มเป็นศูนย์ ไม่ใช่ค่าว่าง", () => {
+    const p = deliveryPipeline([]);
+    expect(p.total).toBe(0);
+    expect(p.byVehicleStatus).toEqual({ in_stock: 0, need_order: 0, ordered: 0 });
   });
 });
 

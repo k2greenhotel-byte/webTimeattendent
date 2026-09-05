@@ -402,6 +402,43 @@ export function buildOverview(rows: BookingRow[], today = workDateOf()): Booking
   return overview;
 }
 
+// ---------- รอส่งมอบ: สัญญาผ่านแล้ว + รอรับรถ แยกตามสถานะรถ (1.4) ----------
+
+/**
+ * ใบจองที่ "สัญญาผ่านแล้ว" และ "รอรับรถ" — งานขายจบแล้ว เหลือแค่เอารถถึงมือลูกค้า
+ * ไม่ต้องกรองสถานะเอกสารซ้ำ เพราะใบที่ยกเลิกจะมีสถานะการจองเป็น "ยกเลิกไม่รับรถแล้ว" อยู่แล้ว
+ */
+export function isAwaitingDelivery(
+  row: Pick<BookingRow, "contract_status" | "booking_status">,
+): boolean {
+  return row.contract_status === "approved" && row.booking_status === "wait_delivery";
+}
+
+/** ใบที่รอส่งมอบ แยกตามว่ารถอยู่ไหนแล้ว (มีในสต็อก / สั่งมาแล้ว / ยังต้องสั่ง) */
+export type DeliveryPipeline = {
+  total: number;
+  byVehicleStatus: Record<VehicleStatus, number>;
+  /** เงินมัดจำที่ผูกอยู่กับใบแต่ละกลุ่ม */
+  depositByVehicleStatus: Record<VehicleStatus, number>;
+};
+
+/** นับใบที่รอส่งมอบแยกตามสถานะรถ — ตอบว่า "ที่ขายจบแล้วติดอยู่ที่รถกี่ใบ" */
+export function deliveryPipeline(rows: BookingRow[]): DeliveryPipeline {
+  const pipeline: DeliveryPipeline = {
+    total: 0,
+    byVehicleStatus: emptyCounts(VEHICLE_STATUS_LABEL),
+    depositByVehicleStatus: emptyCounts(VEHICLE_STATUS_LABEL),
+  };
+
+  for (const row of rows) {
+    if (!isAwaitingDelivery(row)) continue;
+    pipeline.total += 1;
+    pipeline.byVehicleStatus[row.vehicle_status] += 1;
+    pipeline.depositByVehicleStatus[row.vehicle_status] += Number(row.deposit_amount ?? 0);
+  }
+  return pipeline;
+}
+
 // ---------- อันดับสูงสุด + รายการเฝ้าระวังสต็อก (1.4) ----------
 
 /** จำนวนอันดับที่แสดงบน dashboard */
