@@ -197,43 +197,49 @@ export default async function ApprovalTypesPage({
         <h2 className="font-semibold text-slate-800">เหตุผลการไม่อนุมัติ ({reasons.length})</h2>
         <p className="text-sm text-slate-500">ผู้อนุมัติจะเลือกจากรายการนี้ตอนกดไม่อนุมัติ</p>
 
-        <form action={createReasonForm} className="flex flex-wrap items-end gap-2">
-          <div>
+        <form action={createReasonForm} className="grid gap-2 sm:flex sm:flex-wrap sm:items-end">
+          <div className="sm:w-32">
             <label className="label">รหัส</label>
-            <input name="code" className="input w-32" placeholder="NO_BUDGET" required />
+            <input name="code" className="input" placeholder="NO_BUDGET" required />
           </div>
-          <div>
+          <div className="sm:w-72">
             <label className="label">ข้อความเหตุผล</label>
-            <input name="name" className="input w-72" placeholder="งบประมาณไม่พอ" required />
+            <input name="name" className="input" placeholder="งบประมาณไม่พอ" required />
           </div>
-          <div>
+          <div className="sm:w-20">
             <label className="label">ลำดับ</label>
-            <input name="sort_order" type="number" className="input w-20" defaultValue={0} />
+            <input name="sort_order" type="number" className="input" defaultValue={0} />
           </div>
-          <button type="submit" className="btn-primary py-2 text-sm">
+          <button type="submit" className="btn-primary sm:py-2 sm:text-sm">
             เพิ่มเหตุผล
           </button>
         </form>
 
         <div className="space-y-2">
           {reasons.map((r) => (
-            <form key={r.id} action={updateReasonForm} className="flex flex-wrap items-end gap-2">
+            <form
+              key={r.id}
+              action={updateReasonForm}
+              className="space-y-2 rounded-xl border border-slate-100 p-2 sm:flex sm:flex-wrap sm:items-end sm:gap-2 sm:space-y-0 sm:border-0 sm:p-0"
+            >
               <input type="hidden" name="id" value={r.id} />
-              <span className="w-28 pb-2 text-xs text-slate-400">{r.code}</span>
-              <input name="name" defaultValue={r.name} className="input w-72" required />
-              <input
-                name="sort_order"
-                type="number"
-                defaultValue={r.sort_order}
-                className="input w-20"
-              />
-              <label className="flex items-center gap-1.5 pb-2 text-xs text-slate-600">
-                <input type="checkbox" name="is_active" defaultChecked={r.is_active} />
-                เปิดใช้
-              </label>
-              <button type="submit" className="btn-secondary py-1.5 text-xs">
-                บันทึก
-              </button>
+              <p className="text-xs text-slate-400 sm:w-28 sm:pb-2">{r.code}</p>
+              <input name="name" defaultValue={r.name} className="input sm:w-72" required />
+              <div className="flex flex-wrap items-center gap-3 sm:gap-2">
+                <input
+                  name="sort_order"
+                  type="number"
+                  defaultValue={r.sort_order}
+                  className="input w-20"
+                />
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 sm:pb-2">
+                  <input type="checkbox" name="is_active" defaultChecked={r.is_active} />
+                  เปิดใช้
+                </label>
+                <button type="submit" className="btn-secondary flex-1 sm:flex-none sm:py-1.5 sm:text-xs">
+                  บันทึก
+                </button>
+              </div>
             </form>
           ))}
         </div>
