@@ -8,6 +8,11 @@ import type {
   Branch,
   Department,
   Employee,
+  FieldPunch,
+  FieldPunchType,
+  FieldTask,
+  FieldTaskMember,
+  FieldTaskType,
   Holiday,
   OrgSettings,
   Position,
@@ -15,6 +20,7 @@ import type {
   ShiftAssignment,
   WorkSchedule,
   WorkSettings,
+  WorkSite,
 } from "./types";
 
 const EMPLOYEE_COLUMNS =
@@ -215,9 +221,11 @@ export async function getResolvedDay(
   ]);
   const companyId = branch?.company_id ?? null;
 
-  const [org, schedules] = await Promise.all([
+  const [org, schedules, site] = await Promise.all([
     getOrgSettings(companyId),
     listSchedules(companyId),
+    // วันที่ไปประจำบูธ: GPS ต้องตรวจกับพิกัดบูธ ไม่ใช่สาขา
+    assignment?.site_id ? getSiteById(assignment.site_id) : Promise.resolve(null),
   ]);
 
   const byId = new Map(schedules.map((s) => [s.id, s]));
@@ -227,7 +235,7 @@ export async function getResolvedDay(
     pickDefaultSchedule(schedules, org, companyId);
 
   return {
-    settings: resolveSettings(org, schedule, branch),
+    settings: resolveSettings(org, schedule, branch, site),
     isDayOff: assignment?.is_day_off ?? false,
     assignment,
   };
@@ -293,17 +301,21 @@ export async function getSettingsResolver(
   resolve: (branchId?: string | null, employeeId?: string | null, workDate?: string | null) => WorkSettings;
   /** วันนั้นเป็นวันหยุดเวรของคนนั้นหรือไม่ */
   isDayOff: (employeeId: string, workDate: string) => boolean;
+  /** ชื่อสถานที่นอกสาขาที่ไปประจำวันนั้น (null = สาขาตัวเอง) */
+  siteNameOf: (employeeId: string, workDate: string) => string | null;
 }> {
-  const [orgList, schedules, branchList, assignments] = await Promise.all([
+  const [orgList, schedules, branchList, assignments, sites] = await Promise.all([
     listOrgSettings(),
     listSchedules(),
     listBranches(false, companyId),
     range ? listAssignments({ from: range.from, to: range.to }) : Promise.resolve([]),
+    range ? listSites() : Promise.resolve([]),
   ]);
 
   const orgByCompany = new Map(orgList.map((o) => [o.company_id ?? "", o]));
   const scheduleById = new Map(schedules.map((s) => [s.id, s]));
   const branches = new Map(branchList.map((b) => [b.id, b]));
+  const siteById = new Map(sites.map((s) => [s.id, s]));
   // preload ตารางเวรทั้งช่วงครั้งเดียว รายงานรายเดือนจะได้ไม่ยิงฐานข้อมูลทีละวัน
   const assignmentByKey = new Map(assignments.map((a) => [`${a.employee_id}|${a.work_date}`, a]));
 
@@ -323,20 +335,30 @@ export async function getSettingsResolver(
         (assignment?.schedule_id ? scheduleById.get(assignment.schedule_id) : undefined) ??
         (branch?.schedule_id ? scheduleById.get(branch.schedule_id) : undefined) ??
         pickDefaultSchedule(schedules, org, cid);
-      return resolveSettings(org, schedule, branch);
+      const site = assignment?.site_id ? (siteById.get(assignment.site_id) ?? null) : null;
+      return resolveSettings(org, schedule, branch, site);
     },
     isDayOff: (employeeId, workDate) =>
       assignmentByKey.get(`${employeeId}|${workDate}`)?.is_day_off ?? false,
+    siteNameOf: (employeeId, workDate) => {
+      const a = assignmentByKey.get(`${employeeId}|${workDate}`);
+      return a?.site_id ? (siteById.get(a.site_id)?.name ?? a.site_name ?? null) : null;
+    },
   };
 }
 
 // ---------- ตารางเวร (ใครอยู่กะไหน วันไหน) ----------
 
-const ASSIGNMENT_COLUMNS = "id, employee_id, work_date, schedule_id, is_day_off, note, work_schedules(name)";
+const ASSIGNMENT_COLUMNS =
+  "id, employee_id, work_date, schedule_id, is_day_off, note, site_id, work_schedules(name), work_sites(name)";
+
+/** ชื่อจากความสัมพันธ์ที่ Supabase คืนมา (อาจเป็น object หรือ array แล้วแต่ชนิด join) */
+function relName(rel: unknown): string | null {
+  const r = Array.isArray(rel) ? rel[0] : rel;
+  return (r as { name?: string } | null)?.name ?? null;
+}
 
 function toAssignment(row: Record<string, unknown>): ShiftAssignment {
-  const rel = row.work_schedules as { name?: string } | { name?: string }[] | null;
-  const name = Array.isArray(rel) ? rel[0]?.name : rel?.name;
   return {
     id: String(row.id),
     employee_id: String(row.employee_id),
@@ -344,7 +366,9 @@ function toAssignment(row: Record<string, unknown>): ShiftAssignment {
     schedule_id: (row.schedule_id as string | null) ?? null,
     is_day_off: Boolean(row.is_day_off),
     note: (row.note as string | null) ?? null,
-    schedule_name: name ?? null,
+    site_id: (row.site_id as string | null) ?? null,
+    schedule_name: relName(row.work_schedules),
+    site_name: relName(row.work_sites),
   };
 }
 
@@ -396,6 +420,8 @@ export type AssignmentInput = {
   schedule_id: string | null;
   is_day_off: boolean;
   note?: string | null;
+  /** ไปประจำสถานที่อื่นทั้งวัน (null = สาขาตัวเอง) */
+  site_id?: string | null;
 };
 
 /** บันทึกตารางเวรหลายช่องพร้อมกัน — ช่องที่มีอยู่แล้วถูกแทนที่ (1 คน 1 วัน มีได้แถวเดียว) */
@@ -410,6 +436,7 @@ export async function upsertAssignments(rows: AssignmentInput[]): Promise<number
       schedule_id: r.is_day_off ? null : r.schedule_id,
       is_day_off: r.is_day_off,
       note: r.note ?? null,
+      site_id: r.is_day_off ? null : (r.site_id ?? null),
     }));
     const { error } = await supabase
       .from("shift_assignments")
@@ -462,6 +489,7 @@ export async function copyAssignments(params: {
       schedule_id: a.schedule_id,
       is_day_off: a.is_day_off,
       note: a.note,
+      site_id: a.site_id,
     };
   });
   return upsertAssignments(rows);
@@ -795,6 +823,8 @@ export async function insertPunch(row: {
   distance_m: number | null;
   device_info: string | null;
   branch_id?: string | null;
+  /** สถานที่นอกสาขาที่ไปประจำวันนั้น (snapshot จากตารางเวร) */
+  site_id?: string | null;
   note?: string | null;
   is_manual?: boolean;
   edited_by?: string | null;
@@ -977,4 +1007,390 @@ export async function logAudit(entry: {
     after: entry.after ?? null,
   });
   if (error) console.error("เขียน audit log ไม่สำเร็จ:", error.message);
+}
+
+// ---------- สถานที่ปฏิบัติงานนอกสถานที่ ----------
+
+export async function listSites(companyId?: string | null, activeOnly = false): Promise<WorkSite[]> {
+  let query = getSupabase().from("work_sites").select("*").order("name");
+  if (companyId) query = query.or(companyScope(companyId));
+  if (activeOnly) query = query.eq("is_active", true);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านสถานที่ปฏิบัติงานไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as WorkSite[];
+}
+
+export async function getSiteById(id: string | null): Promise<WorkSite | null> {
+  if (!id) return null;
+  const { data, error } = await getSupabase().from("work_sites").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(`อ่านสถานที่ปฏิบัติงานไม่สำเร็จ: ${error.message}`);
+  return (data as WorkSite | null) ?? null;
+}
+
+export async function upsertSite(input: Omit<WorkSite, "id"> & { id?: string | null }): Promise<WorkSite> {
+  const { id, ...rest } = input;
+  const supabase = getSupabase();
+  const query = id
+    ? supabase.from("work_sites").update(rest).eq("id", id)
+    : supabase.from("work_sites").insert(rest);
+  const { data, error } = await query.select("*").single();
+  if (error) {
+    if (error.code === "23505") throw new Error("มีสถานที่ชื่อนี้อยู่แล้วในบริษัทนี้");
+    throw new Error(`บันทึกสถานที่ปฏิบัติงานไม่สำเร็จ: ${error.message}`);
+  }
+  return data as WorkSite;
+}
+
+/** ลบสถานที่ — ถ้ายังถูกอ้างในตารางเวร/ภารกิจ ต้องบังคับ (แถวที่อ้างจะกลายเป็น "ไม่ระบุสถานที่") */
+export async function deleteSite(id: string, force = false): Promise<{ affected: number }> {
+  const supabase = getSupabase();
+  const [{ count: rosterCount }, { count: taskCount }] = await Promise.all([
+    supabase.from("shift_assignments").select("id", { count: "exact", head: true }).eq("site_id", id),
+    supabase.from("field_tasks").select("id", { count: "exact", head: true }).eq("site_id", id),
+  ]);
+  const used = (rosterCount ?? 0) + (taskCount ?? 0);
+  if (used > 0 && !force) {
+    throw new Error(
+      `ลบไม่ได้ สถานที่นี้ถูกใช้ในตารางเวร ${rosterCount ?? 0} วัน และภารกิจ ${taskCount ?? 0} งาน — ติ๊กยืนยันถ้าต้องการลบจริง`,
+    );
+  }
+  const { error } = await supabase.from("work_sites").delete().eq("id", id);
+  if (error) throw new Error(`ลบสถานที่ปฏิบัติงานไม่สำเร็จ: ${error.message}`);
+  return { affected: used };
+}
+
+// ---------- งานนอกสถานที่: ประเภท ----------
+
+export async function listFieldTaskTypes(companyId?: string | null): Promise<FieldTaskType[]> {
+  let query = getSupabase().from("field_task_types").select("*").order("sort_order").order("name");
+  if (companyId) query = query.or(companyScope(companyId));
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านประเภทงานนอกสถานที่ไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as FieldTaskType[];
+}
+
+export async function upsertFieldTaskType(input: {
+  id?: string | null;
+  company_id: string | null;
+  name: string;
+  counts_hours: boolean;
+}): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = input.id
+    ? await supabase
+        .from("field_task_types")
+        .update({ name: input.name, counts_hours: input.counts_hours })
+        .eq("id", input.id)
+    : await supabase.from("field_task_types").insert({
+        company_id: input.company_id,
+        name: input.name,
+        counts_hours: input.counts_hours,
+      });
+  if (error) {
+    if (error.code === "23505") throw new Error("มีประเภทงานชื่อนี้อยู่แล้ว");
+    throw new Error(`บันทึกประเภทงานไม่สำเร็จ: ${error.message}`);
+  }
+}
+
+export async function deleteFieldTaskType(id: string): Promise<void> {
+  const supabase = getSupabase();
+  const { count } = await supabase
+    .from("field_tasks")
+    .select("id", { count: "exact", head: true })
+    .eq("type_id", id);
+  if ((count ?? 0) > 0) {
+    throw new Error(`ลบไม่ได้ มีภารกิจ ${count} งานใช้ประเภทนี้อยู่`);
+  }
+  const { error } = await supabase.from("field_task_types").delete().eq("id", id);
+  if (error) throw new Error(`ลบประเภทงานไม่สำเร็จ: ${error.message}`);
+}
+
+// ---------- งานนอกสถานที่: ภารกิจ ----------
+
+const FIELD_TASK_COLUMNS = `
+  id, company_id, type_id, title, site_id, place_text, work_date, planned_start, planned_end,
+  counts_hours, note, created_by, is_cancelled,
+  field_task_types(name), work_sites(name),
+  field_task_members(employee_id, employees(emp_code, full_name, branch_id)),
+  field_punches(*)
+`;
+
+function toFieldTask(row: Record<string, unknown>): FieldTask {
+  const punches = ((row.field_punches as FieldPunch[] | null) ?? []).map((p) => ({
+    ...p,
+    is_manual: Boolean(p.is_manual),
+  }));
+  const memberRows = (row.field_task_members as Record<string, unknown>[] | null) ?? [];
+
+  const members: FieldTaskMember[] = memberRows
+    .map((m) => {
+      const emp = (Array.isArray(m.employees) ? m.employees[0] : m.employees) as
+        | { emp_code?: string; full_name?: string; branch_id?: string | null }
+        | null;
+      const employeeId = String(m.employee_id);
+      return {
+        employee_id: employeeId,
+        emp_code: emp?.emp_code ?? "",
+        full_name: emp?.full_name ?? "",
+        branch_id: emp?.branch_id ?? null,
+        start: punches.find((p) => p.employee_id === employeeId && p.punch_type === "start") ?? null,
+        end: punches.find((p) => p.employee_id === employeeId && p.punch_type === "end") ?? null,
+      };
+    })
+    .sort((a, b) => a.emp_code.localeCompare(b.emp_code));
+
+  return {
+    id: String(row.id),
+    company_id: (row.company_id as string | null) ?? null,
+    type_id: String(row.type_id),
+    type_name: relName(row.field_task_types) ?? "-",
+    title: String(row.title ?? ""),
+    site_id: (row.site_id as string | null) ?? null,
+    site_name: relName(row.work_sites),
+    place_text: (row.place_text as string | null) ?? null,
+    work_date: String(row.work_date),
+    planned_start: (row.planned_start as string | null)?.slice(0, 5) ?? null,
+    planned_end: (row.planned_end as string | null)?.slice(0, 5) ?? null,
+    counts_hours: Boolean(row.counts_hours),
+    note: (row.note as string | null) ?? null,
+    created_by: (row.created_by as string | null) ?? null,
+    is_cancelled: Boolean(row.is_cancelled),
+    members,
+  };
+}
+
+export type FieldTaskInput = {
+  company_id: string | null;
+  type_id: string;
+  title: string;
+  site_id: string | null;
+  place_text: string | null;
+  work_date: string;
+  planned_start: string | null;
+  planned_end: string | null;
+  counts_hours: boolean;
+  note: string | null;
+  created_by?: string | null;
+};
+
+export async function getFieldTask(id: string): Promise<FieldTask | null> {
+  const { data, error } = await getSupabase()
+    .from("field_tasks")
+    .select(FIELD_TASK_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`อ่านภารกิจไม่สำเร็จ: ${error.message}`);
+  return data ? toFieldTask(data as unknown as Record<string, unknown>) : null;
+}
+
+/** ภารกิจในช่วงวันที่ — กรองบริษัท/สาขา(ของสมาชิก)/พนักงาน/ประเภทได้ */
+export async function listFieldTasks(params: {
+  from: string;
+  to: string;
+  companyId?: string | null;
+  branchId?: string | null;
+  employeeId?: string | null;
+  typeId?: string | null;
+  includeCancelled?: boolean;
+}): Promise<FieldTask[]> {
+  let query = getSupabase()
+    .from("field_tasks")
+    .select(FIELD_TASK_COLUMNS)
+    .gte("work_date", params.from)
+    .lte("work_date", params.to)
+    .order("work_date")
+    .order("planned_start", { nullsFirst: false });
+  if (params.companyId) query = query.eq("company_id", params.companyId);
+  if (params.typeId) query = query.eq("type_id", params.typeId);
+  if (!params.includeCancelled) query = query.eq("is_cancelled", false);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านภารกิจไม่สำเร็จ: ${error.message}`);
+  let tasks = (data ?? []).map((r) => toFieldTask(r as unknown as Record<string, unknown>));
+
+  // กรองด้วยสมาชิก (ทำในโค้ด เพราะ PostgREST กรองแถวแม่จากตารางลูกได้ไม่สะดวก)
+  if (params.employeeId) {
+    tasks = tasks.filter((t) => t.members.some((m) => m.employee_id === params.employeeId));
+  }
+  if (params.branchId) {
+    tasks = tasks.filter((t) => t.members.some((m) => m.branch_id === params.branchId));
+  }
+  return tasks;
+}
+
+/** ภารกิจของพนักงานคนหนึ่ง "วันนี้" + งานที่เริ่มแล้วยังไม่จบจากเมื่อวาน (บูธเลิกดึก) */
+export async function listMyFieldTasks(employeeId: string, workDate: string): Promise<FieldTask[]> {
+  const tasks = await listFieldTasks({ from: addDays(workDate, -1), to: workDate, employeeId });
+  return tasks.filter((t) => {
+    if (t.work_date === workDate) return true;
+    const me = t.members.find((m) => m.employee_id === employeeId);
+    return Boolean(me?.start && !me.end);
+  });
+}
+
+export async function createFieldTask(input: FieldTaskInput, memberIds: string[]): Promise<FieldTask> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("field_tasks")
+    .insert({ ...input, created_by: input.created_by ?? null })
+    .select("id")
+    .single();
+  if (error) throw new Error(`สร้างภารกิจไม่สำเร็จ: ${error.message}`);
+
+  const taskId = String((data as { id: string }).id);
+  await setFieldTaskMembers(taskId, memberIds);
+  return (await getFieldTask(taskId))!;
+}
+
+export async function updateFieldTask(
+  id: string,
+  input: Omit<FieldTaskInput, "created_by">,
+  memberIds: string[],
+): Promise<void> {
+  const { error } = await getSupabase().from("field_tasks").update(input).eq("id", id);
+  if (error) throw new Error(`แก้ไขภารกิจไม่สำเร็จ: ${error.message}`);
+  await setFieldTaskMembers(id, memberIds);
+}
+
+/** ตั้งรายชื่อสมาชิกให้ตรงกับที่ส่งมา (คนที่ถูกเอาออกและมีการลงเวลาแล้วจะถูกลบการลงเวลาด้วย) */
+export async function setFieldTaskMembers(taskId: string, memberIds: string[]): Promise<void> {
+  const supabase = getSupabase();
+  const unique = [...new Set(memberIds)];
+
+  const { data: existing } = await supabase
+    .from("field_task_members")
+    .select("employee_id")
+    .eq("task_id", taskId);
+  const current = new Set((existing ?? []).map((r) => String(r.employee_id)));
+
+  const toAdd = unique.filter((id) => !current.has(id));
+  const toRemove = [...current].filter((id) => !unique.includes(id));
+
+  if (toAdd.length > 0) {
+    const { error } = await supabase
+      .from("field_task_members")
+      .insert(toAdd.map((employee_id) => ({ task_id: taskId, employee_id })));
+    if (error) throw new Error(`เพิ่มสมาชิกภารกิจไม่สำเร็จ: ${error.message}`);
+  }
+  if (toRemove.length > 0) {
+    const { data: punches } = await supabase
+      .from("field_punches")
+      .select("photo_path")
+      .eq("task_id", taskId)
+      .in("employee_id", toRemove);
+    await removePhotos(
+      ((punches ?? []) as { photo_path: string | null }[])
+        .map((p) => p.photo_path)
+        .filter((p): p is string => Boolean(p)),
+    );
+    await supabase.from("field_punches").delete().eq("task_id", taskId).in("employee_id", toRemove);
+    const { error } = await supabase
+      .from("field_task_members")
+      .delete()
+      .eq("task_id", taskId)
+      .in("employee_id", toRemove);
+    if (error) throw new Error(`เอาสมาชิกออกไม่สำเร็จ: ${error.message}`);
+  }
+}
+
+export async function setFieldTaskCancelled(id: string, cancelled: boolean): Promise<void> {
+  const { error } = await getSupabase().from("field_tasks").update({ is_cancelled: cancelled }).eq("id", id);
+  if (error) throw new Error(`ยกเลิกภารกิจไม่สำเร็จ: ${error.message}`);
+}
+
+/** ลบภารกิจพร้อมการลงเวลาและรูปทั้งหมดของภารกิจนั้น */
+export async function deleteFieldTask(id: string): Promise<{ photosDeleted: number }> {
+  const supabase = getSupabase();
+  const { data } = await supabase.from("field_punches").select("photo_path").eq("task_id", id);
+  const paths = ((data ?? []) as { photo_path: string | null }[])
+    .map((p) => p.photo_path)
+    .filter((p): p is string => Boolean(p));
+  await removePhotos(paths);
+
+  const { error } = await supabase.from("field_tasks").delete().eq("id", id);
+  if (error) throw new Error(`ลบภารกิจไม่สำเร็จ: ${error.message}`);
+  return { photosDeleted: paths.length };
+}
+
+/** ลบภารกิจทั้งหมดในช่วงวันที่ (หน้าลบข้อมูล) */
+export async function deleteFieldTasksRange(params: {
+  from: string;
+  to: string;
+  companyId?: string | null;
+}): Promise<{ deleted: number; photosDeleted: number }> {
+  const tasks = await listFieldTasks({ ...params, includeCancelled: true });
+  let photosDeleted = 0;
+  for (const t of tasks) photosDeleted += (await deleteFieldTask(t.id)).photosDeleted;
+  return { deleted: tasks.length, photosDeleted };
+}
+
+// ---------- งานนอกสถานที่: การลงเวลา (เริ่ม/จบ) ----------
+
+export async function insertFieldPunch(row: {
+  task_id: string;
+  employee_id: string;
+  punch_type: FieldPunchType;
+  punched_at: string;
+  photo_path: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  distance_m: number | null;
+  device_info: string | null;
+  note?: string | null;
+  is_manual?: boolean;
+  edited_by?: string | null;
+}): Promise<FieldPunch> {
+  const { data, error } = await getSupabase().from("field_punches").insert(row).select("*").single();
+  if (error) {
+    if (error.code === "23505") throw new Error("คุณลงเวลาช่วงนี้ของภารกิจนี้ไปแล้ว");
+    throw new Error(`บันทึกการลงเวลาภารกิจไม่สำเร็จ: ${error.message}`);
+  }
+  return data as FieldPunch;
+}
+
+/** แอดมินบันทึก/แก้เวลาเริ่ม-จบให้ (ไม่มีรูป ติดธง is_manual) */
+export async function upsertManualFieldPunch(params: {
+  task_id: string;
+  employee_id: string;
+  punch_type: FieldPunchType;
+  punched_at: string;
+  note?: string | null;
+}): Promise<void> {
+  const { error } = await getSupabase()
+    .from("field_punches")
+    .upsert(
+      {
+        task_id: params.task_id,
+        employee_id: params.employee_id,
+        punch_type: params.punch_type,
+        punched_at: params.punched_at,
+        note: params.note ?? null,
+        is_manual: true,
+      },
+      { onConflict: "task_id,employee_id,punch_type" },
+    );
+  if (error) throw new Error(`บันทึกเวลาให้ไม่สำเร็จ: ${error.message}`);
+}
+
+export async function deleteFieldPunch(taskId: string, employeeId: string, type: FieldPunchType): Promise<void> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("field_punches")
+    .select("photo_path")
+    .eq("task_id", taskId)
+    .eq("employee_id", employeeId)
+    .eq("punch_type", type)
+    .maybeSingle();
+  const path = (data as { photo_path: string | null } | null)?.photo_path;
+  if (path) await removePhotos([path]);
+
+  const { error } = await supabase
+    .from("field_punches")
+    .delete()
+    .eq("task_id", taskId)
+    .eq("employee_id", employeeId)
+    .eq("punch_type", type);
+  if (error) throw new Error(`ลบการลงเวลาภารกิจไม่สำเร็จ: ${error.message}`);
 }

@@ -41,11 +41,20 @@ function ids(form: FormData, key: string): string[] {
     .filter(Boolean);
 }
 
-/** ค่าจากช่องเลือกกะ: "off" = หยุดเวร, "" = ล้าง (กลับไปใช้กะสาขา), อื่น ๆ = schedule id */
+/**
+ * ค่าจากช่องเลือกกะ: "off" = หยุดเวร, "" = ล้าง (กลับไปใช้กะสาขา),
+ * "branch" = ใช้กะสาขาแต่ระบุสถานที่, อื่น ๆ = schedule id
+ */
 function parseShift(value: string): { is_day_off: boolean; schedule_id: string | null } | "clear" {
   if (!value) return "clear";
   if (value === "off") return { is_day_off: true, schedule_id: null };
+  if (value === "branch") return { is_day_off: false, schedule_id: null };
   return { is_day_off: false, schedule_id: value };
+}
+
+/** สถานที่ที่ไปประจำ (ว่าง = สาขาตัวเอง) */
+function siteOf(form: FormData): string | null {
+  return str(form, "site_id") || null;
 }
 
 /** จัดเวรเป็นชุด: หลายคน × ช่วงวันที่ × เฉพาะวันในสัปดาห์ที่ติ๊ก */
@@ -56,10 +65,14 @@ export async function assignShiftsForm(form: FormData): Promise<void> {
   const from = str(form, "from");
   const to = str(form, "to");
   const shift = parseShift(str(form, "shift"));
+  const site_id = siteOf(form);
   const note = str(form, "note") || null;
   const weekdays = ids(form, "weekdays").map(Number);
 
   if (employeeIds.length === 0) back(form, "กรุณาเลือกพนักงานอย่างน้อย 1 คน", true);
+  if (shift !== "clear" && !shift.is_day_off && !shift.schedule_id && !site_id) {
+    back(form, "เลือก \"ใช้กะสาขา\" ต้องระบุสถานที่ที่ไปประจำด้วย", true);
+  }
   if (!DATE_RE.test(from) || !DATE_RE.test(to) || from > to) back(form, "ช่วงวันที่ไม่ถูกต้อง", true);
   if (dateRange(from, to).length > MAX_DAYS) back(form, `จัดได้ครั้งละไม่เกิน ${MAX_DAYS} วัน`, true);
   if (weekdays.length === 0) back(form, "กรุณาเลือกวันในสัปดาห์อย่างน้อย 1 วัน", true);
@@ -75,7 +88,7 @@ export async function assignShiftsForm(form: FormData): Promise<void> {
     } else {
       const rows: AssignmentInput[] = [];
       for (const employee_id of employeeIds) {
-        for (const work_date of dates) rows.push({ employee_id, work_date, note, ...shift });
+        for (const work_date of dates) rows.push({ employee_id, work_date, note, site_id, ...shift });
       }
       count = await upsertAssignments(rows);
     }
@@ -105,15 +118,19 @@ export async function saveCellForm(form: FormData): Promise<void> {
   const employee_id = str(form, "employee_id");
   const work_date = str(form, "work_date");
   const shift = parseShift(str(form, "shift"));
+  const site_id = siteOf(form);
   const note = str(form, "note") || null;
 
   if (!employee_id || !DATE_RE.test(work_date)) back(form, "ข้อมูลช่องที่แก้ไม่ถูกต้อง", true);
+  if (shift !== "clear" && !shift.is_day_off && !shift.schedule_id && !site_id) {
+    back(form, "เลือก \"ใช้กะสาขา\" ต้องระบุสถานที่ที่ไปประจำด้วย", true);
+  }
 
   try {
     if (shift === "clear") {
       await deleteAssignments({ employeeIds: [employee_id], from: work_date, to: work_date });
     } else {
-      await upsertAssignments([{ employee_id, work_date, note, ...shift }]);
+      await upsertAssignments([{ employee_id, work_date, note, site_id, ...shift }]);
     }
     await logAudit({
       actor_id: null,

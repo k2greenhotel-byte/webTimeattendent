@@ -1,9 +1,17 @@
 import AppHeader from "@/components/AppHeader";
 import ChangePinForm from "@/components/ChangePinForm";
 import ExportButtons from "@/components/ExportButtons";
+import FieldReportTable from "@/components/FieldReportTable";
 import ReportTable from "@/components/ReportTable";
 import TotalsCards from "@/components/TotalsCards";
-import { addDays, formatThaiDate, formatThaiMonth, monthBounds, workDateOf } from "@/lib/datetime";
+import {
+  addDays,
+  formatDuration,
+  formatThaiDate,
+  formatThaiMonth,
+  monthBounds,
+  workDateOf,
+} from "@/lib/datetime";
 import { listAssignments } from "@/lib/db";
 import { buildEmployeeReport } from "@/lib/reports";
 import { requireUser } from "@/lib/session";
@@ -23,7 +31,7 @@ export default async function MyHistoryPage({
   const month = Number(params.month) || Number(today.slice(5, 7));
   const { from, to } = monthBounds(year, month);
 
-  const [{ rows, totals }, upcoming] = await Promise.all([
+  const [{ rows, totals, fieldRows }, upcoming] = await Promise.all([
     buildEmployeeReport({ employeeId: user.id, from, to }),
     // ตารางเวร 7 วันข้างหน้าของตัวเอง (มีเฉพาะคนที่หัวหน้าจัดเวรให้)
     listAssignments({ from: today, to: addDays(today, 6), employeeIds: [user.id] }),
@@ -88,6 +96,15 @@ export default async function MyHistoryPage({
         )}
 
         <TotalsCards totals={totals} />
+
+        {fieldRows.length > 0 && (
+          <section className="card">
+            <p className="mb-2 font-semibold text-slate-700">
+              งานนอกสถานที่เดือนนี้ · ชั่วโมงงานพิเศษรวม {formatDuration(totals.fieldMinutes)}
+            </p>
+            <FieldReportTable rows={fieldRows} />
+          </section>
+        )}
 
         <section className="card">
           <ReportTable rows={rows} />

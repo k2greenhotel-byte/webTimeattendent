@@ -94,6 +94,7 @@ export default async function MonthlyReportPage({
               <th>ขาด<br />(วัน)</th>
               <th>ไม่ครบ<br />(วัน)</th>
               <th>พักเกิน<br />(นาที)</th>
+              <th>งานพิเศษ<br />นอกสถานที่</th>
             </tr>
           </thead>
           <tbody>
@@ -121,13 +122,17 @@ export default async function MonthlyReportPage({
                 <td>{row.totals.absentDays || "-"}</td>
                 <td>{row.totals.incompleteDays || "-"}</td>
                 <td>{row.totals.overBreakMinutes || "-"}</td>
+                <td className="text-violet-700">
+                  {row.totals.fieldMinutes > 0 ? formatDuration(row.totals.fieldMinutes) : "-"}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
 
         <p className="mt-3 text-xs text-slate-500">
-          ✓ = ลงเวลาครบ 4 ครั้ง · L = มาสาย · ! = ลงเวลาไม่ครบ · ✕ = ขาดงาน · - = วันหยุด
+          ✓ = ลงเวลาครบ 4 ครั้ง · L = มาสาย · ! = ลงเวลาไม่ครบ · ✕ = ขาดงาน · - = วันหยุด · ○ = หยุดเวร ·
+          งานพิเศษนอกสถานที่ = ชั่วโมงจากภารกิจที่นับชั่วโมง (แยกจาก OT)
         </p>
       </section>
     </main>

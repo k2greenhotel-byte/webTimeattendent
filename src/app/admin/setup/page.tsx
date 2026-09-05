@@ -1,13 +1,26 @@
 import Link from "next/link";
 import CompanyFilter from "@/components/CompanyFilter";
 import { getCompanyScope } from "@/lib/att-scope";
-import { listBranches, listDepartments, listEmployees, listPositions, listSchedules } from "@/lib/db";
+import {
+  listBranches,
+  listDepartments,
+  listEmployees,
+  listFieldTaskTypes,
+  listPositions,
+  listSchedules,
+  listSites,
+} from "@/lib/db";
+import { googleMapsUrl } from "@/lib/geo";
 import type { Department, Position } from "@/lib/types";
 import {
   createLookupForm,
   createScheduleForm,
+  deleteFieldTaskTypeForm,
   deleteLookupForm,
   deleteScheduleForm,
+  deleteSiteForm,
+  saveFieldTaskTypeForm,
+  saveSiteForm,
   setDefaultScheduleForm,
   updateLookupForm,
   updateScheduleForm,
@@ -94,12 +107,14 @@ export default async function SetupPage({
   const scope = await getCompanyScope(params.company);
   const companyId = scope.companyId;
 
-  const [departments, positions, schedules, employees, branches] = await Promise.all([
+  const [departments, positions, schedules, employees, branches, sites, taskTypes] = await Promise.all([
     listDepartments(companyId),
     listPositions(companyId),
     listSchedules(companyId),
     listEmployees({ companyId }),
     listBranches(false, companyId),
+    listSites(companyId),
+    listFieldTaskTypes(companyId),
   ]);
 
   const deptUsage = new Map<string, number>();
@@ -192,6 +207,18 @@ export default async function SetupPage({
                 <td className="text-left">ตำแหน่ง (positions)</td>
                 <td className="text-left">ชื่อตำแหน่ง</td>
                 <td>{positions.length}</td>
+                <td className="no-print">ด้านล่างหน้านี้</td>
+              </tr>
+              <tr>
+                <td className="text-left">สถานที่ปฏิบัติงานนอกสถานที่ (work_sites)</td>
+                <td className="text-left">บูธห้าง ลานจัดงาน ฯลฯ — ชื่อ, พิกัด, รัศมี (ใช้ในตารางเวรและภารกิจ)</td>
+                <td>{sites.length}</td>
+                <td className="no-print">ด้านล่างหน้านี้</td>
+              </tr>
+              <tr>
+                <td className="text-left">ประเภทงานนอกสถานที่ (field_task_types)</td>
+                <td className="text-left">ออกบูธ, ส่งรถ … และนับเป็นชั่วโมงงานพิเศษหรือไม่</td>
+                <td>{taskTypes.length}</td>
                 <td className="no-print">ด้านล่างหน้านี้</td>
               </tr>
             </tbody>
@@ -413,6 +440,149 @@ export default async function SetupPage({
           companyId={companyId}
         />
       </div>
+
+      {/* ---------- สถานที่ปฏิบัติงานนอกสถานที่ ---------- */}
+      <section className="card space-y-3">
+        <div>
+          <h2 className="font-semibold text-slate-800">สถานที่ปฏิบัติงานนอกสถานที่</h2>
+          <p className="text-xs text-slate-500">
+            บูธห้าง ลานจัดงาน ฯลฯ — ใช้ในตารางเวร (ไปประจำทั้งวัน GPS ตรวจที่นั่น) และภารกิจงานนอกสถานที่ ·
+            พิกัดวางลิงก์ Google Maps หรือ &quot;lat, lng&quot; ได้เลย
+          </p>
+        </div>
+
+        <form action={saveSiteForm} className="grid gap-2 md:grid-cols-[8rem_1fr_1fr_1fr_6rem_auto] md:items-end">
+          <input type="hidden" name="company" value={companyId ?? ""} />
+          <div>
+            <label className="label">รหัส</label>
+            <input name="code" className="input" placeholder="BOOTH1" />
+          </div>
+          <div>
+            <label className="label">ชื่อสถานที่</label>
+            <input name="name" className="input" placeholder="บูธบิ๊กซี กาญจนบุรี" required />
+          </div>
+          <div>
+            <label className="label">ที่อยู่</label>
+            <input name="address" className="input" />
+          </div>
+          <div>
+            <label className="label">พิกัด / ลิงก์ Google Maps</label>
+            <input name="coords" className="input" placeholder="14.02, 99.53 หรือลิงก์" />
+          </div>
+          <div>
+            <label className="label">รัศมี (ม.)</label>
+            <input name="radius_m" type="number" className="input" placeholder="ค่าองค์กร" />
+          </div>
+          <button type="submit" className="btn-primary">
+            เพิ่ม
+          </button>
+        </form>
+
+        <div className="space-y-2">
+          {sites.length === 0 && <p className="py-3 text-center text-sm text-slate-500">ยังไม่มีสถานที่</p>}
+          {sites.map((s) => (
+            <div key={s.id} className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 p-2">
+              <form action={saveSiteForm} className="grid flex-1 gap-2 md:grid-cols-[6rem_1fr_1fr_1fr_5rem_auto] md:items-end">
+                <input type="hidden" name="company" value={companyId ?? ""} />
+                <input type="hidden" name="id" value={s.id} />
+                <input name="code" defaultValue={s.code ?? ""} className="input" placeholder="รหัส" />
+                <input name="name" defaultValue={s.name} className="input" required />
+                <input name="address" defaultValue={s.address ?? ""} className="input" placeholder="ที่อยู่" />
+                <input
+                  name="coords"
+                  defaultValue={s.lat != null && s.lng != null ? `${s.lat}, ${s.lng}` : ""}
+                  className="input"
+                  placeholder="พิกัด / ลิงก์"
+                />
+                <input name="radius_m" type="number" defaultValue={s.radius_m ?? ""} className="input" placeholder="รัศมี" />
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-xs text-slate-500" title="ปิดใช้งาน = ไม่แสดงในตัวเลือก">
+                    <input type="checkbox" name="is_active" value="off" defaultChecked={!s.is_active} />
+                    ปิด
+                  </label>
+                  <button type="submit" className="btn-secondary">
+                    บันทึก
+                  </button>
+                </div>
+              </form>
+              {s.lat != null && s.lng != null ? (
+                <a
+                  href={googleMapsUrl(s.lat, s.lng)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-brand-600 hover:underline"
+                >
+                  📍 เปิดแผนที่
+                </a>
+              ) : (
+                <span className="text-xs text-amber-600">ยังไม่มีพิกัด (ลงเวลาได้แต่ไม่ตรวจระยะ)</span>
+              )}
+              {s.company_id === null && <span className="badge bg-slate-100 text-slate-500">ของกลาง</span>}
+              <form action={deleteSiteForm} className="flex items-center gap-2">
+                <input type="hidden" name="company" value={companyId ?? ""} />
+                <input type="hidden" name="id" value={s.id} />
+                <label className="flex items-center gap-1 text-xs text-slate-400" title="ลบแม้ยังถูกใช้ในตารางเวร/ภารกิจ">
+                  <input type="checkbox" name="force" />
+                  บังคับ
+                </label>
+                <button type="submit" className="text-xs text-rose-600 hover:underline">
+                  ลบ
+                </button>
+              </form>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ---------- ประเภทงานนอกสถานที่ ---------- */}
+      <section className="card space-y-3">
+        <div>
+          <h2 className="font-semibold text-slate-800">ประเภทงานนอกสถานที่</h2>
+          <p className="text-xs text-slate-500">
+            ประเภทที่ &quot;นับชั่วโมง&quot; จะรวมเป็นชั่วโมงงานพิเศษในรายงาน (เช่น ออกบูธหลังเลิกงาน) ·
+            ประเภทที่ไม่นับใช้บันทึกหลักฐานอย่างเดียว (เช่น ส่งรถระหว่างเวลางาน)
+          </p>
+        </div>
+
+        <form action={saveFieldTaskTypeForm} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="company" value={companyId ?? ""} />
+          <div className="min-w-48 flex-1">
+            <input name="name" className="input" placeholder="เพิ่มประเภทงานใหม่" required />
+          </div>
+          <label className="flex min-h-11 items-center gap-2 text-sm sm:min-h-0">
+            <input type="checkbox" name="counts_hours" defaultChecked /> นับชั่วโมงพิเศษ
+          </label>
+          <button type="submit" className="btn-primary">
+            เพิ่ม
+          </button>
+        </form>
+
+        <div className="space-y-2">
+          {taskTypes.map((t) => (
+            <div key={t.id} className="flex flex-wrap items-center gap-2">
+              <form action={saveFieldTaskTypeForm} className="flex flex-1 flex-wrap items-center gap-2">
+                <input type="hidden" name="company" value={companyId ?? ""} />
+                <input type="hidden" name="id" value={t.id} />
+                <input name="name" defaultValue={t.name} className="input flex-1" required />
+                <label className="flex items-center gap-1 text-sm">
+                  <input type="checkbox" name="counts_hours" defaultChecked={t.counts_hours} /> นับชั่วโมง
+                </label>
+                <button type="submit" className="btn-secondary">
+                  บันทึก
+                </button>
+              </form>
+              {t.company_id === null && <span className="badge bg-slate-100 text-slate-500">ของกลาง</span>}
+              <form action={deleteFieldTaskTypeForm}>
+                <input type="hidden" name="company" value={companyId ?? ""} />
+                <input type="hidden" name="id" value={t.id} />
+                <button type="submit" className="text-xs text-rose-600 hover:underline">
+                  ลบ
+                </button>
+              </form>
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

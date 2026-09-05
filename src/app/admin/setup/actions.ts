@@ -3,15 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  deleteFieldTaskType,
   deleteLookup,
   deleteSchedule,
+  deleteSite,
   insertLookup,
   insertSchedule,
   logAudit,
   setDefaultSchedule,
   updateLookup,
   updateSchedule,
+  upsertFieldTaskType,
+  upsertSite,
 } from "@/lib/db";
+import { isMapsShortLink, parseLatLng, resolveMapsShortLink } from "@/lib/geo";
 import { requireAdmin } from "@/lib/session";
 import type { WorkSchedule } from "@/lib/types";
 
@@ -224,4 +229,127 @@ export async function deleteScheduleForm(form: FormData): Promise<void> {
 
   revalidatePath("/admin/setup");
   back("ลบกะทำงานเรียบร้อยแล้ว", false, companyId);
+}
+
+// ---------- สถานที่ปฏิบัติงานนอกสถานที่ ----------
+
+const COORDS_HELP =
+  'อ่านพิกัดไม่ออก — วางเป็น "13.7563, 100.5018" หรือลิงก์ Google Maps ก็ได้ ' +
+  "ถ้าเป็นลิงก์ย่อของร้านค้า ให้เปิดในแอป Google Maps → กดค้างที่หมุด → คัดลอกตัวเลขพิกัดมาวาง";
+
+/** ช่องเดียว รับได้ทั้ง "lat, lng", ลิงก์เต็ม และลิงก์ย่อ (แพตเทิร์นเดียวกับหน้าสาขา) */
+async function readSiteCoords(form: FormData, companyId: string | null) {
+  const raw = str(form, "coords");
+  if (!raw) return null;
+  const direct = parseLatLng(raw);
+  if (direct) return direct;
+  if (isMapsShortLink(raw)) {
+    const resolved = await resolveMapsShortLink(raw);
+    if (resolved) return resolved;
+  }
+  back(COORDS_HELP, true, companyId);
+}
+
+export async function saveSiteForm(form: FormData): Promise<void> {
+  await requireAdmin();
+  const companyId = companyOf(form);
+  const id = str(form, "id") || null;
+  const name = str(form, "name");
+  if (!name) back("กรุณากรอกชื่อสถานที่", true, companyId);
+
+  const coords = await readSiteCoords(form, companyId);
+  const radiusRaw = str(form, "radius_m");
+  const radius = radiusRaw ? Number(radiusRaw) : null;
+  if (radius !== null && (!Number.isFinite(radius) || radius <= 0)) back("รัศมีต้องเป็นตัวเลขมากกว่า 0", true, companyId);
+
+  try {
+    await upsertSite({
+      id,
+      company_id: companyId,
+      code: str(form, "code") || null,
+      name,
+      address: str(form, "address") || null,
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
+      radius_m: radius,
+      is_active: form.get("is_active") !== "off",
+    });
+    await logAudit({
+      actor_id: null,
+      action: id ? "update_work_site" : "create_work_site",
+      target_table: "work_sites",
+      target_id: id,
+      after: { name, coords, radius },
+    });
+  } catch (err) {
+    back(err instanceof Error ? err.message : "บันทึกสถานที่ไม่สำเร็จ", true, companyId);
+  }
+
+  revalidatePath("/admin/setup");
+  back("บันทึกสถานที่เรียบร้อยแล้ว", false, companyId);
+}
+
+export async function deleteSiteForm(form: FormData): Promise<void> {
+  await requireAdmin();
+  const companyId = companyOf(form);
+  const id = str(form, "id");
+  const force = form.get("force") === "on";
+
+  try {
+    const { affected } = await deleteSite(id, force);
+    await logAudit({
+      actor_id: null,
+      action: "delete_work_site",
+      target_table: "work_sites",
+      target_id: id,
+      after: { forced: force, affected },
+    });
+  } catch (err) {
+    back(err instanceof Error ? err.message : "ลบไม่สำเร็จ", true, companyId);
+  }
+
+  revalidatePath("/admin/setup");
+  back("ลบสถานที่เรียบร้อยแล้ว", false, companyId);
+}
+
+// ---------- ประเภทงานนอกสถานที่ ----------
+
+export async function saveFieldTaskTypeForm(form: FormData): Promise<void> {
+  await requireAdmin();
+  const companyId = companyOf(form);
+  const id = str(form, "id") || null;
+  const name = str(form, "name");
+  if (!name) back("กรุณากรอกชื่อประเภทงาน", true, companyId);
+
+  try {
+    await upsertFieldTaskType({ id, company_id: companyId, name, counts_hours: form.get("counts_hours") === "on" });
+    await logAudit({
+      actor_id: null,
+      action: id ? "update_field_task_type" : "create_field_task_type",
+      target_table: "field_task_types",
+      target_id: id,
+      after: { name, counts_hours: form.get("counts_hours") === "on" },
+    });
+  } catch (err) {
+    back(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ", true, companyId);
+  }
+
+  revalidatePath("/admin/setup");
+  back("บันทึกประเภทงานเรียบร้อยแล้ว", false, companyId);
+}
+
+export async function deleteFieldTaskTypeForm(form: FormData): Promise<void> {
+  await requireAdmin();
+  const companyId = companyOf(form);
+  const id = str(form, "id");
+
+  try {
+    await deleteFieldTaskType(id);
+    await logAudit({ actor_id: null, action: "delete_field_task_type", target_table: "field_task_types", target_id: id });
+  } catch (err) {
+    back(err instanceof Error ? err.message : "ลบไม่สำเร็จ", true, companyId);
+  }
+
+  revalidatePath("/admin/setup");
+  back("ลบประเภทงานเรียบร้อยแล้ว", false, companyId);
 }

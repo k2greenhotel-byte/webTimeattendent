@@ -2,9 +2,10 @@ import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
 import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
+import FieldReportTable from "@/components/FieldReportTable";
 import ReportTable from "@/components/ReportTable";
 import TotalsCards from "@/components/TotalsCards";
-import { formatThaiDate, monthBounds, workDateOf } from "@/lib/datetime";
+import { formatDuration, formatThaiDate, monthBounds, workDateOf } from "@/lib/datetime";
 import { listBranches, listEmployees } from "@/lib/db";
 import { buildEmployeeReport } from "@/lib/reports";
 
@@ -99,6 +100,14 @@ export default async function EmployeeReportPage({
           <section className="card">
             <ReportTable rows={report.rows} editBase="/admin/records" />
           </section>
+          {report.fieldRows.length > 0 && (
+            <section className="card">
+              <p className="mb-2 font-semibold text-slate-700">
+                งานนอกสถานที่ในช่วงนี้ · ชั่วโมงงานพิเศษรวม {formatDuration(report.totals.fieldMinutes)}
+              </p>
+              <FieldReportTable rows={report.fieldRows} />
+            </section>
+          )}
         </>
       )}
     </main>

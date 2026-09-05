@@ -13,6 +13,7 @@ import {
   type PunchType,
   type WorkSchedule,
   type WorkSettings,
+  type WorkSite,
 } from "./types";
 
 /**
@@ -25,15 +26,18 @@ export function resolveSettings(
   org: OrgSettings,
   schedule: WorkSchedule,
   branch?: Branch | null,
+  /** สถานที่ตามตารางเวร (ไปประจำบูธทั้งวัน) — ถ้ามีจะใช้พิกัดของสถานที่แทนสาขา */
+  site?: WorkSite | null,
 ): WorkSettings {
   return {
     company_id: branch?.company_id ?? org.company_id,
     org_name: org.org_name,
     timezone: org.timezone,
     require_gps: org.require_gps,
-    site_lat: branch?.site_lat ?? null,
-    site_lng: branch?.site_lng ?? null,
-    radius_m: branch?.radius_m ?? org.radius_m,
+    site_lat: site ? site.lat : (branch?.site_lat ?? null),
+    site_lng: site ? site.lng : (branch?.site_lng ?? null),
+    radius_m: (site ? site.radius_m : branch?.radius_m) ?? org.radius_m,
+    site_name: site?.name ?? branch?.name ?? null,
     schedule_name: schedule.name,
     // เลิกงานไม่เกินเวลาเข้างาน = กะข้ามเที่ยงคืน (กะดึกของโรงแรม 22:00–07:00)
     crosses_midnight: parseTimeToMinutes(schedule.work_end) <= parseTimeToMinutes(schedule.work_start),
@@ -199,6 +203,8 @@ export type PeriodTotals = {
   overBreakMinutes: number;
   workMinutes: number;
   otMinutes: number;
+  /** ชั่วโมงงานพิเศษ (นาที) จากภารกิจนอกสถานที่ที่นับชั่วโมง — เติมโดยชั้นรายงาน ไม่ได้มาจาก DaySummary */
+  fieldMinutes: number;
 };
 
 /** รวมยอดของช่วงเวลา (ใช้ทั้งรายบุคคล รายวัน และรายเดือน) */
@@ -218,6 +224,7 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
     overBreakMinutes: 0,
     workMinutes: 0,
     otMinutes: 0,
+    fieldMinutes: 0,
   };
 
   for (const s of summaries) {
@@ -244,6 +251,78 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
 
   return totals;
 }
+
+// ---------- งานนอกสถานที่ (ภารกิจ: เริ่ม → จบ) ----------
+
+export type FieldSessionStatus = "planned" | "in_progress" | "done" | "missing_end";
+
+export type FieldSessionSummary = {
+  /** นาทีที่ทำ (จบ − เริ่ม) ไม่หักพัก; 0 ถ้ายังไม่จบ */
+  minutes: number;
+  /** นาทีที่นับเป็น "ชั่วโมงงานพิเศษ" (0 ถ้าภารกิจไม่นับชั่วโมง เช่น ส่งรถระหว่างงาน) */
+  countedMinutes: number;
+  status: FieldSessionStatus;
+  /** เริ่มช้ากว่าเวลาแผน (นาที) */
+  lateStartMinutes: number;
+  flags: string[];
+};
+
+/**
+ * สรุปการทำงานของสมาชิก 1 คนในภารกิจ 1 งาน
+ * - planned      = ยังไม่กดเริ่ม
+ * - in_progress  = เริ่มแล้ว ยังไม่จบ และยังอยู่ในวันเดียวกัน (หรือวันถัดไปก่อนเที่ยง — บูธเลิกดึก)
+ * - missing_end  = เริ่มแล้วไม่กดจบ และเลยกำหนดไปแล้ว → ต้องให้แอดมินบันทึกเวลาให้
+ * - done         = ครบทั้งเริ่มและจบ
+ */
+export function computeFieldSession(input: {
+  workDate: string;
+  startAt: string | null | undefined;
+  endAt: string | null | undefined;
+  plannedStart?: string | null;
+  countsHours: boolean;
+  now?: Date;
+}): FieldSessionSummary {
+  const start = toDate(input.startAt);
+  const end = toDate(input.endAt);
+  const now = input.now ?? new Date();
+  const flags: string[] = [];
+
+  let lateStartMinutes = 0;
+  if (start && input.plannedStart) {
+    const planned = bangkokAt(input.workDate, input.plannedStart);
+    lateStartMinutes = Math.max(0, Math.round((start.getTime() - planned.getTime()) / 60_000));
+    if (lateStartMinutes > 0) flags.push("เริ่มช้ากว่าแผน");
+  }
+
+  let status: FieldSessionStatus;
+  let minutes = 0;
+  if (!start) {
+    status = "planned";
+  } else if (!end) {
+    // ถือว่ายังทำอยู่จนถึงเที่ยงของวันถัดไป หลังจากนั้นถือว่าลืมกดจบ
+    const deadline = bangkokAt(input.workDate, "12:00", 1);
+    status = now.getTime() <= deadline.getTime() ? "in_progress" : "missing_end";
+    if (status === "missing_end") flags.push("ไม่ได้กดจบงาน");
+  } else {
+    status = "done";
+    minutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
+  }
+
+  return {
+    minutes,
+    countedMinutes: input.countsHours ? minutes : 0,
+    status,
+    lateStartMinutes,
+    flags,
+  };
+}
+
+export const FIELD_STATUS_LABEL: Record<FieldSessionStatus, string> = {
+  planned: "ยังไม่เริ่ม",
+  in_progress: "กำลังทำ",
+  done: "เสร็จแล้ว",
+  missing_end: "ไม่ได้กดจบ",
+};
 
 /** punch ถัดไปที่พนักงานควรกด (null = ครบแล้ว) */
 export function nextPunchType(done: PunchType[]): PunchType | null {

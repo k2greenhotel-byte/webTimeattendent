@@ -3,14 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatStampThai } from "@/lib/datetime";
-import type { PunchType } from "@/lib/types";
+import type { FieldPunchType, PunchType } from "@/lib/types";
 
 type Props = {
-  punchType: PunchType;
+  /** ประเภทการลงเวลาปกติ (เข้าเช้า…) หรือของภารกิจ (start/end) เมื่อมี taskId */
+  punchType: PunchType | FieldPunchType;
   punchLabel: string;
   empCode: string;
   fullName: string;
   requireGps: boolean;
+  /** ลงเวลาให้ภารกิจนอกสถานที่แทนการลงเวลาปกติ */
+  taskId?: string;
+  /** หน้าที่จะกลับไปหลังบันทึกสำเร็จ (ค่าเริ่มต้น /punch) */
+  returnTo?: string;
 };
 
 type Coords = { lat: number; lng: number; accuracy: number };
@@ -23,6 +28,8 @@ export default function CameraCapture({
   empCode,
   fullName,
   requireGps,
+  taskId,
+  returnTo = "/punch",
 }: Props) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -166,6 +173,7 @@ export default function CameraCapture({
 
     const form = new FormData();
     form.append("punch_type", punchType);
+    if (taskId) form.append("task_id", taskId);
     form.append("photo", blobRef.current, "punch.jpg");
     if (coords) {
       form.append("lat", String(coords.lat));
@@ -182,20 +190,20 @@ export default function CameraCapture({
         return;
       }
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      router.push("/punch?ok=1");
+      router.push(`${returnTo}${returnTo.includes("?") ? "&" : "?"}ok=1`);
       router.refresh();
     } catch {
       setError("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่");
       setBusy(false);
     }
-  }, [coords, punchType, requireGps, router]);
+  }, [coords, punchType, requireGps, router, returnTo, taskId]);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <div className="mx-auto max-w-lg space-y-3 p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">{punchLabel}</h1>
-          <button type="button" onClick={() => router.push("/punch")} className="text-sm text-slate-300">
+          <button type="button" onClick={() => router.push(returnTo)} className="text-sm text-slate-300">
             ยกเลิก
           </button>
         </div>

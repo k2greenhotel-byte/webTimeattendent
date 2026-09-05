@@ -2,16 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   canPunch,
   computeDaySummary,
+  computeFieldSession,
   nextPunchType,
   resolveSettings,
   summarizePeriod,
 } from "../src/lib/attendance";
-import type { Branch, OrgSettings, WorkSchedule, WorkSettings } from "../src/lib/types";
+import type { Branch, OrgSettings, WorkSchedule, WorkSettings, WorkSite } from "../src/lib/types";
 
 const settings: WorkSettings = {
   company_id: "c1",
   org_name: "ทดสอบ",
   schedule_name: "กะมาตรฐาน",
+  site_name: null,
   crosses_midnight: false,
   work_start: "08:00",
   work_end: "17:00",
@@ -279,6 +281,92 @@ describe("resolveSettings (องค์กร + กะ + สาขา)", () => {
     const punches = { work_date: D, check_in_at: at(D, "09:20"), check_out_at: at(D, "17:00") };
     expect(computeDaySummary(punches, resolveSettings(org, morning, null)).lateMinutes).toBe(75);
     expect(computeDaySummary(punches, resolveSettings(org, afternoon, branch)).lateMinutes).toBe(15);
+  });
+
+  it("ไปประจำบูธทั้งวัน: พิกัด/รัศมี/ชื่อจุดมาจากสถานที่ แต่กะยังเป็นของสาขา", () => {
+    const booth: WorkSite = {
+      id: "w1",
+      company_id: "c1",
+      code: "BOOTH",
+      name: "บูธบิ๊กซี",
+      address: null,
+      lat: 14.0,
+      lng: 99.5,
+      radius_m: null,
+      is_active: true,
+    };
+    const s = resolveSettings(org, afternoon, branch, booth);
+    expect(s.site_lat).toBe(14.0);
+    expect(s.site_lng).toBe(99.5);
+    expect(s.radius_m).toBe(200); // สถานที่ไม่ระบุรัศมี → ใช้ค่าองค์กร ไม่ใช่ของสาขา
+    expect(s.site_name).toBe("บูธบิ๊กซี");
+    expect(s.work_start).toBe("09:00");
+    expect(resolveSettings(org, afternoon, branch).site_name).toBe("สาขาสยาม");
+  });
+});
+
+describe("งานนอกสถานที่ (ภารกิจ เริ่ม → จบ)", () => {
+  it("ออกบูธหลังเลิกงาน 17:30–20:30 = 180 นาที นับเป็นชั่วโมงงานพิเศษ", () => {
+    const s = computeFieldSession({
+      workDate: D,
+      startAt: at(D, "17:30"),
+      endAt: at(D, "20:30"),
+      plannedStart: "17:30",
+      countsHours: true,
+    });
+    expect(s.status).toBe("done");
+    expect(s.minutes).toBe(180);
+    expect(s.countedMinutes).toBe(180);
+    expect(s.lateStartMinutes).toBe(0);
+    expect(s.flags).toEqual([]);
+  });
+
+  it("ส่งรถระหว่างเวลางาน: คำนวณนาทีให้ดู แต่ไม่นับเป็นชั่วโมงงานพิเศษ", () => {
+    const s = computeFieldSession({
+      workDate: D,
+      startAt: at(D, "10:00"),
+      endAt: at(D, "11:15"),
+      countsHours: false,
+    });
+    expect(s.minutes).toBe(75);
+    expect(s.countedMinutes).toBe(0);
+  });
+
+  it("เริ่มช้ากว่าแผน 20 นาที ติดธง", () => {
+    const s = computeFieldSession({
+      workDate: D,
+      startAt: at(D, "17:50"),
+      endAt: at(D, "20:00"),
+      plannedStart: "17:30",
+      countsHours: true,
+    });
+    expect(s.lateStartMinutes).toBe(20);
+    expect(s.flags).toContain("เริ่มช้ากว่าแผน");
+  });
+
+  it("ยังไม่กดเริ่ม = planned; เริ่มแล้วยังไม่จบในวันเดียวกัน = in_progress", () => {
+    expect(computeFieldSession({ workDate: D, startAt: null, endAt: null, countsHours: true }).status).toBe("planned");
+    const s = computeFieldSession({
+      workDate: D,
+      startAt: at(D, "17:30"),
+      endAt: null,
+      countsHours: true,
+      now: new Date(at(D, "19:00")),
+    });
+    expect(s.status).toBe("in_progress");
+    expect(s.minutes).toBe(0);
+  });
+
+  it("เริ่มแล้วไม่กดจบ เลยเที่ยงวันถัดไป = missing_end", () => {
+    const s = computeFieldSession({
+      workDate: D,
+      startAt: at(D, "17:30"),
+      endAt: null,
+      countsHours: true,
+      now: new Date(at("2026-09-01", "13:00")),
+    });
+    expect(s.status).toBe("missing_end");
+    expect(s.flags).toContain("ไม่ได้กดจบงาน");
   });
 });
 

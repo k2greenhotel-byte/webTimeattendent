@@ -94,11 +94,89 @@ export type Employee = {
   locked_until?: string | null;
 };
 
-/** ค่าที่ resolve แล้วสำหรับใช้คำนวณ (องค์กร + กะ + สาขา) — ไม่ใช่ตารางในฐานข้อมูล */
+/** สถานที่ปฏิบัติงานนอกสถานที่ (บูธห้าง, ลานจัดงาน) — แยกจากสาขา */
+export type WorkSite = {
+  id: string;
+  company_id: string | null;
+  code: string | null;
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  /** null = ใช้รัศมีเริ่มต้นขององค์กร */
+  radius_m: number | null;
+  is_active: boolean;
+};
+
+/** ประเภทงานนอกสถานที่ (ออกบูธ, ส่งรถ …) company_id = null คือของกลาง */
+export type FieldTaskType = {
+  id: string;
+  company_id: string | null;
+  name: string;
+  /** ค่าเริ่มต้น: งานประเภทนี้นับเป็นชั่วโมงงานพิเศษหรือไม่ */
+  counts_hours: boolean;
+  sort_order: number;
+};
+
+export type FieldPunchType = "start" | "end";
+
+export const FIELD_PUNCH_LABEL: Record<FieldPunchType, string> = {
+  start: "เริ่มงาน",
+  end: "จบงาน",
+};
+
+export type FieldPunch = {
+  id: string;
+  task_id: string;
+  employee_id: string;
+  punch_type: FieldPunchType;
+  punched_at: string;
+  photo_path: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  distance_m: number | null;
+  device_info: string | null;
+  note: string | null;
+  is_manual: boolean;
+};
+
+export type FieldTaskMember = {
+  employee_id: string;
+  emp_code: string;
+  full_name: string;
+  branch_id: string | null;
+  start: FieldPunch | null;
+  end: FieldPunch | null;
+};
+
+/** ภารกิจนอกสถานที่ 1 งาน 1 วัน มีสมาชิกได้หลายคน */
+export type FieldTask = {
+  id: string;
+  company_id: string | null;
+  type_id: string;
+  type_name: string;
+  title: string;
+  site_id: string | null;
+  site_name: string | null;
+  place_text: string | null;
+  work_date: string;
+  planned_start: string | null;
+  planned_end: string | null;
+  counts_hours: boolean;
+  note: string | null;
+  created_by: string | null;
+  is_cancelled: boolean;
+  members: FieldTaskMember[];
+};
+
+/** ค่าที่ resolve แล้วสำหรับใช้คำนวณ (องค์กร + กะ + สาขา/สถานที่) — ไม่ใช่ตารางในฐานข้อมูล */
 export type WorkSettings = {
   company_id: string | null;
   org_name: string;
   schedule_name: string;
+  /** ชื่อจุดที่ใช้ตรวจ GPS วันนั้น (สาขา หรือสถานที่ตามตารางเวร) */
+  site_name: string | null;
   /** กะข้ามเที่ยงคืน (เช่น 22:00–07:00) เวลาเลิกงานคือวันถัดไป */
   crosses_midnight: boolean;
   work_start: string;
@@ -134,6 +212,8 @@ export type AttendanceRecord = {
   note: string | null;
   is_manual: boolean;
   edited_by: string | null;
+  /** สถานที่นอกสาขาที่ไปประจำวันนั้น (snapshot จากตารางเวร) */
+  site_id?: string | null;
 };
 
 /** แถวรวม 4 punch ของวันเดียว (ตรงกับ view v_attendance_days) */
@@ -177,8 +257,11 @@ export type ShiftAssignment = {
   schedule_id: string | null;
   is_day_off: boolean;
   note: string | null;
-  /** ชื่อกะที่ resolve มาให้แสดงผล (ไม่ได้เก็บซ้ำในตาราง) */
+  /** ไปประจำที่อื่นทั้งวัน (null = ทำงานที่สาขาตัวเอง) */
+  site_id: string | null;
+  /** ชื่อกะ/สถานที่ที่ resolve มาให้แสดงผล (ไม่ได้เก็บซ้ำในตาราง) */
   schedule_name?: string | null;
+  site_name?: string | null;
 };
 
 export type DaySummary = {

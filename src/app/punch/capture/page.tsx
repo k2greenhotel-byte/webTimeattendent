@@ -3,23 +3,59 @@ import CameraCapture from "@/components/CameraCapture";
 import { canPunch } from "@/lib/attendance";
 import {
   getEmployeeById,
+  getFieldTask,
+  getOrgSettings,
   getPunchesOfDay,
   getResolvedSettings,
   resolveWorkDateForPunch,
 } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { PUNCH_LABEL, PUNCH_ORDER, type PunchType } from "@/lib/types";
+import {
+  FIELD_PUNCH_LABEL,
+  PUNCH_LABEL,
+  PUNCH_ORDER,
+  type FieldPunchType,
+  type PunchType,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function CapturePage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string }>;
+  searchParams: Promise<{ type?: string; task?: string }>;
 }) {
-  const { type } = await searchParams;
+  const { type, task: taskId } = await searchParams;
   const user = await requireUser();
 
+  // ---- ภารกิจนอกสถานที่: เริ่ม/จบ ----
+  if (taskId) {
+    if (type !== "start" && type !== "end") redirect("/punch?error=ประเภทการลงเวลาไม่ถูกต้อง");
+    const fieldType = type as FieldPunchType;
+
+    const task = await getFieldTask(taskId);
+    if (!task || task.is_cancelled) redirect("/punch?error=ไม่พบภารกิจนี้หรือถูกยกเลิกแล้ว");
+    const me = task.members.find((m) => m.employee_id === user.id);
+    if (!me) redirect("/punch?error=คุณไม่ได้อยู่ในรายชื่อของภารกิจนี้");
+    if (fieldType === "start" && me.start) redirect("/punch?error=คุณกดเริ่มงานนี้ไปแล้ว");
+    if (fieldType === "end" && !me.start) redirect("/punch?error=กรุณากดเริ่มงานก่อน");
+    if (fieldType === "end" && me.end) redirect("/punch?error=คุณกดจบงานนี้ไปแล้ว");
+
+    const org = await getOrgSettings(task.company_id);
+    const place = task.site_name ?? task.place_text ?? "";
+    return (
+      <CameraCapture
+        punchType={fieldType}
+        punchLabel={`${FIELD_PUNCH_LABEL[fieldType]} · ${task.type_name}${place ? ` ${place}` : ""}`}
+        empCode={user.emp_code}
+        fullName={user.full_name}
+        requireGps={org.require_gps}
+        taskId={task.id}
+      />
+    );
+  }
+
+  // ---- การลงเวลาปกติ 4 ครั้ง ----
   if (!type || !PUNCH_ORDER.includes(type as PunchType)) {
     redirect("/punch?error=ประเภทการลงเวลาไม่ถูกต้อง");
   }

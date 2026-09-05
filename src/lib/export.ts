@@ -1,7 +1,8 @@
 import "server-only";
 import { formatDuration, formatThaiDate, formatTime, toDecimalHours } from "./datetime";
 import { buildXlsx } from "./xlsx";
-import type { MonthlyEmployeeRow, ReportRow } from "./reports";
+import { FIELD_STATUS_LABEL } from "./attendance";
+import type { FieldReportRow, MonthlyEmployeeRow, ReportRow } from "./reports";
 import { DAY_STATUS_LABEL } from "./types";
 
 export type Table = {
@@ -23,6 +24,7 @@ export function reportRowsToTable(
     "วันที่",
     ...(showEmployee ? ["รหัสพนักงาน", "ชื่อ-สกุล", "สาขา", "แผนก"] : []),
     "กะ",
+    "สถานที่ประจำ",
     "เข้าเช้า",
     "ออกพัก",
     "เข้าบ่าย",
@@ -42,6 +44,7 @@ export function reportRowsToTable(
       formatThaiDate(s.workDate),
       ...(showEmployee ? [r.empCode, r.fullName, r.branchName ?? "-", r.department ?? "-"] : []),
       r.scheduleName,
+      r.siteName ?? "-",
       formatTime(s.checkInAt),
       formatTime(s.breakOutAt),
       formatTime(s.breakInAt),
@@ -90,6 +93,7 @@ export function monthlyToTable(title: string, employees: MonthlyEmployeeRow[]): 
     "พักเกิน (นาที)",
     "ชั่วโมงทำงานรวม",
     "OT (นาที)",
+    "งานพิเศษนอกสถานที่ (ชม.)",
   ];
 
   const rows = employees.map((e) => [
@@ -108,9 +112,57 @@ export function monthlyToTable(title: string, employees: MonthlyEmployeeRow[]): 
     e.totals.overBreakMinutes,
     toDecimalHours(e.totals.workMinutes),
     e.totals.otMinutes,
+    toDecimalHours(e.totals.fieldMinutes),
   ]);
 
   return { title, headers, rows };
+}
+
+/** ตารางงานนอกสถานที่ (1 แถวต่อคนต่อภารกิจ) */
+export function fieldToTable(title: string, rows: FieldReportRow[]): Table {
+  const headers = [
+    "วันที่",
+    "รหัสพนักงาน",
+    "ชื่อ-สกุล",
+    "ประเภท",
+    "งาน",
+    "สถานที่",
+    "แผนเริ่ม",
+    "แผนจบ",
+    "เริ่มจริง",
+    "จบจริง",
+    "รวม (นาที)",
+    "นับชั่วโมงพิเศษ",
+    "ชั่วโมงพิเศษ (ชม.)",
+    "สถานะ",
+    "หมายเหตุ",
+  ];
+
+  const body = rows.map((r) => [
+    formatThaiDate(r.task.work_date),
+    r.empCode,
+    r.fullName,
+    r.task.type_name,
+    r.task.title,
+    r.task.site_name ?? r.task.place_text ?? "-",
+    r.task.planned_start ?? "-",
+    r.task.planned_end ?? "-",
+    formatTime(r.startAt),
+    formatTime(r.endAt),
+    r.session.minutes,
+    r.task.counts_hours ? "นับ" : "ไม่นับ",
+    toDecimalHours(r.session.countedMinutes),
+    (r.task.is_cancelled ? "ยกเลิก · " : "") + FIELD_STATUS_LABEL[r.session.status],
+    [...r.session.flags, r.hasManual ? "แอดมินบันทึกให้" : "", r.task.note ?? ""].filter(Boolean).join(", "),
+  ]);
+
+  const total = rows.reduce((sum, r) => sum + r.session.countedMinutes, 0);
+  return {
+    title,
+    headers,
+    rows: body,
+    summary: [`รวมชั่วโมงงานพิเศษ: ${formatDuration(total)} (${toDecimalHours(total)} ชม.)`],
+  };
 }
 
 /** CSV (มี BOM เพื่อให้ Excel อ่านภาษาไทยถูก) */

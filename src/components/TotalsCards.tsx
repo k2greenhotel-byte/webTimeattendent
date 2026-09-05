@@ -17,6 +17,9 @@ export default function TotalsCards({ totals }: { totals: PeriodTotals }) {
     },
     { label: "พักเกินเวลา", value: `${totals.overBreakMinutes} นาที`, tone: "text-amber-600" },
     { label: "OT รวม", value: formatDuration(totals.otMinutes) },
+    ...(totals.fieldMinutes > 0
+      ? [{ label: "งานพิเศษนอกสถานที่", value: formatDuration(totals.fieldMinutes), tone: "text-violet-700" }]
+      : []),
   ];
 
   return (

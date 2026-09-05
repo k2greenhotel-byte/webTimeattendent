@@ -11,7 +11,14 @@ import {
   thaiMonthShort,
   workDateOf,
 } from "@/lib/datetime";
-import { listAssignments, listBranches, listEmployees, listPositions, listSchedules } from "@/lib/db";
+import {
+  listAssignments,
+  listBranches,
+  listEmployees,
+  listPositions,
+  listSchedules,
+  listSites,
+} from "@/lib/db";
 import type { ShiftAssignment, WorkSchedule } from "@/lib/types";
 import { assignShiftsForm, clearRangeForm, copyPreviousForm, saveCellForm } from "./actions";
 
@@ -81,12 +88,30 @@ export default async function RosterPage({
   const branchId = params.branch || undefined;
   const positionId = params.position || undefined;
 
-  const [branches, positions, schedules, allEmployees] = await Promise.all([
+  const [branches, positions, schedules, allEmployees, sites] = await Promise.all([
     listBranches(true, scope.companyId),
     listPositions(scope.companyId),
     listSchedules(scope.companyId),
     listEmployees({ activeOnly: true, branchId, companyId: scope.companyId }),
+    listSites(scope.companyId, true),
   ]);
+
+  /** ช่องเลือกสถานที่ (ว่าง = สาขาตัวเอง) ใช้ทั้งฟอร์มจัดเป็นชุดและแก้ทีละช่อง */
+  const SiteSelect = ({ id, value }: { id: string; value?: string | null }) => (
+    <div className="min-w-40 flex-1">
+      <label className="label" htmlFor={id}>
+        สถานที่ (ถ้าไปประจำที่อื่น)
+      </label>
+      <select id={id} name="site_id" className="input" defaultValue={value ?? ""}>
+        <option value="">สาขาตัวเอง</option>
+        {sites.map((s) => (
+          <option key={s.id} value={s.id}>
+            📍 {s.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
   const employees = positionId
     ? allEmployees.filter((e) => e.position_id === positionId)
     : allEmployees;
@@ -249,10 +274,12 @@ export default async function RosterPage({
                       {s.name} ({s.work_start}–{s.work_end})
                     </option>
                   ))}
+                  <option value="branch">ใช้กะสาขา (ระบุแค่สถานที่)</option>
                   <option value="off">หยุดเวร (OFF)</option>
                   <option value="">ล้าง (กลับไปใช้กะสาขา)</option>
                 </select>
               </div>
+              <SiteSelect id="bulk_site" />
               <div>
                 <label className="label" htmlFor="bulk_from">
                   ตั้งแต่
@@ -316,10 +343,15 @@ export default async function RosterPage({
                 name="shift"
                 className="input"
                 defaultValue={
-                  editing.current ? (editing.current.is_day_off ? "off" : (editing.current.schedule_id ?? "")) : ""
+                  editing.current
+                    ? editing.current.is_day_off
+                      ? "off"
+                      : (editing.current.schedule_id ?? (editing.current.site_id ? "branch" : ""))
+                    : ""
                 }
               >
                 <option value="">ใช้กะสาขา (ไม่จัดเวร)</option>
+                <option value="branch">ใช้กะสาขา (ระบุแค่สถานที่)</option>
                 {schedules.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} ({s.work_start}–{s.work_end})
@@ -328,6 +360,7 @@ export default async function RosterPage({
                 <option value="off">หยุดเวร (OFF)</option>
               </select>
             </div>
+            <SiteSelect id="cell_site" value={editing.current?.site_id} />
             <div className="min-w-48 flex-1">
               <label className="label" htmlFor="cell_note">
                 หมายเหตุ
@@ -412,12 +445,18 @@ export default async function RosterPage({
                         const s = scheduleById.get(a.schedule_id);
                         label = shortName(s?.name ?? a.schedule_name ?? "?");
                         cls = colorOf.get(a.schedule_id) ?? "bg-slate-100 text-slate-700";
+                      } else if (a?.site_id) {
+                        cls = "bg-violet-100 text-violet-800";
                       }
+                      if (a?.site_id && !a.is_day_off) label = `📍${label}`;
+                      const title = [a?.site_name ? `ประจำที่ ${a.site_name}` : "", a?.note ?? ""]
+                        .filter(Boolean)
+                        .join(" · ");
                       return (
                         <td key={d} className={`p-0.5 ${isEditing ? "ring-2 ring-inset ring-brand-500" : ""}`}>
                           <Link
                             href={baseQuery({ edit: `${e.id}_${d}` })}
-                            title={a?.note ?? (a ? "" : "ใช้กะสาขา")}
+                            title={title || (a ? "" : "ใช้กะสาขา")}
                             className={`block min-w-11 rounded-md px-1 py-1.5 text-xs font-medium hover:ring-2 hover:ring-brand-300 ${cls}`}
                           >
                             {label || "–"}
@@ -440,6 +479,7 @@ export default async function RosterPage({
               </span>
             ))}
             <span className="badge bg-slate-200 text-slate-700">OFF = หยุดเวร</span>
+            <span className="badge bg-violet-100 text-violet-800">📍 = ไปประจำนอกสถานที่ (GPS ตรวจที่นั่น)</span>
             <span className="badge bg-slate-50 text-slate-500">– = ใช้กะสาขา</span>
           </div>
         )}

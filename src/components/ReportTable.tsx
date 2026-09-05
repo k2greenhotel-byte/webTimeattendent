@@ -60,8 +60,18 @@ export default function ReportTable({
                 <td className="text-left">{formatThaiDate(s.workDate)}</td>
                 {showEmployee && <td>{row.empCode}</td>}
                 {showEmployee && <td className="text-left">{row.fullName}</td>}
-                {showEmployee && <td>{row.branchName ?? "-"}</td>}
-                <td className="text-xs text-slate-600">{row.scheduleName}</td>
+                {showEmployee && (
+                  <td>
+                    {row.branchName ?? "-"}
+                    {row.siteName && <div className="text-[11px] text-violet-700">📍 {row.siteName}</div>}
+                  </td>
+                )}
+                <td className="text-xs text-slate-600">
+                  {row.scheduleName}
+                  {!showEmployee && row.siteName && (
+                    <div className="text-[11px] text-violet-700">📍 {row.siteName}</div>
+                  )}
+                </td>
                 <td className={s.lateMinutes > 0 ? "text-rose-600" : ""}>{formatTime(s.checkInAt)}</td>
                 <td>{formatTime(s.breakOutAt)}</td>
                 <td>{formatTime(s.breakInAt)}</td>

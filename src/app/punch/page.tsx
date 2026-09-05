@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import Clock from "@/components/Clock";
+import FieldTaskCard from "@/components/FieldTaskCard";
 import { computeDaySummary, nextPunchType } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
 import {
@@ -8,6 +9,7 @@ import {
   getEmployeeById,
   getPunchesOfDay,
   getResolvedDay,
+  listMyFieldTasks,
   resolveWorkDateForPunch,
 } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -30,10 +32,12 @@ export default async function PunchPage({
   const workDate = await resolveWorkDateForPunch(user.id, branch?.id ?? null);
   const isYesterdayShift = workDate !== calendarDate;
 
-  const [punches, { settings, isDayOff, assignment }] = await Promise.all([
+  const [punches, { settings, isDayOff, assignment }, fieldTasks] = await Promise.all([
     getPunchesOfDay(user.id, workDate),
     getResolvedDay(branch?.id ?? null, user.id, workDate),
+    listMyFieldTasks(user.id, calendarDate),
   ]);
+  const siteToday = assignment?.site_id ? (assignment.site_name ?? settings.site_name) : null;
 
   const byType = new Map(punches.map((p) => [p.punch_type, p]));
   const done = punches.map((p) => p.punch_type);
@@ -86,7 +90,16 @@ export default async function PunchPage({
               วันนี้เป็นวันหยุดเวรของคุณ — ถ้ามาทำงานสามารถลงเวลาได้ตามปกติ
             </p>
           )}
+          {siteToday && (
+            <p className="mt-2 rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-800">
+              📍 วันนี้ประจำที่ <span className="font-medium">{siteToday}</span> — ลงเวลา 4 ครั้งตามปกติ
+              {settings.require_gps ? " ระบบตรวจ GPS ที่นั่นแทนสาขา" : ""}
+            </p>
+          )}
         </section>
+
+        <FieldTaskCard tasks={fieldTasks} employeeId={user.id} />
+        {params.ok && fieldTasks.length === 0 && null}
 
         {params.ok && (
           <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">

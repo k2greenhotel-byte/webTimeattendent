@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { formatThaiDate, formatThaiMonth, monthBounds, workDateOf } from "@/lib/datetime";
-import { monthlyToTable, reportRowsToTable, toCsv, toXlsx, type Table } from "@/lib/export";
-import { buildDailyReport, buildEmployeeReport, buildMonthlyReport } from "@/lib/reports";
+import { fieldToTable, monthlyToTable, reportRowsToTable, toCsv, toXlsx, type Table } from "@/lib/export";
+import {
+  buildDailyReport,
+  buildEmployeeReport,
+  buildFieldReport,
+  buildMonthlyReport,
+} from "@/lib/reports";
 import { getSessionUser, isAdminAuthed } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -44,6 +49,28 @@ export async function GET(req: Request) {
         { showEmployee: false },
       );
       filename = `attendance-${report.employee?.emp_code ?? employeeId}-${from}_${to}`;
+    } else if (kind === "field") {
+      // งานนอกสถานที่: แอดมินดูได้ทุกคน พนักงานดูได้เฉพาะของตัวเอง
+      const employeeId = sp.get("employeeId") || (isAdmin ? undefined : user?.id);
+      if (!isAdmin && employeeId !== user?.id) {
+        return NextResponse.json({ error: "ไม่มีสิทธิ์ดูข้อมูลผู้อื่น" }, { status: 403 });
+      }
+      const today = workDateOf();
+      const from = sp.get("from") ?? `${today.slice(0, 7)}-01`;
+      const to = sp.get("to") ?? today;
+      const report = await buildFieldReport({
+        from,
+        to,
+        companyId: sp.get("company") || undefined,
+        branchId,
+        employeeId,
+        typeId: sp.get("type") || undefined,
+      });
+      table = fieldToTable(
+        `รายงานงานนอกสถานที่ (${formatThaiDate(from)} - ${formatThaiDate(to)})`,
+        report.rows,
+      );
+      filename = `field-work-${from}_${to}`;
     } else if (kind === "monthly") {
       if (!isAdmin) {
         return NextResponse.json({ error: "เฉพาะผู้ดูแลระบบ" }, { status: 403 });

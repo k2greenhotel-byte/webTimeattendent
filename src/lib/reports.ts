@@ -1,5 +1,11 @@
 import "server-only";
-import { computeDaySummary, summarizePeriod, type PeriodTotals } from "./attendance";
+import {
+  computeDaySummary,
+  computeFieldSession,
+  summarizePeriod,
+  type FieldSessionSummary,
+  type PeriodTotals,
+} from "./attendance";
 import { dateRange, monthBounds } from "./datetime";
 import {
   getDayRows,
@@ -7,8 +13,9 @@ import {
   getHolidaySet,
   getSettingsResolver,
   listEmployees,
+  listFieldTasks,
 } from "./db";
-import type { AttendanceDayRow, DaySummary, Employee, WorkSettings } from "./types";
+import type { AttendanceDayRow, DaySummary, Employee, FieldTask, WorkSettings } from "./types";
 
 export type ReportRow = {
   employeeId: string;
@@ -18,6 +25,8 @@ export type ReportRow = {
   branchName: string | null;
   /** ชื่อกะที่ใช้คำนวณวันนั้น (จากตารางเวร หรือกะสาขา) */
   scheduleName: string;
+  /** สถานที่นอกสาขาที่ไปประจำวันนั้น (ตามตารางเวร) */
+  siteName: string | null;
   summary: DaySummary;
   photos: {
     check_in: string | null;
@@ -56,6 +65,7 @@ function toReportRow(
   settings: WorkSettings,
   holidays: Set<string>,
   isDayOff: boolean,
+  siteName: string | null = null,
 ): ReportRow {
   return {
     employeeId: row.employee_id,
@@ -64,6 +74,7 @@ function toReportRow(
     department: row.department,
     branchName: row.branch_name,
     scheduleName: isDayOff ? "หยุดเวร" : settings.schedule_name,
+    siteName,
     summary: computeDaySummary(row, settings, holidays.has(row.work_date), isDayOff),
     photos: {
       check_in: row.check_in_photo,
@@ -87,6 +98,8 @@ export async function buildEmployeeReport(params: {
   settings: WorkSettings;
   rows: ReportRow[];
   totals: PeriodTotals;
+  /** งานนอกสถานที่ของคนนี้ในช่วงเดียวกัน */
+  fieldRows: FieldReportRow[];
 }> {
   const [employee, holidays, dayRows, resolver] = await Promise.all([
     getEmployeeById(params.employeeId),
@@ -111,12 +124,17 @@ export async function buildEmployeeReport(params: {
           resolver.resolve(row.branch_id, employee.id, date),
           holidays,
           resolver.isDayOff(employee.id, date),
+          resolver.siteNameOf(employee.id, date),
         ),
       );
     }
   }
 
-  return { employee, settings, rows, totals: summarizePeriod(rows.map((r) => r.summary)) };
+  const totals = summarizePeriod(rows.map((r) => r.summary));
+  const fieldRows = await buildFieldRows({ from: params.from, to: params.to, employeeId: params.employeeId });
+  totals.fieldMinutes = sumCountedMinutes(fieldRows);
+
+  return { employee, settings, rows, totals, fieldRows };
 }
 
 /** รายงานรายวัน: พนักงานที่ยังทำงานอยู่ทุกคนของวันที่เลือก (กรองตามสาขาได้) */
@@ -150,6 +168,7 @@ export async function buildDailyReport(
       resolver.resolve(row.branch_id, emp.id, date),
       holidays,
       resolver.isDayOff(emp.id, date),
+      resolver.siteNameOf(emp.id, date),
     );
   });
 
@@ -193,6 +212,13 @@ export async function buildMonthlyReport(
     rowsByEmp.get(r.employee_id)!.set(r.work_date, r);
   }
 
+  // ชั่วโมงงานพิเศษของทั้งเดือน คำนวณครั้งเดียวจากภารกิจทั้งหมดในช่วง
+  const fieldRows = await buildFieldRows({ from, to, companyId, branchId });
+  const fieldByEmp = new Map<string, number>();
+  for (const r of fieldRows) {
+    fieldByEmp.set(r.employeeId, (fieldByEmp.get(r.employeeId) ?? 0) + r.session.countedMinutes);
+  }
+
   const result: MonthlyEmployeeRow[] = employees.map((emp) => {
     const byDate = new Map<string, DaySummary>();
     for (const date of dates) {
@@ -204,7 +230,9 @@ export async function buildMonthlyReport(
         computeDaySummary(row, daySettings, holidays.has(date), resolver.isDayOff(emp.id, date)),
       );
     }
-    return { employee: emp, byDate, totals: summarizePeriod([...byDate.values()]) };
+    const totals = summarizePeriod([...byDate.values()]);
+    totals.fieldMinutes = fieldByEmp.get(emp.id) ?? 0;
+    return { employee: emp, byDate, totals };
   });
 
   return {
@@ -213,4 +241,93 @@ export async function buildMonthlyReport(
     holidays,
     employees: result,
   };
+}
+
+// ---------- งานนอกสถานที่ ----------
+
+/** 1 แถว = สมาชิก 1 คนในภารกิจ 1 งาน */
+export type FieldReportRow = {
+  task: FieldTask;
+  employeeId: string;
+  empCode: string;
+  fullName: string;
+  session: FieldSessionSummary;
+  startAt: string | null;
+  endAt: string | null;
+  startPhoto: string | null;
+  endPhoto: string | null;
+  hasManual: boolean;
+};
+
+function sumCountedMinutes(rows: FieldReportRow[]): number {
+  return rows.reduce((sum, r) => sum + r.session.countedMinutes, 0);
+}
+
+/** แตกภารกิจเป็นแถวต่อคน พร้อมสรุปเริ่ม/จบ/นาที */
+export async function buildFieldRows(params: {
+  from: string;
+  to: string;
+  companyId?: string | null;
+  branchId?: string | null;
+  employeeId?: string | null;
+  typeId?: string | null;
+}): Promise<FieldReportRow[]> {
+  const tasks = await listFieldTasks(params);
+  const rows: FieldReportRow[] = [];
+  for (const task of tasks) {
+    for (const m of task.members) {
+      if (params.employeeId && m.employee_id !== params.employeeId) continue;
+      if (params.branchId && m.branch_id !== params.branchId) continue;
+      rows.push({
+        task,
+        employeeId: m.employee_id,
+        empCode: m.emp_code,
+        fullName: m.full_name,
+        session: computeFieldSession({
+          workDate: task.work_date,
+          startAt: m.start?.punched_at,
+          endAt: m.end?.punched_at,
+          plannedStart: task.planned_start,
+          countsHours: task.counts_hours,
+        }),
+        startAt: m.start?.punched_at ?? null,
+        endAt: m.end?.punched_at ?? null,
+        startPhoto: m.start?.photo_path ?? null,
+        endPhoto: m.end?.photo_path ?? null,
+        hasManual: Boolean(m.start?.is_manual || m.end?.is_manual),
+      });
+    }
+  }
+  return rows;
+}
+
+/** รายงานงานนอกสถานที่ + สรุปชั่วโมงงานพิเศษต่อคน */
+export async function buildFieldReport(params: {
+  from: string;
+  to: string;
+  companyId?: string | null;
+  branchId?: string | null;
+  employeeId?: string | null;
+  typeId?: string | null;
+}): Promise<{
+  rows: FieldReportRow[];
+  perEmployee: { employeeId: string; empCode: string; fullName: string; tasks: number; minutes: number }[];
+  totalMinutes: number;
+}> {
+  const rows = await buildFieldRows(params);
+  const byEmp = new Map<string, { employeeId: string; empCode: string; fullName: string; tasks: number; minutes: number }>();
+  for (const r of rows) {
+    const cur = byEmp.get(r.employeeId) ?? {
+      employeeId: r.employeeId,
+      empCode: r.empCode,
+      fullName: r.fullName,
+      tasks: 0,
+      minutes: 0,
+    };
+    cur.tasks += 1;
+    cur.minutes += r.session.countedMinutes;
+    byEmp.set(r.employeeId, cur);
+  }
+  const perEmployee = [...byEmp.values()].sort((a, b) => a.empCode.localeCompare(b.empCode));
+  return { rows, perEmployee, totalMinutes: sumCountedMinutes(rows) };
 }

@@ -3,9 +3,9 @@ import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
 import { getCompanyScope } from "@/lib/att-scope";
 import { formatThaiDate, monthBounds, workDateOf } from "@/lib/datetime";
-import { countAttendance, listBranches, listEmployees } from "@/lib/db";
+import { countAttendance, listBranches, listEmployees, listFieldTasks } from "@/lib/db";
 import { getSupabase } from "@/lib/supabase-server";
-import { deleteAttendanceForm } from "./actions";
+import { deleteAttendanceForm, deleteFieldTasksForm } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +49,12 @@ export default async function DataPage({
   const branchId = params.branch || undefined;
 
   const scope = await getCompanyScope(params.company);
-  const [branches, employees, matched, audit] = await Promise.all([
+  const [branches, employees, matched, audit, fieldTasks] = await Promise.all([
     listBranches(false, scope.companyId),
     listEmployees({ branchId, companyId: scope.companyId }),
     countAttendance({ from, to, employeeId, branchId, companyId: scope.companyId }),
     recentAudit(),
+    listFieldTasks({ from, to, companyId: scope.companyId, includeCancelled: true }),
   ]);
 
   const target = employees.find((e) => e.id === employeeId);
@@ -150,6 +151,34 @@ export default async function DataPage({
         </form>
       </section>
 
+      <section className="card space-y-3 border-rose-200">
+        <div>
+          <h2 className="font-semibold text-slate-800">ลบงานนอกสถานที่</h2>
+          <p className="text-xs text-slate-500">
+            ภารกิจออกบูธ/ส่งรถ ในช่วง {formatThaiDate(from)} – {formatThaiDate(to)} ของบริษัทที่เลือก
+            (รวมงานที่ยกเลิก) พร้อมการลงเวลาและรูปของภารกิจ
+          </p>
+        </div>
+        <p className="text-sm">
+          พบภารกิจที่จะถูกลบ{" "}
+          <strong className={fieldTasks.length > 0 ? "text-rose-600" : "text-slate-500"}>
+            {fieldTasks.length} งาน
+          </strong>
+        </p>
+        <form action={deleteFieldTasksForm} className="space-y-3">
+          <input type="hidden" name="from" value={from} />
+          <input type="hidden" name="to" value={to} />
+          <input type="hidden" name="company" value={scope.companyId ?? ""} />
+          <label className="flex items-center gap-2 text-sm text-rose-700">
+            <input type="checkbox" name="confirm_field" />
+            ยืนยันว่าต้องการลบงานนอกสถานที่ {fieldTasks.length} งานนี้ถาวร
+          </label>
+          <button type="submit" className="btn-danger" disabled={fieldTasks.length === 0}>
+            ลบงานนอกสถานที่ในช่วงนี้
+          </button>
+        </form>
+      </section>
+
       <section className="card space-y-2">
         <h2 className="font-semibold text-slate-800">ลบข้อมูลอื่น ๆ</h2>
         <ul className="list-inside list-disc space-y-1 text-sm text-slate-600">
@@ -169,7 +198,13 @@ export default async function DataPage({
             <Link href="/admin/setup" className="text-brand-600 hover:underline">
               กะทำงาน / แผนก / ตำแหน่ง
             </Link>{" "}
-            — ลบได้แม้มีการใช้งานอยู่ (ต้องติ๊กยืนยัน)
+            — ลบได้แม้มีการใช้งานอยู่ (ต้องติ๊กยืนยัน) · รวมถึงสถานที่ปฏิบัติงานและประเภทงานนอกสถานที่
+          </li>
+          <li>
+            <Link href="/admin/field" className="text-brand-600 hover:underline">
+              งานนอกสถานที่
+            </Link>{" "}
+            — ลบ/ยกเลิกทีละงาน หรือแก้เวลาเริ่ม-จบให้พนักงาน
           </li>
           <li>
             <Link href="/admin/holidays" className="text-brand-600 hover:underline">
