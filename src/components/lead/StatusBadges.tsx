@@ -1,38 +1,41 @@
-import {
-  CHANCE_CLASS,
-  CHANCE_DOT_CLASS,
-  CHANCE_LABEL,
-  WORK_STATUS_CLASS,
-  WORK_STATUS_LABEL,
-  type Chance,
-  type WorkStatus,
-} from "@/lib/lead-types";
+import { BADGE_CLASS, DOT_CLASS, colorOf } from "@/lib/lead-types";
 
-/** ป้ายสถานะของระบบ Lead — สีกับข้อความมาจากที่เดียวกันทุกหน้า */
+/**
+ * ป้ายสถานะของระบบ Lead
+ * ชื่อและสีมาจากตารางสถานะที่ตั้งค่าได้ที่ /leads/setup — ไม่ได้ตายตัวในโค้ด
+ */
 
-export function WorkStatusBadge({ status }: { status: WorkStatus }) {
+export function WorkStatusBadge({
+  name,
+  color,
+}: {
+  name: string | null | undefined;
+  color: string | null | undefined;
+}) {
   return (
-    <span className={`badge whitespace-nowrap ${WORK_STATUS_CLASS[status]}`}>
-      {WORK_STATUS_LABEL[status]}
+    <span className={`badge whitespace-nowrap ${BADGE_CLASS[colorOf(color)]}`}>
+      {name || "— ไม่ระบุสถานะ —"}
     </span>
   );
 }
 
-/** ข้อ 1.11 — โอกาสสูง (เขียว) กลาง (เหลือง) น้อย (แดง) */
-export function ChanceBadge({ chance }: { chance: Chance }) {
+/** ข้อ 1.11 — โอกาสการขาย พร้อมจุดสีนำหน้าให้กวาดตาเห็นได้เร็ว */
+export function ChanceBadge({
+  name,
+  color,
+}: {
+  name: string | null | undefined;
+  color: string | null | undefined;
+}) {
   return (
-    <span className={`badge whitespace-nowrap ${CHANCE_CLASS[chance]}`}>
-      <span className={`mr-1 inline-block h-2 w-2 rounded-full ${CHANCE_DOT_CLASS[chance]}`} />
-      โอกาส{CHANCE_LABEL[chance]}
+    <span className={`badge whitespace-nowrap ${BADGE_CLASS[colorOf(color)]}`}>
+      <span className={`mr-1 inline-block h-2 w-2 rounded-full ${DOT_CLASS[colorOf(color)]}`} />
+      โอกาส{name || "— ไม่ระบุ —"}
     </span>
   );
 }
 
 /** ป้ายเตือน "เลยนัดติดตาม" — ใช้ในรายการและกระดานติดตาม */
 export function OverdueBadge({ days }: { days: number }) {
-  return (
-    <span className="badge whitespace-nowrap bg-rose-600 text-white">
-      เลยนัด {days} วัน
-    </span>
-  );
+  return <span className="badge whitespace-nowrap bg-rose-600 text-white">เลยนัด {days} วัน</span>;
 }

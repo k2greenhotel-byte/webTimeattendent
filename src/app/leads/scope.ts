@@ -1,8 +1,8 @@
 import "server-only";
 import { listBranches } from "@/lib/db";
 import { canSeeAllLeads } from "@/lib/lead";
-import { listLeadOwners } from "@/lib/lead-db";
-import type { LeadOption, LeadQuery } from "@/lib/lead-types";
+import { listChances, listLeadOwners, listWorkStatuses } from "@/lib/lead-db";
+import type { ChanceOption, LeadOption, LeadQuery, WorkStatusOption } from "@/lib/lead-types";
 import { listMaster } from "@/lib/moto-db";
 import type { MotoOption } from "@/lib/moto-types";
 import { requirePermission } from "@/lib/session";
@@ -32,20 +32,29 @@ export function scopedQuery(
   return scope.canSeeAll ? query : { ...query, owner_id: scope.ownerId };
 }
 
-/** ตัวเลือกของช่องกรอง/ฟอร์ม — ดึงครั้งเดียวแล้วส่งต่อให้คอมโพเนนต์ */
+/**
+ * ตัวเลือกของช่องกรอง/ฟอร์ม — ดึงครั้งเดียวแล้วส่งต่อให้คอมโพเนนต์
+ *
+ * สถานะงาน/สถานะโอกาสดึงมาทั้งหมด (รวมที่ปิดใช้งานแล้ว) เพราะใบเก่าที่ใช้สถานะนั้นอยู่
+ * ต้องยังแสดงชื่อและกรองหาได้ ส่วนฟอร์มบันทึกจะกรองเฉพาะที่เปิดใช้งานเอง
+ */
 export async function leadOptions(): Promise<{
   branches: Branch[];
   brands: MotoOption[];
   models: MotoOption[];
   channels: MotoOption[];
   owners: LeadOption[];
+  statuses: WorkStatusOption[];
+  chances: ChanceOption[];
 }> {
-  const [branches, brands, models, channels, owners] = await Promise.all([
+  const [branches, brands, models, channels, owners, statuses, chances] = await Promise.all([
     listBranches(true),
     listMaster("brand"),
     listMaster("model"),
     listMaster("channel"),
     listLeadOwners(),
+    listWorkStatuses(true),
+    listChances(true),
   ]);
-  return { branches, brands, models, channels, owners };
+  return { branches, brands, models, channels, owners, statuses, chances };
 }

@@ -34,8 +34,10 @@ export default function FollowUpList({
           )}
 
           <div className="mt-2 flex flex-wrap items-center gap-1">
-            {row.work_status && <WorkStatusBadge status={row.work_status} />}
-            {row.chance && <ChanceBadge chance={row.chance} />}
+            {row.work_status && (
+              <WorkStatusBadge name={row.work_status_name} color={row.work_status_color} />
+            )}
+            {row.chance && <ChanceBadge name={row.chance_name} color={row.chance_color} />}
             {row.next_follow_date && (
               <span className="text-xs text-slate-500">
                 นัดติดตามต่อ {formatThaiDate(row.next_follow_date)}

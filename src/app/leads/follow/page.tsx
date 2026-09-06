@@ -2,7 +2,13 @@ import { leadOptions, leadScope, scopedQuery } from "@/app/leads/scope";
 import LeadBoard from "@/components/lead/LeadBoard";
 import LeadFilters from "@/components/lead/LeadFilters";
 import { workDateOf } from "@/lib/datetime";
-import { buildOverview, groupForBoard, isOverdue, queryFromParams } from "@/lib/lead";
+import {
+  buildOverview,
+  groupForBoard,
+  hotChanceCode,
+  isOverdue,
+  queryFromParams,
+} from "@/lib/lead";
 import { listLeads } from "@/lib/lead-db";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +26,16 @@ export default async function FollowBoardPage({
   const scope = await leadScope("LEAD_FOLLOW");
   const today = workDateOf();
 
-  const query = scopedQuery(queryFromParams(params), scope);
-  const [rowsAll, options] = await Promise.all([listLeads(query), leadOptions()]);
+  const options = await leadOptions();
+  const query = scopedQuery(
+    queryFromParams(params, { statuses: options.statuses, chances: options.chances }),
+    scope,
+  );
 
+  const rowsAll = await listLeads(query);
   const rows = query.overdue_only ? rowsAll.filter((r) => isOverdue(r, today)) : rowsAll;
-  const overview = buildOverview(rows, today);
-  const columns = groupForBoard(rows, today);
+  const overview = buildOverview(rows, today, hotChanceCode(options.chances));
+  const columns = groupForBoard(rows, options.statuses, options.chances, today);
 
   return (
     <main className="mx-auto max-w-[110rem] space-y-4 p-3 sm:p-4">
@@ -54,6 +64,8 @@ export default async function FollowBoardPage({
         brands={options.brands}
         models={options.models}
         channels={options.channels}
+        statuses={options.statuses}
+        chances={options.chances}
         showOwner={scope.canSeeAll}
       />
 

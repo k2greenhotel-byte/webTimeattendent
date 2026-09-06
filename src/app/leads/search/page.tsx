@@ -5,6 +5,7 @@ import LeadTable from "@/components/lead/LeadTable";
 import { workDateOf } from "@/lib/datetime";
 import {
   buildOverview,
+  hotChanceCode,
   isOverdue,
   queryFromParams,
   summarizeBySalesperson,
@@ -33,11 +34,15 @@ export default async function LeadSearchPage({
   const scope = await leadScope("LEAD_SEARCH");
   const today = workDateOf();
 
-  const query = scopedQuery(queryFromParams(params), scope);
-  const [rowsAll, options] = await Promise.all([listLeads(query), leadOptions()]);
+  const options = await leadOptions();
+  const query = scopedQuery(
+    queryFromParams(params, { statuses: options.statuses, chances: options.chances }),
+    scope,
+  );
 
+  const rowsAll = await listLeads(query);
   const rows = query.overdue_only ? rowsAll.filter((r) => isOverdue(r, today)) : rowsAll;
-  const overview = buildOverview(rows, today);
+  const overview = buildOverview(rows, today, hotChanceCode(options.chances));
   const byStaff = summarizeBySalesperson(rows, today);
 
   return (
@@ -68,6 +73,8 @@ export default async function LeadSearchPage({
         brands={options.brands}
         models={options.models}
         channels={options.channels}
+        statuses={options.statuses}
+        chances={options.chances}
         showOwner={scope.canSeeAll}
       />
 
@@ -78,7 +85,7 @@ export default async function LeadSearchPage({
         </div>
         <div className="card">
           <p className="text-xs text-slate-500">ยังต้องติดตาม</p>
-          <p className="text-lg font-semibold text-sky-700">{overview.byStatus.follow_up}</p>
+          <p className="text-lg font-semibold text-sky-700">{overview.open}</p>
         </div>
         <div className="card">
           <p className="text-xs text-slate-500">ปิดการขายแล้ว</p>
@@ -100,6 +107,8 @@ export default async function LeadSearchPage({
           <GroupSummaryTable
             rows={byStaff}
             labelHeader="พนักงานขาย"
+            statuses={options.statuses}
+            chances={options.chances}
             emptyText="ไม่พบข้อมูลตามเงื่อนไข"
           />
         </section>

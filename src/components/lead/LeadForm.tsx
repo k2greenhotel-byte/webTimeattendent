@@ -3,7 +3,8 @@ import CustomerPicker, { type CustomerBrief } from "@/components/booking/Custome
 import DraftRestorer from "@/components/booking/DraftRestorer";
 import LeadStatusFields from "@/components/lead/LeadStatusFields";
 import LeadVehiclePicker from "@/components/lead/LeadVehiclePicker";
-import type { LeadRow } from "@/lib/lead-types";
+import { defaultChanceCode, defaultStatusCode } from "@/lib/lead";
+import type { ChanceOption, LeadRow, WorkStatusOption } from "@/lib/lead-types";
 import type { MotoOption } from "@/lib/moto-types";
 import type { Branch } from "@/lib/types";
 
@@ -21,6 +22,8 @@ export default function LeadForm({
   brands,
   models,
   channels,
+  statuses,
+  chances,
   defaultBranchId,
   ownerName,
   today,
@@ -34,6 +37,8 @@ export default function LeadForm({
   brands: MotoOption[];
   models: MotoOption[];
   channels: MotoOption[];
+  statuses: WorkStatusOption[];
+  chances: ChanceOption[];
   defaultBranchId?: string | null;
   /** ชื่อพนักงานขายเจ้าของ Lead — ใบใหม่คือคนที่ล็อกอินอยู่ */
   ownerName: string;
@@ -146,8 +151,10 @@ export default function LeadForm({
       <section className="card space-y-3">
         <h2 className="font-semibold text-slate-800">สถานะและโอกาสการขาย</h2>
         <LeadStatusFields
-          defaultWorkStatus={lead?.work_status ?? "follow_up"}
-          defaultChance={lead?.chance ?? "medium"}
+          statuses={statuses}
+          chances={chances}
+          defaultWorkStatus={lead?.work_status ?? defaultStatusCode(statuses)}
+          defaultChance={lead?.chance ?? defaultChanceCode(chances)}
           defaultNextFollowDate={lead?.next_follow_date ?? null}
           defaultSaleContractNo={lead?.sale_contract_no ?? null}
           defaultSaleDate={lead?.sale_date ?? null}

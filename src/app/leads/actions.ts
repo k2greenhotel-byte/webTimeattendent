@@ -11,16 +11,16 @@ import {
   deleteLead,
   getLead,
   getLeadCustomer,
+  listChances,
+  listWorkStatuses,
   updateLead,
 } from "@/lib/lead-db";
-import {
-  CHANCE_ORDER,
-  WORK_STATUS_ORDER,
-  type Chance,
-  type FollowUpInput,
-  type LeadInput,
-  type LeadRow,
-  type WorkStatus,
+import type {
+  ChanceOption,
+  FollowUpInput,
+  LeadInput,
+  LeadRow,
+  WorkStatusOption,
 } from "@/lib/lead-types";
 import { normalizePhone } from "@/lib/phone";
 import { requirePermission } from "@/lib/session";
@@ -36,10 +36,14 @@ function optText(form: FormData, key: string): string | null {
   return str(form, key) || null;
 }
 
-/** ค่าที่ต้องอยู่ในชุดตัวเลือกเท่านั้น — ค่านอกชุด (หรือค่าว่าง) คืน null */
-function pick<T extends string>(form: FormData, key: string, allowed: readonly T[]): T | null {
+/** รหัสสถานะที่ต้องมีอยู่จริงในตารางสถานะเท่านั้น — ค่านอกชุด (หรือค่าว่าง) คืน null */
+function pickCode(
+  form: FormData,
+  key: string,
+  options: { code: string }[],
+): string | null {
   const value = str(form, key);
-  return (allowed as readonly string[]).includes(value) ? (value as T) : null;
+  return options.some((o) => o.code === value) ? value : null;
 }
 
 function back(path: string, message: string, isError = false): never {
@@ -60,12 +64,19 @@ function assertOwnership(lead: LeadRow, user: SessionUser, path: string): void {
 
 async function readLead(
   form: FormData,
-  context: { owner: { id: string | null; name: string | null }; companyId: string | null; createdBy: string | null },
+  context: {
+    owner: { id: string | null; name: string | null };
+    companyId: string | null;
+    createdBy: string | null;
+    statuses: WorkStatusOption[];
+    chances: ChanceOption[];
+  },
 ): Promise<LeadInput> {
   const customer_id = optText(form, "customer_id");
   const customer = await getLeadCustomer(customer_id);
-  const work_status = pick(form, "work_status", WORK_STATUS_ORDER) ?? "follow_up";
-  const closing = work_status === "closed_won";
+  const work_status = pickCode(form, "work_status", context.statuses) ?? "";
+  const kind = context.statuses.find((s) => s.code === work_status)?.kind ?? "open";
+  const closing = kind === "won";
 
   return {
     lead_date: str(form, "lead_date"),
@@ -80,8 +91,8 @@ async function readLead(
     channel_id: optText(form, "channel_id"),
     channel_other: optText(form, "channel_other"),
     work_status,
-    chance: pick(form, "chance", CHANCE_ORDER) ?? "medium",
-    next_follow_date: work_status === "follow_up" ? optText(form, "next_follow_date") : null,
+    chance: pickCode(form, "chance", context.chances) ?? "",
+    next_follow_date: kind === "open" ? optText(form, "next_follow_date") : null,
     sale_contract_no: closing ? optText(form, "sale_contract_no") : null,
     sale_date: closing ? optText(form, "sale_date") : null,
     branch_id: optText(form, "branch_id"),
@@ -94,13 +105,16 @@ export async function createLeadForm(form: FormData): Promise<void> {
   const user = await requirePermission("LEAD_ENTRY", "write");
   const path = "/leads/leads/new";
 
+  const [statuses, chances] = await Promise.all([listWorkStatuses(true), listChances(true)]);
   const row = await readLead(form, {
     owner: { id: user.id, name: user.full_name },
     companyId: user.company_id ?? null,
     createdBy: user.id,
+    statuses,
+    chances,
   });
 
-  const problem = validateLead(row);
+  const problem = validateLead(row, statuses);
   if (problem) back(path, problem, true);
 
   let id: string;
@@ -135,13 +149,16 @@ export async function updateLeadForm(form: FormData): Promise<void> {
   assertOwnership(current, user, "/leads/leads");
 
   // เจ้าของ Lead ไม่เปลี่ยนตามคนที่มาแก้ไข (หัวหน้าแก้ให้ก็ยังเป็นผลงานของพนักงานคนเดิม)
+  const [statuses, chances] = await Promise.all([listWorkStatuses(true), listChances(true)]);
   const row = await readLead(form, {
     owner: { id: current.owner_id, name: current.owner_name },
     companyId: current.company_id,
     createdBy: current.created_by,
+    statuses,
+    chances,
   });
 
-  const problem = validateLead(row);
+  const problem = validateLead(row, statuses);
   if (problem) back(path, problem, true);
 
   try {
@@ -202,19 +219,25 @@ export async function deleteLeadForm(form: FormData): Promise<void> {
 
 function readFollowUp(
   form: FormData,
-  context: { recordedBy: string | null; recordedByName: string | null },
+  context: {
+    recordedBy: string | null;
+    recordedByName: string | null;
+    statuses: WorkStatusOption[];
+    chances: ChanceOption[];
+  },
 ): FollowUpInput {
-  const work_status = pick(form, "work_status", WORK_STATUS_ORDER);
-  const closing = work_status === "closed_won";
+  const work_status = pickCode(form, "work_status", context.statuses);
+  const kind = context.statuses.find((s) => s.code === work_status)?.kind ?? null;
+  const closing = kind === "won";
 
   return {
     follow_date: str(form, "follow_date"),
     lead_id: str(form, "lead_id"),
     detail: optText(form, "detail"),
-    next_follow_date:
-      work_status === null || work_status === "follow_up" ? optText(form, "next_follow_date") : null,
-    work_status: work_status as WorkStatus | null,
-    chance: pick(form, "chance", CHANCE_ORDER) as Chance | null,
+    // ไม่ได้เปลี่ยนสถานะ (null) = คงสถานะเดิมไว้ ซึ่งอาจยังต้องตามต่อ จึงยังรับวันนัดได้
+    next_follow_date: kind === null || kind === "open" ? optText(form, "next_follow_date") : null,
+    work_status,
+    chance: pickCode(form, "chance", context.chances),
     sale_contract_no: closing ? optText(form, "sale_contract_no") : null,
     sale_date: closing ? optText(form, "sale_date") : null,
     recorded_by: context.recordedBy,
@@ -232,8 +255,15 @@ export async function createFollowUpForm(form: FormData): Promise<void> {
   if (!lead) back("/leads/follow", "ไม่พบ Lead นี้ อาจถูกลบไปแล้ว", true);
   assertOwnership(lead, user, "/leads/follow");
 
-  const row = readFollowUp(form, { recordedBy: user.id, recordedByName: user.full_name });
-  const problem = validateFollowUp(row);
+  const [statuses, chances] = await Promise.all([listWorkStatuses(true), listChances(true)]);
+  const row = readFollowUp(form, {
+    recordedBy: user.id,
+    recordedByName: user.full_name,
+    statuses,
+    chances,
+  });
+
+  const problem = validateFollowUp(row, statuses);
   if (problem) back(path, problem, true);
 
   let docNo: string;

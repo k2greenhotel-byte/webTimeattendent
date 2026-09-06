@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { leadScope, scopedQuery } from "@/app/leads/scope";
 import { workDateOf } from "@/lib/datetime";
-import { buildOverview } from "@/lib/lead";
-import { listLeads } from "@/lib/lead-db";
-import { WORK_STATUS_LABEL, WORK_STATUS_ORDER } from "@/lib/lead-types";
+import { buildOverview, hotChanceCode } from "@/lib/lead";
+import { listChances, listLeads, listWorkStatuses } from "@/lib/lead-db";
 import { getMyPermissions } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +32,12 @@ const MENUS = [
     title: "4. Dashboard งานขาย",
     description: "อัตราการปิดการขายรายคน/รายสาขา 10 อันดับรุ่นยอดนิยม และรายการที่ต้องเร่งตาม",
   },
+  {
+    menuCode: "LEAD_SETUP",
+    href: "/leads/setup",
+    title: "5. ตั้งค่าสถานะ",
+    description: "เพิ่ม/แก้ไขสถานะงานและสถานะโอกาสการขาย พร้อมสีที่ใช้แยกลูกค้าบนกระดานติดตาม",
+  },
 ];
 
 /** หน้าแรกของระบบข้อมูล Lead — เมนูตามสิทธิ์ พร้อมสรุปงานที่ต้องทำวันนี้ */
@@ -45,14 +50,16 @@ export default async function LeadHomePage({
   const scope = await leadScope("LEAD_ENTRY");
   const today = workDateOf();
 
-  const [permissions, rows] = await Promise.all([
+  const [permissions, rows, statuses, chances] = await Promise.all([
     getMyPermissions(),
     listLeads(scopedQuery({}, scope)),
+    listWorkStatuses(true),
+    listChances(true),
   ]);
 
   const readable = new Set(permissions.filter((p) => p.can_read).map((p) => p.menu_code));
   const cards = MENUS.filter((m) => readable.has(m.menuCode));
-  const overview = buildOverview(rows, today);
+  const overview = buildOverview(rows, today, hotChanceCode(chances));
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
@@ -75,12 +82,16 @@ export default async function LeadHomePage({
       <section className="card space-y-2">
         <h2 className="font-semibold text-slate-800">สรุป Lead ทั้งหมด {overview.total} ราย</h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {WORK_STATUS_ORDER.map((s) => (
-            <div key={s} className="rounded-xl bg-slate-50 px-3 py-2">
-              <p className="text-xs text-slate-500">{WORK_STATUS_LABEL[s]}</p>
-              <p className="text-lg font-semibold text-slate-800">{overview.byStatus[s]}</p>
-            </div>
-          ))}
+          {statuses
+            .filter((s) => s.is_active || (overview.byStatus[s.code] ?? 0) > 0)
+            .map((s) => (
+              <div key={s.code} className="rounded-xl bg-slate-50 px-3 py-2">
+                <p className="truncate text-xs text-slate-500">{s.name}</p>
+                <p className="text-lg font-semibold text-slate-800">
+                  {overview.byStatus[s.code] ?? 0}
+                </p>
+              </div>
+            ))}
         </div>
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

@@ -8,6 +8,7 @@ import {
   buildOverview,
   buildRankings,
   byFollowPriority,
+  hotChanceCode,
   isOverdue,
   isSilentHotLead,
   queryFromParams,
@@ -17,7 +18,7 @@ import {
   summarizeBySalesperson,
 } from "@/lib/lead";
 import { listLeads } from "@/lib/lead-db";
-import { HOT_LEAD_SILENT_DAYS, WORK_STATUS_LABEL, WORK_STATUS_ORDER } from "@/lib/lead-types";
+import { HOT_LEAD_SILENT_DAYS } from "@/lib/lead-types";
 
 export const dynamic = "force-dynamic";
 
@@ -34,19 +35,35 @@ export default async function LeadDashboardPage({
   const scope = await leadScope("LEAD_DASH");
   const today = workDateOf();
 
-  const query = scopedQuery(queryFromParams(params), scope);
-  const [rowsAll, options] = await Promise.all([listLeads(query), leadOptions()]);
+  const options = await leadOptions();
+  const query = scopedQuery(
+    queryFromParams(params, { statuses: options.statuses, chances: options.chances }),
+    scope,
+  );
 
+  const rowsAll = await listLeads(query);
   const rows = query.overdue_only ? rowsAll.filter((r) => isOverdue(r, today)) : rowsAll;
 
-  const overview = buildOverview(rows, today);
+  const hotCode = hotChanceCode(options.chances);
+  const overview = buildOverview(rows, today, hotCode);
   const rankings = buildRankings(rows);
   const byBranch = summarizeByBranch(rows, today);
   const byStaff = summarizeBySalesperson(rows, today);
   const byChannel = summarizeByChannel(rows, today);
 
+  // คอลัมน์สถานะบนตารางสรุป: เอาเฉพาะที่เปิดใช้งาน หรือที่ยังมีใบงานค้างอยู่
+  const shownStatuses = options.statuses.filter(
+    (s) => s.is_active || (overview.byStatus[s.code] ?? 0) > 0,
+  );
+  const shownChances = options.chances.filter(
+    (c) => c.is_active || (overview.byChance[c.code] ?? 0) > 0,
+  );
+  const hotChanceName = options.chances.find((c) => c.code === hotCode)?.name ?? "สูงสุด";
+
   const overdueRows = rows.filter((r) => isOverdue(r, today)).sort(byFollowPriority(today));
-  const silentHotRows = rows.filter((r) => isSilentHotLead(r, today)).sort(byFollowPriority(today));
+  const silentHotRows = rows
+    .filter((r) => isSilentHotLead(r, today, hotCode))
+    .sort(byFollowPriority(today));
 
   return (
     <main className="mx-auto max-w-[110rem] space-y-4 p-3 sm:p-4">
@@ -66,6 +83,8 @@ export default async function LeadDashboardPage({
         brands={options.brands}
         models={options.models}
         channels={options.channels}
+        statuses={options.statuses}
+        chances={options.chances}
         showOwner={scope.canSeeAll}
       />
 
@@ -75,10 +94,12 @@ export default async function LeadDashboardPage({
           <p className="text-xs text-slate-500">Lead ทั้งหมด</p>
           <p className="text-2xl font-semibold text-slate-800">{overview.total}</p>
         </div>
-        {WORK_STATUS_ORDER.map((s) => (
-          <div key={s} className="card">
-            <p className="text-xs text-slate-500">{WORK_STATUS_LABEL[s]}</p>
-            <p className="text-2xl font-semibold text-slate-800">{overview.byStatus[s]}</p>
+        {shownStatuses.map((s) => (
+          <div key={s.code} className="card">
+            <p className="truncate text-xs text-slate-500">{s.name}</p>
+            <p className="text-2xl font-semibold text-slate-800">
+              {overview.byStatus[s.code] ?? 0}
+            </p>
           </div>
         ))}
         <div className="card bg-emerald-50">
@@ -116,7 +137,13 @@ export default async function LeadDashboardPage({
             จำนวน Lead แยกตามสถานะงาน พร้อมอัตราการปิดการขายของแต่ละสาขา
           </p>
         </div>
-        <GroupSummaryTable rows={byBranch} labelHeader="สาขา" emptyText="ยังไม่มีข้อมูล Lead" />
+        <GroupSummaryTable
+          rows={byBranch}
+          labelHeader="สาขา"
+          statuses={shownStatuses}
+          chances={shownChances}
+          emptyText="ยังไม่มีข้อมูล Lead"
+        />
       </section>
 
       {/* ---------- 3.2 ตามพนักงานขาย ---------- */}
@@ -127,7 +154,13 @@ export default async function LeadDashboardPage({
             เรียงจากผู้ที่มี Lead มากที่สุด — ดูควบคู่กับอัตราการปิดการขายด้านล่าง
           </p>
         </div>
-        <GroupSummaryTable rows={byStaff} labelHeader="พนักงานขาย" emptyText="ยังไม่มีข้อมูล Lead" />
+        <GroupSummaryTable
+          rows={byStaff}
+          labelHeader="พนักงานขาย"
+          statuses={shownStatuses}
+          chances={shownChances}
+          emptyText="ยังไม่มีข้อมูล Lead"
+        />
       </section>
 
       {/* ---------- 3.3 อัตราการปิดการขายรายคน ---------- */}
@@ -141,6 +174,8 @@ export default async function LeadDashboardPage({
         <GroupSummaryTable
           rows={rankByCloseRate(byStaff)}
           labelHeader="พนักงานขาย"
+          statuses={shownStatuses}
+          chances={shownChances}
           emptyText="ยังไม่มีข้อมูล Lead"
         />
       </section>
@@ -182,6 +217,8 @@ export default async function LeadDashboardPage({
         <GroupSummaryTable
           rows={byChannel}
           labelHeader="ช่องทางการติดต่อ"
+          statuses={shownStatuses}
+          chances={shownChances}
           emptyText="ยังไม่มีข้อมูล Lead"
         />
       </section>
@@ -206,7 +243,8 @@ export default async function LeadDashboardPage({
         <div className="card space-y-3">
           <div>
             <h2 className="font-semibold text-amber-700">
-              เฝ้าระวัง: โอกาสสูงแต่เงียบเกิน {HOT_LEAD_SILENT_DAYS} วัน ({silentHotRows.length} ราย)
+              เฝ้าระวัง: โอกาส{hotChanceName}แต่เงียบเกิน {HOT_LEAD_SILENT_DAYS} วัน (
+              {silentHotRows.length} ราย)
             </h2>
             <p className="text-[11px] text-slate-400">
               ลูกค้าที่พร้อมซื้อที่สุดแต่ไม่มีใครติดต่อ — เสี่ยงเสียให้คู่แข่งมากที่สุด

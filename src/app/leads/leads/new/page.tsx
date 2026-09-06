@@ -33,6 +33,8 @@ export default async function NewLeadPage({
         brands={options.brands}
         models={options.models}
         channels={options.channels}
+        statuses={options.statuses.filter((s) => s.is_active)}
+        chances={options.chances.filter((c) => c.is_active)}
         defaultBranchId={user.branch_id ?? null}
         ownerName={user.full_name}
         today={workDateOf()}

@@ -1,6 +1,8 @@
 import "server-only";
 import { applyFollowUp } from "./lead";
 import type {
+  ChanceInput,
+  ChanceOption,
   FollowUpInput,
   FollowUpRow,
   Lead,
@@ -8,6 +10,8 @@ import type {
   LeadOption,
   LeadQuery,
   LeadRow,
+  WorkStatusInput,
+  WorkStatusOption,
 } from "./lead-types";
 import { getSupabase } from "./supabase-server";
 
@@ -180,7 +184,7 @@ export async function createFollowUp(input: FollowUpInput): Promise<FollowUpRow>
     .single();
   if (error) throw new Error(`บันทึกผลการติดตามไม่สำเร็จ: ${error.message}`);
 
-  await updateLead(input.lead_id, applyFollowUp(input));
+  await updateLead(input.lead_id, applyFollowUp(input, await listWorkStatuses(true)));
 
   const { data: row, error: readError } = await supabase
     .from("v_ld_follow_ups")
@@ -194,6 +198,106 @@ export async function createFollowUp(input: FollowUpInput): Promise<FollowUpRow>
 export async function deleteFollowUp(id: string): Promise<void> {
   const { error } = await getSupabase().from("ld_follow_ups").delete().eq("id", id);
   if (error) throw new Error(`ลบใบติดตามไม่สำเร็จ: ${error.message}`);
+}
+
+// ---------- สถานะงาน / สถานะโอกาส (หน้าจอตั้งค่า 5) ----------
+
+const STATUS_COLUMNS = "code, name, kind, color, sort_order, is_active, is_system";
+const CHANCE_COLUMNS = "code, name, color, sort_order, is_active, is_system";
+
+/** สถานะงานทั้งหมด เรียงตามลำดับที่ตั้งไว้ในหน้าตั้งค่า */
+export async function listWorkStatuses(includeInactive = false): Promise<WorkStatusOption[]> {
+  let q = getSupabase().from("ld_work_statuses").select(STATUS_COLUMNS);
+  if (!includeInactive) q = q.eq("is_active", true);
+
+  const { data, error } = await q.order("sort_order").order("code");
+  if (error) throw new Error(`อ่านรายการสถานะงานไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as unknown as WorkStatusOption[];
+}
+
+/** สถานะโอกาสการขายทั้งหมด (ลำดับแรก = โอกาสสูงสุด) */
+export async function listChances(includeInactive = false): Promise<ChanceOption[]> {
+  let q = getSupabase().from("ld_chances").select(CHANCE_COLUMNS);
+  if (!includeInactive) q = q.eq("is_active", true);
+
+  const { data, error } = await q.order("sort_order").order("code");
+  if (error) throw new Error(`อ่านรายการสถานะโอกาสไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as unknown as ChanceOption[];
+}
+
+function duplicateCode(code: string): string {
+  return `รหัส ${code} ถูกใช้ไปแล้ว กรุณาใช้รหัสอื่น`;
+}
+
+export async function createWorkStatus(input: WorkStatusInput): Promise<void> {
+  const { error } = await getSupabase().from("ld_work_statuses").insert({ ...input, is_system: false });
+  if (error) {
+    throw new Error(
+      error.code === "23505" ? duplicateCode(input.code) : `เพิ่มสถานะงานไม่สำเร็จ: ${error.message}`,
+    );
+  }
+}
+
+/** แก้ไขสถานะงาน — รหัส (code) เปลี่ยนไม่ได้ เพราะเป็นค่าที่บันทึกอยู่บนใบงานเดิมทั้งหมด */
+export async function updateWorkStatus(
+  code: string,
+  input: Omit<WorkStatusInput, "code">,
+): Promise<void> {
+  const { error } = await getSupabase().from("ld_work_statuses").update(input).eq("code", code);
+  if (error) throw new Error(`บันทึกสถานะงานไม่สำเร็จ: ${error.message}`);
+}
+
+export async function deleteWorkStatus(code: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("ld_work_statuses")
+    .delete()
+    .eq("code", code)
+    .eq("is_system", false);
+  if (error) throw new Error(`ลบสถานะงานไม่สำเร็จ: ${error.message}`);
+}
+
+export async function createChance(input: ChanceInput): Promise<void> {
+  const { error } = await getSupabase().from("ld_chances").insert({ ...input, is_system: false });
+  if (error) {
+    throw new Error(
+      error.code === "23505"
+        ? duplicateCode(input.code)
+        : `เพิ่มสถานะโอกาสไม่สำเร็จ: ${error.message}`,
+    );
+  }
+}
+
+export async function updateChance(
+  code: string,
+  input: Omit<ChanceInput, "code">,
+): Promise<void> {
+  const { error } = await getSupabase().from("ld_chances").update(input).eq("code", code);
+  if (error) throw new Error(`บันทึกสถานะโอกาสไม่สำเร็จ: ${error.message}`);
+}
+
+export async function deleteChance(code: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("ld_chances")
+    .delete()
+    .eq("code", code)
+    .eq("is_system", false);
+  if (error) throw new Error(`ลบสถานะโอกาสไม่สำเร็จ: ${error.message}`);
+}
+
+/** จำนวนใบงานที่ยังใช้สถานะนี้อยู่ — ใช้เตือนก่อนลบ (ลบแล้วใบเก่าจะอ้างสถานะที่หายไป) */
+export async function countStatusUsage(
+  field: "work_status" | "chance",
+  code: string,
+): Promise<number> {
+  const supabase = getSupabase();
+  const [leads, follows] = await Promise.all([
+    supabase.from("ld_leads").select("id", { count: "exact", head: true }).eq(field, code),
+    supabase.from("ld_follow_ups").select("id", { count: "exact", head: true }).eq(field, code),
+  ]);
+
+  if (leads.error) throw new Error(`ตรวจสอบการใช้งานสถานะไม่สำเร็จ: ${leads.error.message}`);
+  if (follows.error) throw new Error(`ตรวจสอบการใช้งานสถานะไม่สำเร็จ: ${follows.error.message}`);
+  return (leads.count ?? 0) + (follows.count ?? 0);
 }
 
 // ---------- ตัวเลือกของช่องกรอง ----------

@@ -1,8 +1,15 @@
 import "server-only";
 import { formatThaiDate } from "./datetime";
 import type { Table } from "./export";
-import { channelNameOf, describeVehicle, staffNameOf } from "./lead";
-import { CHANCE_LABEL, WORK_STATUS_LABEL, type LeadRow } from "./lead-types";
+import {
+  chanceNameOf,
+  channelNameOf,
+  describeVehicle,
+  isWonLead,
+  staffNameOf,
+  statusNameOf,
+} from "./lead";
+import type { LeadRow } from "./lead-types";
 import { formatPhone } from "./phone";
 
 /**
@@ -40,8 +47,8 @@ export function leadsToTable(title: string, rows: LeadRow[]): Table {
       formatPhone(r.phone),
       describeVehicle(r),
       channelNameOf(r),
-      WORK_STATUS_LABEL[r.work_status],
-      CHANCE_LABEL[r.chance],
+      statusNameOf(r),
+      chanceNameOf(r),
       r.next_follow_date ? formatThaiDate(r.next_follow_date) : "",
       r.follow_count,
       r.last_follow_date ? formatThaiDate(r.last_follow_date) : "",
@@ -51,7 +58,7 @@ export function leadsToTable(title: string, rows: LeadRow[]): Table {
     ]),
     summary: [
       `จำนวน Lead ทั้งหมด ${rows.length} ราย`,
-      `ปิดการขายได้ ${rows.filter((r) => r.work_status === "closed_won").length} ราย`,
+      `ปิดการขายได้ ${rows.filter(isWonLead).length} ราย`,
     ],
   };
 }

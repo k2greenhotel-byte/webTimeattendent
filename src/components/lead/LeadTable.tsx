@@ -43,7 +43,7 @@ export default function LeadTable({
                   </Link>
                   <p className="truncate text-sm text-slate-700">{row.customer_name}</p>
                 </div>
-                <WorkStatusBadge status={row.work_status} />
+                <WorkStatusBadge name={row.work_status_name} color={row.work_status_color} />
               </div>
 
               <p className="mt-1 text-xs text-slate-600">{describeVehicle(row)}</p>
@@ -84,7 +84,7 @@ export default function LeadTable({
               </dl>
 
               <div className="mt-2 flex flex-wrap items-center gap-1">
-                <ChanceBadge chance={row.chance} />
+                <ChanceBadge name={row.chance_name} color={row.chance_color} />
                 {overdue && <OverdueBadge days={daysBetween(row.next_follow_date ?? today, today)} />}
                 <Link
                   href={`/leads/follow/${row.id}`}
@@ -154,10 +154,10 @@ export default function LeadTable({
                   </td>
                   <td className="text-xs">{row.follow_count}</td>
                   <td>
-                    <ChanceBadge chance={row.chance} />
+                    <ChanceBadge name={row.chance_name} color={row.chance_color} />
                   </td>
                   <td>
-                    <WorkStatusBadge status={row.work_status} />
+                    <WorkStatusBadge name={row.work_status_name} color={row.work_status_color} />
                     {row.sale_contract_no && (
                       <div className="text-[11px] text-slate-400">
                         สัญญาขาย {row.sale_contract_no}

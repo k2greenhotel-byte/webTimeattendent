@@ -2,27 +2,32 @@
  * กฎธุรกิจของระบบข้อมูล Lead อยู่ในไฟล์นี้ที่เดียว (pure function ไม่แตะฐานข้อมูล)
  * หน้าเว็บ / server action / dashboard / ไฟล์ export เรียกใช้ชุดเดียวกันหมด
  * ตัวเลขบนจอกับในไฟล์ export จะได้ไม่มีทางเพี้ยนกัน
+ *
+ * สถานะงาน/สถานะโอกาส แก้ไขได้จากหน้าตั้งค่า จึงห้ามเทียบชื่อสถานะตรง ๆ ในโค้ด
+ * ให้ตัดสินใจจาก kind (open/won/lost) และลำดับ sort_order เท่านั้น
  */
 import { countByKey } from "./booking";
 import type { AccessLevel } from "./core-types";
 import { workDateOf } from "./datetime";
 import {
-  CHANCE_ORDER,
   HOT_LEAD_SILENT_DAYS,
-  WORK_STATUS_ORDER,
   type BoardColumnView,
   type Chance,
+  type ChanceOption,
   type FollowUpInput,
   type LeadInput,
   type LeadQuery,
   type LeadRow,
+  type StatusKind,
   type WorkStatus,
+  type WorkStatusOption,
 } from "./lead-types";
 
 export const NO_STAFF = "— ไม่ระบุพนักงาน —";
 export const NO_BRANCH = "— ไม่ระบุสาขา —";
 export const NO_MODEL = "— ไม่ระบุรุ่น —";
 export const NO_CHANNEL = "— ไม่ระบุช่องทาง —";
+export const NO_STATUS = "— ไม่ระบุสถานะ —";
 
 // ---------- สิทธิ์การมองเห็น (ข้อ 2) ----------
 
@@ -35,19 +40,69 @@ export function canSeeAllLeads(level: AccessLevel): boolean {
   return level !== "user";
 }
 
+// ---------- ตัวช่วยอ่านค่าจากตารางสถานะ ----------
+
+/** พฤติกรรมของรหัสสถานะหนึ่ง — ไม่รู้จักถือว่ายังต้องติดตาม (ปลอดภัยที่สุด ไม่ทำให้งานหาย) */
+export function kindOf(statuses: WorkStatusOption[], code: string | null | undefined): StatusKind {
+  return statuses.find((s) => s.code === code)?.kind ?? "open";
+}
+
+/** สถานะงานที่ใช้เลือกได้บนฟอร์ม (เฉพาะที่เปิดใช้งาน + สถานะเดิมของใบนั้นถ้าถูกปิดไปแล้ว) */
+export function selectableStatuses(
+  statuses: WorkStatusOption[],
+  current?: string | null,
+): WorkStatusOption[] {
+  return statuses.filter((s) => s.is_active || s.code === current);
+}
+
+export function selectableChances(
+  chances: ChanceOption[],
+  current?: string | null,
+): ChanceOption[] {
+  return chances.filter((c) => c.is_active || c.code === current);
+}
+
+/** สถานะตั้งต้นของใบใหม่ = สถานะ open ตัวแรก */
+export function defaultStatusCode(statuses: WorkStatusOption[]): string {
+  const open = statuses.filter((s) => s.is_active && s.kind === "open");
+  return (open[0] ?? statuses[0])?.code ?? "";
+}
+
+/** โอกาสตั้งต้นของใบใหม่ = ตัวกลาง ๆ ของรายการ (ไม่ใช่สูงสุดหรือต่ำสุด) */
+export function defaultChanceCode(chances: ChanceOption[]): string {
+  const active = chances.filter((c) => c.is_active);
+  if (active.length === 0) return chances[0]?.code ?? "";
+  return active[Math.floor((active.length - 1) / 2)].code;
+}
+
+/** โอกาสสูงสุด = ลำดับแรกสุดที่เปิดใช้งาน (ใช้หา "ลูกค้าที่พร้อมซื้อแต่ถูกทิ้งไว้") */
+export function hotChanceCode(chances: ChanceOption[]): string | null {
+  return chances.find((c) => c.is_active)?.code ?? null;
+}
+
 // ---------- ตรวจค่าก่อนบันทึก ----------
 
 const CLOSED_NEEDS_CONTRACT =
-  "ปิดการขายต้องกรอกเลขที่สัญญาขายและวันที่ขาย — ถ้ายังไม่ได้สัญญา ให้เลือกสถานะ “ติดตามอีกครั้ง” ไปก่อน";
+  "สถานะที่ถือว่าปิดการขายได้ ต้องกรอกเลขที่สัญญาขายและวันที่ขาย — ถ้ายังไม่ได้สัญญา ให้เลือกสถานะที่ยังต้องติดตามไปก่อน";
 
 /**
  * ตรวจใบ Lead ก่อนบันทึก — คืนข้อความไทยบอกวิธีแก้ ผ่านแล้วคืน null
  * (หน้าจอกับ server action ใช้ฟังก์ชันเดียวกัน ข้อความจะได้ไม่เพี้ยนกัน)
  */
-export function validateLead(input: Pick<
-  LeadInput,
-  "lead_date" | "customer_name" | "phone" | "work_status" | "sale_contract_no" | "sale_date" | "next_follow_date"
->): string | null {
+export function validateLead(
+  input: Pick<
+    LeadInput,
+    | "lead_date"
+    | "customer_name"
+    | "phone"
+    | "work_status"
+    | "chance"
+    | "sale_contract_no"
+    | "sale_date"
+    | "next_follow_date"
+  >,
+  statuses: WorkStatusOption[],
+): string | null {
   if (!input.lead_date) return "กรุณาเลือกวันที่";
   if (!input.customer_name.trim()) {
     return "กรุณาเลือกชื่อลูกค้าจากทะเบียนลูกค้า — ยังไม่มีให้กด “+ เพิ่มลูกค้าใหม่”";
@@ -55,7 +110,10 @@ export function validateLead(input: Pick<
   if (input.phone && !/^[0-9]{9,10}$/.test(input.phone)) {
     return "เบอร์โทรต้องเป็นตัวเลข 9-10 หลัก (เช่น 0812345678)";
   }
-  if (input.work_status === "closed_won") {
+  if (!input.work_status) return "กรุณาเลือกสถานะงาน";
+  if (!input.chance) return "กรุณาเลือกสถานะโอกาสการขาย";
+
+  if (kindOf(statuses, input.work_status) === "won") {
     if (!(input.sale_contract_no ?? "").trim() || !input.sale_date) return CLOSED_NEEDS_CONTRACT;
   }
   if (input.next_follow_date && input.next_follow_date < input.lead_date) {
@@ -65,13 +123,17 @@ export function validateLead(input: Pick<
 }
 
 /** ตรวจใบติดตามก่อนบันทึก (ข้อ 2.1-2.7) */
-export function validateFollowUp(input: Pick<
-  FollowUpInput,
-  "follow_date" | "detail" | "work_status" | "sale_contract_no" | "sale_date" | "next_follow_date"
->): string | null {
+export function validateFollowUp(
+  input: Pick<
+    FollowUpInput,
+    "follow_date" | "detail" | "work_status" | "sale_contract_no" | "sale_date" | "next_follow_date"
+  >,
+  statuses: WorkStatusOption[],
+): string | null {
   if (!input.follow_date) return "กรุณาเลือกวันที่ติดตาม";
   if (!(input.detail ?? "").trim()) return "กรุณากรอกรายละเอียดผลการติดตาม";
-  if (input.work_status === "closed_won") {
+
+  if (input.work_status && kindOf(statuses, input.work_status) === "won") {
     if (!(input.sale_contract_no ?? "").trim() || !input.sale_date) return CLOSED_NEEDS_CONTRACT;
   }
   if (input.next_follow_date && input.next_follow_date < input.follow_date) {
@@ -96,10 +158,13 @@ export type LeadStatePatch = {
  * ช่องที่ผู้ใช้ไม่ได้เลือก (null) แปลว่า "ไม่เปลี่ยน" — ไม่ใช่ "ล้างค่าเดิม"
  * ส่วนวันนัดติดตามต่อจะถูกเขียนทับเสมอ เพราะใบล่าสุดคือใบที่ถูกต้องที่สุด
  */
-export function applyFollowUp(follow: Pick<
-  FollowUpInput,
-  "work_status" | "chance" | "next_follow_date" | "sale_contract_no" | "sale_date"
->): LeadStatePatch {
+export function applyFollowUp(
+  follow: Pick<
+    FollowUpInput,
+    "work_status" | "chance" | "next_follow_date" | "sale_contract_no" | "sale_date"
+  >,
+  statuses: WorkStatusOption[],
+): LeadStatePatch {
   const patch: LeadStatePatch = { next_follow_date: follow.next_follow_date ?? null };
 
   if (follow.work_status) patch.work_status = follow.work_status;
@@ -108,8 +173,12 @@ export function applyFollowUp(follow: Pick<
   if ((follow.sale_contract_no ?? "").trim()) {
     patch.sale_contract_no = follow.sale_contract_no;
     patch.sale_date = follow.sale_date ?? null;
-    // trigger ฝั่งฐานข้อมูลก็บังคับให้อยู่แล้ว แต่ตั้งไว้ตรงนี้ด้วยเพื่อให้หน้าจอเห็นค่าเดียวกันทันที
-    patch.work_status = "closed_won";
+
+    // ยังไม่ได้เลือกสถานะปิดการขายมาเอง ก็เปลี่ยนให้ (trigger ฝั่งฐานข้อมูลก็บังคับซ้ำอีกชั้น)
+    if (kindOf(statuses, patch.work_status ?? follow.work_status) !== "won") {
+      const won = statuses.find((s) => s.is_active && s.kind === "won");
+      if (won) patch.work_status = won.code;
+    }
   }
 
   return patch;
@@ -117,30 +186,42 @@ export function applyFollowUp(follow: Pick<
 
 // ---------- สถานะที่ต้องรีบทำ ----------
 
+/** ใบนี้ยังอยู่ระหว่างติดตามอยู่ไหม (ดูจากพฤติกรรมของสถานะ ไม่ใช่ชื่อ) */
+export function isOpenLead(row: Pick<LeadRow, "work_status_kind">): boolean {
+  return (row.work_status_kind ?? "open") === "open";
+}
+
+/** ปิดการขายได้แล้ว */
+export function isWonLead(row: Pick<LeadRow, "work_status_kind">): boolean {
+  return row.work_status_kind === "won";
+}
+
 /** เลยวันนัดติดตามแล้วแต่ยังไม่ปิดงาน */
 export function isOverdue(
-  row: Pick<LeadRow, "work_status" | "next_follow_date">,
+  row: Pick<LeadRow, "work_status_kind" | "next_follow_date">,
   today = workDateOf(),
 ): boolean {
-  if (row.work_status !== "follow_up") return false;
+  if (!isOpenLead(row)) return false;
   return !!row.next_follow_date && row.next_follow_date < today;
 }
 
 /** ยังต้องตามต่อแต่ไม่ได้นัดวันไว้ — หลุดมือง่ายที่สุด */
-export function hasNoPlan(row: Pick<LeadRow, "work_status" | "next_follow_date">): boolean {
-  return row.work_status === "follow_up" && !row.next_follow_date;
+export function hasNoPlan(row: Pick<LeadRow, "work_status_kind" | "next_follow_date">): boolean {
+  return isOpenLead(row) && !row.next_follow_date;
 }
 
 /**
- * โอกาสสูงแต่เงียบมานาน (ไม่เคยติดตาม หรือติดตามครั้งสุดท้ายเกิน 7 วัน)
+ * โอกาสสูงสุดแต่เงียบมานาน (ไม่เคยติดตาม หรือติดตามครั้งสุดท้ายเกิน 7 วัน)
  * ผู้จัดการควรเห็นก่อนใคร เพราะเป็นลูกค้าที่พร้อมซื้อที่สุดแต่กำลังจะหลุด
  */
 export function isSilentHotLead(
-  row: Pick<LeadRow, "work_status" | "chance" | "last_follow_date" | "lead_date">,
+  row: Pick<LeadRow, "work_status_kind" | "chance" | "last_follow_date" | "lead_date">,
   today = workDateOf(),
+  hotCode: string | null = null,
   days = HOT_LEAD_SILENT_DAYS,
 ): boolean {
-  if (row.work_status !== "follow_up" || row.chance !== "high") return false;
+  if (!isOpenLead(row)) return false;
+  if (hotCode !== null && row.chance !== hotCode) return false;
   const since = row.last_follow_date ?? row.lead_date;
   return daysBetween(since, today) >= days;
 }
@@ -157,17 +238,28 @@ export function daysBetween(from: string, to: string): number {
 
 /**
  * จัดรายการ Lead เป็นกลุ่มตามสถานะงาน แล้วซอยย่อยตามสถานะโอกาส (ข้อ 2)
+ * ลำดับคอลัมน์/กลุ่มมาจากลำดับที่ตั้งไว้ในหน้าตั้งค่า
  * ภายในกลุ่มเรียงจาก "ต้องตามก่อน" ไปหลัง: เลยนัด → นัดใกล้สุด → ยังไม่ได้นัด
  */
-export function groupForBoard(rows: LeadRow[], today = workDateOf()): BoardColumnView[] {
-  return WORK_STATUS_ORDER.map((status) => {
-    const inStatus = rows.filter((r) => r.work_status === status);
+export function groupForBoard(
+  rows: LeadRow[],
+  statuses: WorkStatusOption[],
+  chances: ChanceOption[],
+  today = workDateOf(),
+): BoardColumnView[] {
+  const used = new Set(rows.map((r) => r.work_status));
+  const columns = statuses.filter((s) => s.is_active || used.has(s.code));
+  const usedChances = new Set(rows.map((r) => r.chance));
+  const chanceCols = chances.filter((c) => c.is_active || usedChances.has(c.code));
+
+  return columns.map((status) => {
+    const inStatus = rows.filter((r) => r.work_status === status.code);
     return {
       status,
       total: inStatus.length,
-      groups: CHANCE_ORDER.map((chance) => ({
+      groups: chanceCols.map((chance) => ({
         chance,
-        rows: inStatus.filter((r) => r.chance === chance).sort(byFollowPriority(today)),
+        rows: inStatus.filter((r) => r.chance === chance.code).sort(byFollowPriority(today)),
       })),
     };
   });
@@ -191,9 +283,13 @@ export function byFollowPriority(today = workDateOf()) {
 
 export type LeadOverview = {
   total: number;
-  byStatus: Record<WorkStatus, number>;
-  byChance: Record<Chance, number>;
-  /** ปิดการขายได้ */
+  /** นับตามรหัสสถานะงาน (คีย์ = code) */
+  byStatus: Record<string, number>;
+  /** นับตามรหัสสถานะโอกาส */
+  byChance: Record<string, number>;
+  /** ยังต้องติดตาม (kind = open) */
+  open: number;
+  /** ปิดการขายได้ (kind = won) */
   closed: number;
   /** อัตราการปิดการขาย เป็น % ทศนิยม 1 ตำแหน่ง */
   closeRate: number;
@@ -206,25 +302,22 @@ export type LeadOverview = {
   avgDaysToClose: number;
 };
 
-function emptyStatusCounts(): Record<WorkStatus, number> {
-  return { follow_up: 0, dropped: 0, bought_other: 0, closed_won: 0 };
-}
-
-function emptyChanceCounts(): Record<Chance, number> {
-  return { high: 0, medium: 0, low: 0 };
-}
-
 /** อัตราส่วนเป็น % ทศนิยม 1 ตำแหน่ง — หารศูนย์คืน 0 ไม่ใช่ NaN */
 export function rateOf(part: number, whole: number): number {
   if (whole <= 0) return 0;
   return Math.round((part / whole) * 1000) / 10;
 }
 
-export function buildOverview(rows: LeadRow[], today = workDateOf()): LeadOverview {
+export function buildOverview(
+  rows: LeadRow[],
+  today = workDateOf(),
+  hotCode: string | null = null,
+): LeadOverview {
   const overview: LeadOverview = {
     total: rows.length,
-    byStatus: emptyStatusCounts(),
-    byChance: emptyChanceCounts(),
+    byStatus: {},
+    byChance: {},
+    open: 0,
     closed: 0,
     closeRate: 0,
     overdue: 0,
@@ -239,11 +332,12 @@ export function buildOverview(rows: LeadRow[], today = workDateOf()): LeadOvervi
   let closeDayRows = 0;
 
   for (const row of rows) {
-    overview.byStatus[row.work_status] += 1;
-    overview.byChance[row.chance] += 1;
+    overview.byStatus[row.work_status] = (overview.byStatus[row.work_status] ?? 0) + 1;
+    overview.byChance[row.chance] = (overview.byChance[row.chance] ?? 0) + 1;
     follows += Number(row.follow_count ?? 0);
 
-    if (row.work_status === "closed_won") {
+    if (isOpenLead(row)) overview.open += 1;
+    if (isWonLead(row)) {
       overview.closed += 1;
       if (row.sale_date) {
         closeDays += Math.max(0, daysBetween(row.lead_date, row.sale_date));
@@ -252,7 +346,7 @@ export function buildOverview(rows: LeadRow[], today = workDateOf()): LeadOvervi
     }
     if (isOverdue(row, today)) overview.overdue += 1;
     if (hasNoPlan(row)) overview.noPlan += 1;
-    if (isSilentHotLead(row, today)) overview.silentHot += 1;
+    if (isSilentHotLead(row, today, hotCode)) overview.silentHot += 1;
   }
 
   overview.closeRate = rateOf(overview.closed, overview.total);
@@ -263,7 +357,7 @@ export function buildOverview(rows: LeadRow[], today = workDateOf()): LeadOvervi
   return overview;
 }
 
-// ---------- อันดับสูงสุด (ข้อ 1 ท้ายสเปก: 10 อันดับแรก) ----------
+// ---------- อันดับสูงสุด (10 อันดับแรก) ----------
 
 /** จำนวนอันดับที่แสดงบน dashboard — ผู้ใช้ขอ 10 อันดับแรก */
 export const TOP_N = 10;
@@ -308,13 +402,24 @@ export function channelNameOf(row: {
   return name || NO_CHANNEL;
 }
 
+/** ชื่อสถานะงานที่ใช้แสดง — สถานะถูกลบไปแล้วยังอ่านออกว่าเป็นรหัสอะไร */
+export function statusNameOf(row: Pick<LeadRow, "work_status" | "work_status_name">): string {
+  return (row.work_status_name ?? "").trim() || row.work_status || NO_STATUS;
+}
+
+export function chanceNameOf(row: Pick<LeadRow, "chance" | "chance_name">): string {
+  return (row.chance_name ?? "").trim() || row.chance || NO_STATUS;
+}
+
 // ---------- สรุปตามพนักงานขาย / สาขา / ช่องทาง ----------
 
 export type GroupSummary = {
   label: string;
   total: number;
-  byStatus: Record<WorkStatus, number>;
-  byChance: Record<Chance, number>;
+  /** นับตามรหัสสถานะงาน */
+  byStatus: Record<string, number>;
+  /** นับตามรหัสสถานะโอกาส */
+  byChance: Record<string, number>;
   closed: number;
   /** อัตราการปิดการขาย % */
   closeRate: number;
@@ -331,7 +436,10 @@ export function summarizeBy(
   pick: (row: LeadRow) => string,
   today = workDateOf(),
 ): GroupSummary[] {
-  const map = new Map<string, { summary: GroupSummary; follows: number; closeDays: number; closeDayRows: number }>();
+  const map = new Map<
+    string,
+    { summary: GroupSummary; follows: number; closeDays: number; closeDayRows: number }
+  >();
 
   for (const row of rows) {
     const label = pick(row);
@@ -341,8 +449,8 @@ export function summarizeBy(
         summary: {
           label,
           total: 0,
-          byStatus: emptyStatusCounts(),
-          byChance: emptyChanceCounts(),
+          byStatus: {},
+          byChance: {},
           closed: 0,
           closeRate: 0,
           overdue: 0,
@@ -358,11 +466,11 @@ export function summarizeBy(
 
     const s = entry.summary;
     s.total += 1;
-    s.byStatus[row.work_status] += 1;
-    s.byChance[row.chance] += 1;
+    s.byStatus[row.work_status] = (s.byStatus[row.work_status] ?? 0) + 1;
+    s.byChance[row.chance] = (s.byChance[row.chance] ?? 0) + 1;
     entry.follows += Number(row.follow_count ?? 0);
 
-    if (row.work_status === "closed_won") {
+    if (isWonLead(row)) {
       s.closed += 1;
       if (row.sale_date) {
         entry.closeDays += Math.max(0, daysBetween(row.lead_date, row.sale_date));
@@ -397,26 +505,68 @@ export function summarizeByChannel(rows: LeadRow[], today = workDateOf()): Group
   return summarizeBy(rows, channelNameOf, today);
 }
 
-/** เรียงตามอัตราการปิดการขาย (คนที่มี Lead น้อยกว่า 1 ใบไม่นับ) */
+/** เรียงตามอัตราการปิดการขาย */
 export function rankByCloseRate(summaries: GroupSummary[]): GroupSummary[] {
   return [...summaries].sort(
     (a, b) => b.closeRate - a.closeRate || b.closed - a.closed || b.total - a.total,
   );
 }
 
+// ---------- ตรวจค่าของหน้าตั้งค่าสถานะ (หน้าจอ 5) ----------
+
+/** รหัสสถานะ: อังกฤษพิมพ์เล็ก ตัวเลข ขีดล่าง — ใช้เป็นค่าที่เก็บในฐานข้อมูล จึงห้ามมีช่องว่าง/ภาษาไทย */
+export function normalizeStatusCode(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
+/** ตรวจค่าที่กรอกในหน้าตั้งค่าสถานะ — ผ่านคืน null */
+export function validateStatusInput(input: {
+  code: string;
+  name: string;
+  sort_order: number;
+}): string | null {
+  if (!input.code) return "กรุณากรอกรหัสสถานะ (ภาษาอังกฤษพิมพ์เล็ก เช่น wait_finance)";
+  if (input.code.length > 40) return "รหัสสถานะยาวเกินไป (ไม่เกิน 40 ตัวอักษร)";
+  if (!input.name.trim()) return "กรุณากรอกชื่อสถานะที่จะแสดงบนหน้าจอ";
+  if (input.name.length > 60) return "ชื่อสถานะยาวเกินไป (ไม่เกิน 60 ตัวอักษร)";
+  if (!Number.isFinite(input.sort_order) || input.sort_order < 0 || input.sort_order > 999) {
+    return "ลำดับการแสดงต้องเป็นตัวเลข 0-999";
+  }
+  return null;
+}
+
+/**
+ * ปิดใช้งาน/ลบสถานะนี้แล้วระบบยังทำงานได้ไหม
+ * ต้องเหลือสถานะที่ใช้ได้อย่างน้อยหนึ่งตัวของ kind นั้นเสมอ ไม่งั้นบันทึกงานต่อไม่ได้
+ */
+export function lastActiveOfKind(
+  statuses: WorkStatusOption[],
+  code: string,
+): boolean {
+  const target = statuses.find((s) => s.code === code);
+  if (!target || !target.is_active) return false;
+  return statuses.filter((s) => s.is_active && s.kind === target.kind).length <= 1;
+}
+
 // ---------- ตัวช่วยของหน้าจอสอบถาม ----------
 
 export type LeadSearchParams = Record<string, string | undefined>;
 
-function one<T extends string>(value: string | undefined, allowed: readonly T[]): T | null {
-  return value && (allowed as readonly string[]).includes(value) ? (value as T) : null;
-}
-
 /**
  * แปลงเงื่อนไขจาก query string เป็น LeadQuery
- * ค่าที่ไม่อยู่ในชุดตัวเลือก (พิมพ์มาเอง/ของเก่า) จะถูกตัดทิ้ง ไม่ส่งต่อไปให้ฐานข้อมูล
+ * รหัสสถานะที่ไม่มีอยู่จริงจะถูกตัดทิ้ง ไม่ส่งต่อไปให้ฐานข้อมูล
  */
-export function queryFromParams(params: LeadSearchParams): LeadQuery {
+export function queryFromParams(
+  params: LeadSearchParams,
+  known: { statuses?: WorkStatusOption[]; chances?: ChanceOption[] } = {},
+): LeadQuery {
+  const status = (params.status ?? "").trim();
+  const chance = (params.chance ?? "").trim();
+
   return {
     keyword: (params.q ?? "").trim() || undefined,
     owner_id: params.owner || null,
@@ -424,8 +574,10 @@ export function queryFromParams(params: LeadSearchParams): LeadQuery {
     brand_id: params.brand || null,
     model_id: params.model || null,
     channel_id: params.channel || null,
-    work_status: one(params.status, WORK_STATUS_ORDER),
-    chance: one(params.chance, CHANCE_ORDER),
+    work_status:
+      status && (!known.statuses || known.statuses.some((s) => s.code === status)) ? status : null,
+    chance:
+      chance && (!known.chances || known.chances.some((c) => c.code === chance)) ? chance : null,
     from: params.from || null,
     to: params.to || null,
     overdue_only: params.overdue === "1",

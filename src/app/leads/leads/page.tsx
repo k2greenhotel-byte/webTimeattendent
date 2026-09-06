@@ -3,7 +3,7 @@ import { leadOptions, leadScope, scopedQuery } from "@/app/leads/scope";
 import LeadFilters from "@/components/lead/LeadFilters";
 import LeadTable from "@/components/lead/LeadTable";
 import { workDateOf } from "@/lib/datetime";
-import { buildOverview, isOverdue, queryFromParams } from "@/lib/lead";
+import { buildOverview, hotChanceCode, isOverdue, queryFromParams } from "@/lib/lead";
 import { listLeads } from "@/lib/lead-db";
 import { checkPermission } from "@/lib/session";
 
@@ -19,15 +19,19 @@ export default async function LeadListPage({
   const scope = await leadScope("LEAD_ENTRY");
   const today = workDateOf();
 
-  const query = scopedQuery(queryFromParams(params), scope);
-  const [rowsAll, options, canWrite] = await Promise.all([
+  const options = await leadOptions();
+  const query = scopedQuery(
+    queryFromParams(params, { statuses: options.statuses, chances: options.chances }),
+    scope,
+  );
+
+  const [rowsAll, canWrite] = await Promise.all([
     listLeads(query),
-    leadOptions(),
     checkPermission("LEAD_ENTRY", "write"),
   ]);
 
   const rows = query.overdue_only ? rowsAll.filter((r) => isOverdue(r, today)) : rowsAll;
-  const overview = buildOverview(rows, today);
+  const overview = buildOverview(rows, today, hotChanceCode(options.chances));
 
   return (
     <main className="mx-auto max-w-[110rem] space-y-4 p-3 sm:p-4">
@@ -61,6 +65,8 @@ export default async function LeadListPage({
         brands={options.brands}
         models={options.models}
         channels={options.channels}
+        statuses={options.statuses}
+        chances={options.chances}
         showOwner={scope.canSeeAll}
       />
 
@@ -71,7 +77,7 @@ export default async function LeadListPage({
         </div>
         <div className="card">
           <p className="text-xs text-slate-500">ยังต้องติดตาม</p>
-          <p className="text-lg font-semibold text-sky-700">{overview.byStatus.follow_up}</p>
+          <p className="text-lg font-semibold text-sky-700">{overview.open}</p>
         </div>
         <div className="card">
           <p className="text-xs text-slate-500">ปิดการขายแล้ว</p>

@@ -1,12 +1,5 @@
 import type { GroupSummary } from "@/lib/lead";
-import {
-  CHANCE_DOT_CLASS,
-  WORK_STATUS_LABEL,
-  WORK_STATUS_ORDER,
-  type Chance,
-} from "@/lib/lead-types";
-
-const CHANCE_COLS: Chance[] = ["high", "medium", "low"];
+import { DOT_CLASS, colorOf, type ChanceOption, type WorkStatusOption } from "@/lib/lead-types";
 
 /** แถบอัตราการปิดการขาย — เห็นความต่างระหว่างคนได้เร็วกว่าอ่านตัวเลขอย่างเดียว */
 function RateBar({ rate }: { rate: number }) {
@@ -25,15 +18,20 @@ function RateBar({ rate }: { rate: number }) {
 
 /**
  * ตารางสรุปตามสาขา / พนักงานขาย / ช่องทาง (dashboard ข้อ 3.1-3.3)
+ * คอลัมน์สถานะงานและสีของโอกาส มาจากที่ตั้งค่าไว้ที่ /leads/setup
  * มือถือแสดงเป็นการ์ด · จอ md ขึ้นไปแสดงเป็นตารางเทียบกันทั้งทีม
  */
 export default function GroupSummaryTable({
   rows,
   labelHeader,
+  statuses,
+  chances,
   emptyText,
 }: {
   rows: GroupSummary[];
   labelHeader: string;
+  statuses: WorkStatusOption[];
+  chances: ChanceOption[];
   emptyText: string;
 }) {
   if (rows.length === 0) return <p className="text-sm text-slate-400">{emptyText}</p>;
@@ -59,19 +57,21 @@ export default function GroupSummaryTable({
             </div>
 
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-600">
-              {WORK_STATUS_ORDER.map((s) => (
-                <div key={s} className="flex justify-between gap-2">
-                  <dt className="truncate text-slate-400">{WORK_STATUS_LABEL[s]}</dt>
-                  <dd>{row.byStatus[s]}</dd>
+              {statuses.map((s) => (
+                <div key={s.code} className="flex justify-between gap-2">
+                  <dt className="truncate text-slate-400">{s.name}</dt>
+                  <dd>{row.byStatus[s.code] ?? 0}</dd>
                 </div>
               ))}
             </dl>
 
-            <p className="mt-2 flex items-center gap-3 text-xs text-slate-600">
-              {CHANCE_COLS.map((c) => (
-                <span key={c} className="flex items-center gap-1">
-                  <span className={`inline-block h-2 w-2 rounded-full ${CHANCE_DOT_CLASS[c]}`} />
-                  {row.byChance[c]}
+            <p className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+              {chances.map((c) => (
+                <span key={c.code} className="flex items-center gap-1">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${DOT_CLASS[colorOf(c.color)]}`}
+                  />
+                  {row.byChance[c.code] ?? 0}
                 </span>
               ))}
             </p>
@@ -86,10 +86,10 @@ export default function GroupSummaryTable({
             <tr>
               <th className="text-left">{labelHeader}</th>
               <th>Lead ทั้งหมด</th>
-              {WORK_STATUS_ORDER.map((s) => (
-                <th key={s}>{WORK_STATUS_LABEL[s]}</th>
+              {statuses.map((s) => (
+                <th key={s.code}>{s.name}</th>
               ))}
-              <th>โอกาส สูง/กลาง/น้อย</th>
+              <th>โอกาส {chances.map((c) => c.name).join("/")}</th>
               <th>เลยนัดติดตาม</th>
               <th>ติดตามเฉลี่ย</th>
               <th>วันเฉลี่ยถึงปิดการขาย</th>
@@ -101,13 +101,21 @@ export default function GroupSummaryTable({
               <tr key={row.label}>
                 <td className="text-left font-medium">{row.label}</td>
                 <td>{row.total}</td>
-                {WORK_STATUS_ORDER.map((s) => (
-                  <td key={s}>{row.byStatus[s]}</td>
+                {statuses.map((s) => (
+                  <td key={s.code}>{row.byStatus[s.code] ?? 0}</td>
                 ))}
-                <td className="text-xs">
-                  <span className="text-emerald-600">{row.byChance.high}</span> /{" "}
-                  <span className="text-amber-600">{row.byChance.medium}</span> /{" "}
-                  <span className="text-rose-600">{row.byChance.low}</span>
+                <td className="whitespace-nowrap text-xs">
+                  {chances.map((c, index) => (
+                    <span key={c.code}>
+                      {index > 0 && " / "}
+                      <span className="inline-flex items-center gap-1">
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${DOT_CLASS[colorOf(c.color)]}`}
+                        />
+                        {row.byChance[c.code] ?? 0}
+                      </span>
+                    </span>
+                  ))}
                 </td>
                 <td className={row.overdue > 0 ? "font-medium text-rose-600" : undefined}>
                   {row.overdue}

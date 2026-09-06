@@ -1,11 +1,5 @@
 import Link from "next/link";
-import {
-  CHANCE_LABEL,
-  CHANCE_ORDER,
-  WORK_STATUS_LABEL,
-  WORK_STATUS_ORDER,
-  type LeadOption,
-} from "@/lib/lead-types";
+import type { ChanceOption, LeadOption, WorkStatusOption } from "@/lib/lead-types";
 import type { MotoOption } from "@/lib/moto-types";
 import type { Branch } from "@/lib/types";
 
@@ -23,6 +17,8 @@ export default function LeadFilters({
   brands,
   models,
   channels,
+  statuses,
+  chances,
   showOwner = true,
   extra,
 }: {
@@ -33,6 +29,8 @@ export default function LeadFilters({
   brands: MotoOption[];
   models: MotoOption[];
   channels: MotoOption[];
+  statuses: WorkStatusOption[];
+  chances: ChanceOption[];
   /** พนักงานทั่วไปเห็นเฉพาะของตัวเอง จึงไม่ต้องมีช่องเลือกพนักงาน */
   showOwner?: boolean;
   extra?: React.ReactNode;
@@ -102,9 +100,9 @@ export default function LeadFilters({
         </label>
         <select id="status" name="status" defaultValue={params.status ?? ""} className="input">
           <option value="">ทุกสถานะ</option>
-          {WORK_STATUS_ORDER.map((s) => (
-            <option key={s} value={s}>
-              {WORK_STATUS_LABEL[s]}
+          {statuses.map((s) => (
+            <option key={s.code} value={s.code}>
+              {s.name}
             </option>
           ))}
         </select>
@@ -116,9 +114,9 @@ export default function LeadFilters({
         </label>
         <select id="chance" name="chance" defaultValue={params.chance ?? ""} className="input">
           <option value="">ทุกระดับ</option>
-          {CHANCE_ORDER.map((c) => (
-            <option key={c} value={c}>
-              {CHANCE_LABEL[c]}
+          {chances.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.name}
             </option>
           ))}
         </select>

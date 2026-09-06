@@ -5,6 +5,7 @@ import { leadOptions, leadScope } from "@/app/leads/scope";
 import FollowUpList from "@/components/lead/FollowUpList";
 import LeadForm from "@/components/lead/LeadForm";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
+import { selectableChances, selectableStatuses } from "@/lib/lead";
 import { getLead, getLeadCustomer, listFollowUps } from "@/lib/lead-db";
 import { checkPermission } from "@/lib/session";
 
@@ -70,6 +71,8 @@ export default async function LeadDetailPage({
           brands={options.brands}
           models={options.models}
           channels={options.channels}
+          statuses={selectableStatuses(options.statuses, lead.work_status)}
+          chances={selectableChances(options.chances, lead.chance)}
           ownerName={lead.owner_name ?? lead.owner_full_name ?? "—"}
           today={workDateOf()}
           action={updateLeadForm}

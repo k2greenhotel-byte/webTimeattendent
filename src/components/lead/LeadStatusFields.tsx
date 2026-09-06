@@ -1,25 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import {
-  CHANCE_CLASS,
-  CHANCE_LABEL,
-  CHANCE_ORDER,
-  WORK_STATUS_LABEL,
-  WORK_STATUS_ORDER,
-  type Chance,
-  type WorkStatus,
-} from "@/lib/lead-types";
+import { useMemo, useState } from "react";
+import { BADGE_CLASS, colorOf, type ChanceOption, type WorkStatusOption } from "@/lib/lead-types";
 
 /**
  * ช่องสถานะของใบ Lead / ใบติดตาม (ข้อ 1.10-1.11 และ 2.5-2.7)
  *
- * เลือก "ปิดการขายแล้ว" จะมีช่องเลขที่สัญญาขายและวันที่ขายโผล่ขึ้นมาให้กรอก (บังคับ)
+ * ตัวเลือกทั้งหมดมาจากตารางสถานะที่ตั้งค่าได้เอง — เพิ่มสถานะใหม่ที่ /leads/setup แล้วโผล่ที่นี่ทันที
+ * เลือกสถานะที่ "ปิดการขายได้" (kind = won) จะมีช่องเลขที่สัญญาขาย/วันที่ขายขึ้นมาให้กรอก (บังคับ)
  * เลือกสถานะที่จบแล้ว วันนัดติดตามต่อจะถูกซ่อน เพราะไม่ต้องตามอีก
  *
  * ใช้ในใบติดตามด้วย โดยส่ง allowKeep=true เพื่อให้มีตัวเลือก "ไม่เปลี่ยน"
  */
 export default function LeadStatusFields({
+  statuses,
+  chances,
   defaultWorkStatus,
   defaultChance,
   defaultNextFollowDate,
@@ -28,8 +23,10 @@ export default function LeadStatusFields({
   allowKeep = false,
   minDate,
 }: {
-  defaultWorkStatus?: WorkStatus | "";
-  defaultChance?: Chance | "";
+  statuses: WorkStatusOption[];
+  chances: ChanceOption[];
+  defaultWorkStatus?: string;
+  defaultChance?: string;
   defaultNextFollowDate?: string | null;
   defaultSaleContractNo?: string | null;
   defaultSaleDate?: string | null;
@@ -38,11 +35,18 @@ export default function LeadStatusFields({
   /** วันแรกที่เลือกเป็นวันนัดติดตามได้ (วันที่ของเอกสาร) */
   minDate?: string;
 }) {
-  const [status, setStatus] = useState<WorkStatus | "">(defaultWorkStatus ?? (allowKeep ? "" : "follow_up"));
-  const [chance, setChance] = useState<Chance | "">(defaultChance ?? (allowKeep ? "" : "medium"));
+  const [status, setStatus] = useState(defaultWorkStatus ?? "");
+  const [chance, setChance] = useState(defaultChance ?? "");
 
-  const closing = status === "closed_won";
-  const stillFollowing = status === "follow_up" || (allowKeep && status === "");
+  const picked = useMemo(() => statuses.find((s) => s.code === status) ?? null, [status, statuses]);
+  const pickedChance = useMemo(
+    () => chances.find((c) => c.code === chance) ?? null,
+    [chance, chances],
+  );
+
+  const closing = picked?.kind === "won";
+  // ไม่เลือก (ใบติดตาม) = คงสถานะเดิม ซึ่งอาจยังต้องตามต่อ จึงยังให้ตั้งวันนัดได้
+  const stillFollowing = picked ? picked.kind === "open" : allowKeep;
 
   return (
     <div className="space-y-3">
@@ -55,16 +59,23 @@ export default function LeadStatusFields({
             id="work_status"
             name="work_status"
             value={status}
-            onChange={(e) => setStatus(e.target.value as WorkStatus | "")}
+            onChange={(e) => setStatus(e.target.value)}
             className="input"
           >
             {allowKeep && <option value="">— ไม่เปลี่ยนสถานะงาน —</option>}
-            {WORK_STATUS_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {WORK_STATUS_LABEL[s]}
+            {!allowKeep && !status && <option value="">— เลือกสถานะงาน —</option>}
+            {statuses.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+                {s.is_active ? "" : " (ปิดใช้งานแล้ว)"}
               </option>
             ))}
           </select>
+          {picked && (
+            <p className="mt-1">
+              <span className={`badge ${BADGE_CLASS[colorOf(picked.color)]}`}>{picked.name}</span>
+            </p>
+          )}
         </div>
 
         <div>
@@ -75,20 +86,22 @@ export default function LeadStatusFields({
             id="chance"
             name="chance"
             value={chance}
-            onChange={(e) => setChance(e.target.value as Chance | "")}
+            onChange={(e) => setChance(e.target.value)}
             className="input"
           >
             {allowKeep && <option value="">— ไม่เปลี่ยนโอกาส —</option>}
-            {CHANCE_ORDER.map((c) => (
-              <option key={c} value={c}>
-                {CHANCE_LABEL[c]}
+            {!allowKeep && !chance && <option value="">— เลือกโอกาส —</option>}
+            {chances.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
+                {c.is_active ? "" : " (ปิดใช้งานแล้ว)"}
               </option>
             ))}
           </select>
-          {chance && (
+          {pickedChance && (
             <p className="mt-1">
-              <span className={`badge ${CHANCE_CLASS[chance]}`}>
-                โอกาส{CHANCE_LABEL[chance]}
+              <span className={`badge ${BADGE_CLASS[colorOf(pickedChance.color)]}`}>
+                โอกาส{pickedChance.name}
               </span>
             </p>
           )}
@@ -143,7 +156,8 @@ export default function LeadStatusFields({
             />
           </div>
           <p className="text-xs text-emerald-700 sm:col-span-2">
-            ปิดการขายต้องมีเลขที่สัญญาขายและวันที่ขาย — บันทึกแล้วใบนี้จะออกจากรายการที่ต้องติดตาม
+            สถานะ “{picked?.name}” ถือว่าปิดการขายได้ จึงต้องมีเลขที่สัญญาขายและวันที่ขาย —
+            บันทึกแล้วใบนี้จะออกจากรายการที่ต้องติดตาม
           </p>
         </div>
       )}

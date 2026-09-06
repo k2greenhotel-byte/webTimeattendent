@@ -3,7 +3,7 @@ import LeadStatusFields from "@/components/lead/LeadStatusFields";
 import { ChanceBadge, WorkStatusBadge } from "@/components/lead/StatusBadges";
 import { formatThaiDate } from "@/lib/datetime";
 import { channelNameOf, describeVehicle, staffNameOf } from "@/lib/lead";
-import type { LeadRow } from "@/lib/lead-types";
+import type { ChanceOption, LeadRow, WorkStatusOption } from "@/lib/lead-types";
 import { formatPhone } from "@/lib/phone";
 
 /**
@@ -12,10 +12,14 @@ import { formatPhone } from "@/lib/phone";
  */
 export default function FollowUpForm({
   lead,
+  statuses,
+  chances,
   today,
   action,
 }: {
   lead: LeadRow;
+  statuses: WorkStatusOption[];
+  chances: ChanceOption[];
   today: string;
   action: (formData: FormData) => Promise<void>;
 }) {
@@ -32,8 +36,8 @@ export default function FollowUpForm({
             </p>
           </div>
           <div className="flex flex-wrap gap-1">
-            <ChanceBadge chance={lead.chance} />
-            <WorkStatusBadge status={lead.work_status} />
+            <ChanceBadge name={lead.chance_name} color={lead.chance_color} />
+            <WorkStatusBadge name={lead.work_status_name} color={lead.work_status_color} />
           </div>
         </div>
 
@@ -129,6 +133,8 @@ export default function FollowUpForm({
         <h2 className="font-semibold text-slate-800">เปลี่ยนสถานะ (ไม่เลือก = คงเดิม)</h2>
         <LeadStatusFields
           allowKeep
+          statuses={statuses}
+          chances={chances}
           defaultWorkStatus=""
           defaultChance=""
           defaultSaleContractNo={lead.sale_contract_no}

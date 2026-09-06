@@ -4,7 +4,7 @@ import { leadScope } from "@/app/leads/scope";
 import FollowUpForm from "@/components/lead/FollowUpForm";
 import FollowUpList from "@/components/lead/FollowUpList";
 import { workDateOf } from "@/lib/datetime";
-import { getLead, listFollowUps } from "@/lib/lead-db";
+import { getLead, listChances, listFollowUps, listWorkStatuses } from "@/lib/lead-db";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,11 @@ export default async function FollowUpPage({
     redirect(`/leads/follow?err=${encodeURIComponent("บันทึกได้เฉพาะ Lead ของตัวเองเท่านั้น")}`);
   }
 
-  const follows = await listFollowUps({ lead_id: id });
+  const [follows, statuses, chances] = await Promise.all([
+    listFollowUps({ lead_id: id }),
+    listWorkStatuses(),
+    listChances(),
+  ]);
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-3 sm:p-4">
@@ -46,7 +50,13 @@ export default async function FollowUpPage({
         <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{query.err}</p>
       )}
 
-      <FollowUpForm lead={lead} today={workDateOf()} action={createFollowUpForm} />
+      <FollowUpForm
+        lead={lead}
+        statuses={statuses}
+        chances={chances}
+        today={workDateOf()}
+        action={createFollowUpForm}
+      />
 
       <section className="card space-y-3">
         <h2 className="font-semibold text-slate-800">
