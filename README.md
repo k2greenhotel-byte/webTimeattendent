@@ -933,3 +933,13 @@ const map = await listApprovalsFor("bk_bookings", ids);             // ทั้
 - หน้าทั้งสองเรียกผ่าน proxy `src/app/api/db2/[...path]/route.ts` (GET เท่านั้น · path ที่อนุญาต: `wall` `stock/pivot` `dashboard` `stock`) ซึ่งตรวจ session + สิทธิ์รายเมนูก่อนส่งต่อไป Db2 ด้วย API key — ฝั่ง browser ไม่เห็น key
 - ชื่อพนักงานขาย: ระบบขายเก็บแค่รหัส (`SALCOD` = USERID ของโปรแกรมเดิม) และตารางชื่อมีไม่ครบ → มีชื่อจะแสดงชื่อ ไม่มีแสดงรหัส
 - ต้นทุนใน cross tab = `INVTRAN.NETCOST` (ก่อน VAT) · มิติประเภทรถมาจาก `SETGROUP` (101 รถจักรยานยนต์ · 102-104 มือสอง · 105 รถบรรทุก)
+
+### Deploy จาก worktree สะอาด (เมื่อ working tree หลักมีงานค้าง)
+
+```bash
+git worktree add --detach "D:/claude code/wta-deploy" main   # ครั้งแรก · ครั้งต่อไป: git -C "D:/claude code/wta-deploy" checkout --detach main
+cp .env.local "D:/claude code/wta-deploy/.env.local"
+cd "D:/claude code/wta-deploy" && npm.cmd ci && npm.cmd run cf:build && npm.cmd run cf:deploy
+```
+
+ห้ามใช้ junction/symlink ชี้ `node_modules` ไปโฟลเดอร์หลัก — OpenNext จะสร้าง symlink ของตัวเองไม่ได้ (`EPERM`) ต้อง `npm ci` จริงใน worktree · `token.txt` อ่านจากโฟลเดอร์แม่ (`D:\claude code\token.txt`) ได้อยู่แล้ว
