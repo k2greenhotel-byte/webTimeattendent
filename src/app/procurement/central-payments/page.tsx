@@ -7,5 +7,5 @@ export default async function Page({
 }: {
   searchParams: Promise<{ q?: string; from?: string; to?: string; msg?: string; err?: string }>;
 }) {
-  return <PaymentListView source="petty" params={await searchParams} />;
+  return <PaymentListView source="central" params={await searchParams} />;
 }

@@ -5,7 +5,7 @@ import { workDateOf } from "@/lib/datetime";
 import { listCompanies } from "@/lib/core-db";
 import { listBranches } from "@/lib/db";
 import { listPurchases } from "@/lib/procurement-db";
-import { checkPermission } from "@/lib/session";
+import { checkPermission, requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,8 @@ export default async function PurchaseListPage({
 }: {
   searchParams: Promise<PrParams>;
 }) {
+  // ต้องมีสิทธิ์อ่านเมนูนี้ ไม่ใช่แค่มีสิทธิ์เข้าโปรแกรม PR
+  await requirePermission("PR_PURCHASE", "read");
   const params = await searchParams;
   const query = queryFromParams(params);
 
@@ -83,6 +85,7 @@ export default async function PurchaseListPage({
             reject_note: r.reject_note,
             approval_no: r.approval_no,
             approved_date: r.approved_date,
+            approved_by: r.approved_by,
             job_status: null,
             expected_done_date: null,
             done_date: r.received_date,

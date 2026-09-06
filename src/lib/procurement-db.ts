@@ -9,6 +9,7 @@ import type {
   PaymentInput,
   PaymentItem,
   PaymentQuery,
+  PaySource,
   PaymentRow,
   PrAccountInput,
   PrAccountRow,
@@ -26,6 +27,7 @@ import type {
   RepairUpdateInput,
   RepairUpdateRow,
 } from "./procurement-types";
+import { PAY_SOURCES } from "./procurement-types";
 import { getSupabase, MEMO_BUCKET } from "./supabase-server";
 
 /**
@@ -37,7 +39,6 @@ const REPAIR_PREFIX = "RQ";
 const UPDATE_PREFIX = "RU";
 const PURCHASE_PREFIX = "PO";
 const APPROVAL_PREFIX = "AP";
-const PAYMENT_PREFIX = "PV";
 
 /** ปี พ.ศ. ของเอกสาร — ใช้ตัดชุดเลขที่รันนิ่ง */
 function beYearOf(date: string): number {
@@ -649,6 +650,7 @@ function toPaymentRow(raw: Record<string, unknown>): PaymentRow {
 export async function listPayments(query: PaymentQuery = {}): Promise<PaymentRow[]> {
   let q = getSupabase().from("v_pr_payments").select("*");
 
+  if (query.pay_source) q = q.eq("pay_source", query.pay_source);
   if (query.company_id) q = q.eq("company_id", query.company_id);
   if (query.branch_id) q = q.eq("branch_id", query.branch_id);
   if (query.account_id) q = q.eq("account_id", query.account_id);
@@ -667,7 +669,7 @@ export async function listPayments(query: PaymentQuery = {}): Promise<PaymentRow
   if (!keyword) return rows;
 
   return rows.filter((r) =>
-    [r.doc_no, r.ref_no, r.payee_name, r.account_name, r.note, r.branch_name, r.company_name, r.created_by_name]
+    [r.doc_no, r.ref_no, r.payee_name, r.expense_detail, r.payer_name, r.account_name, r.note, r.branch_name, r.company_name, r.created_by_name]
       .join(" ")
       .toLowerCase()
       .includes(keyword),
@@ -812,13 +814,14 @@ export async function createPayment(
 ): Promise<PaymentRow> {
   const supabase = getSupabase();
 
+  const spec = PAY_SOURCES[input.pay_source];
   const scope = await paymentScope(input.company_id, input.branch_id);
   const { data: docNoData, error: docError } = await supabase.rpc("pr_next_scoped_doc_no", {
-    doc_prefix: PAYMENT_PREFIX,
+    doc_prefix: spec.prefix,
     scope,
     be_year: beYearOf(input.pay_date),
   });
-  if (docError) throw new Error(`ออกเลขที่ใบเบิกเงินสดย่อยไม่สำเร็จ: ${docError.message}`);
+  if (docError) throw new Error(`ออกเลขที่${spec.docLabel}ไม่สำเร็จ: ${docError.message}`);
   const doc_no = docNoData as string;
 
   const { data, error } = await supabase

@@ -13,9 +13,11 @@ import {
   DOC_KIND_LABEL,
   MAX_PAYMENT_DOCS,
   MAX_PHOTOS,
+  PAY_SOURCES,
   PR_FILE_ACCEPT,
   type PaymentRow,
   type PrAccountRow,
+  type PaySource,
   type PrDocRow,
 } from "@/lib/procurement-types";
 import type { Branch } from "@/lib/types";
@@ -34,6 +36,7 @@ export type PickedItem = { docId: string; amount: number };
  * และรายการที่เลือกได้จำกัดตามสิทธิ์บริษัท/สาขาของผู้ใช้ (ส่งมาจากฝั่ง server แล้ว)
  */
 export default function PaymentForm({
+  source,
   payment,
   docs,
   accounts,
@@ -48,6 +51,8 @@ export default function PaymentForm({
   action,
   submitLabel,
 }: {
+  /** แหล่งเงินที่จ่าย — ตัดสินชุดเลขที่เอกสารและสิทธิ์ที่ฝั่ง server */
+  source: PaySource;
   payment?: PaymentRow | null;
   /** ใบขอซ่อม/ใบขอซื้อที่ยังเบิกได้ (รวมใบที่ใบนี้เลือกไว้อยู่แล้วตอนแก้ไข) */
   docs: PrDocRow[];
@@ -73,10 +78,10 @@ export default function PaymentForm({
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(docs.map((d) => [d.id, String(pickedMap.get(d.id) ?? remainingToPay(d))])),
   );
-  const [paidAmount, setPaidAmount] = useState(
-    payment ? String(payment.paid_amount) : "",
-  );
+  const [paidAmount, setPaidAmount] = useState(payment ? String(payment.paid_amount) : "");
   const [refNo, setRefNo] = useState(payment?.ref_no ?? "");
+  const [expenseDetail, setExpenseDetail] = useState(payment?.expense_detail ?? "");
+  const [approverName, setApproverName] = useState(payment?.approver_name ?? "");
 
   const pickedDocs = docs.filter((d) => selected[d.id]);
   const itemTotal = round2(
@@ -94,18 +99,23 @@ export default function PaymentForm({
     const chosen = docs.filter((d) => next[d.id]);
     setPaidAmount(String(round2(chosen.reduce((s, d) => s + (Number(amounts[d.id]) || 0), 0))));
 
-    const approvals = chosen.map((d) => d.approval_no).filter(Boolean);
-    setRefNo(approvals.join(", "));
+    // ดึงข้อมูลจากใบที่เลือกมาเติมให้ — เลขที่อนุมัติ ชื่อผู้อนุมัติ และรายการค่าใช้จ่าย
+    // (ยังพิมพ์แก้เองได้ทุกช่อง ระบบแค่ช่วยไม่ให้ต้องคีย์ซ้ำ)
+    const uniq = (values: (string | null)[]) => [...new Set(values.filter(Boolean))].join(", ");
+    setRefNo(uniq(chosen.map((d) => d.approval_no)));
+    setApproverName(uniq(chosen.map((d) => d.approved_by)));
+    setExpenseDetail(uniq(chosen.map((d) => d.item_name)));
   };
 
   return (
     <form action={action} className="card space-y-5">
+      <input type="hidden" name="pay_source" value={source} />
       {payment && <input type="hidden" name="id" value={payment.id} />}
 
       {/* ---------- หัวเอกสาร ---------- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <label className="label">เลขที่ใบเบิกเงินสดย่อย</label>
+          <label className="label">เลขที่เอกสาร</label>
           <input
             value={payment?.doc_no ?? ""}
             readOnly
@@ -169,7 +179,7 @@ export default function PaymentForm({
       </div>
 
       <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
-        เลขที่ใบเบิกรันแยกตามบริษัทและสาขา (เช่น PV-HQ-BKK-2569-0001) ·
+        เลขที่{PAY_SOURCES[source].docLabel}รันแยกตามบริษัทและสาขา (เช่น {PAY_SOURCES[source].prefix}-HQ-BKK-2569-0001) ·
         รายชื่อบริษัทและสาขาที่เลือกได้เป็นไปตามสิทธิ์ของบัญชีที่ล็อกอินอยู่
       </p>
 
@@ -222,6 +232,12 @@ export default function PaymentForm({
                         {doc.branch_name ? ` · ${doc.branch_name}` : ""} · อนุมัติ{" "}
                         {formatBaht(doc.approved_amount)} · เบิกได้อีก {formatBaht(remaining)}
                       </span>
+                      {doc.approved_by && (
+                        <span className="block text-xs text-slate-500">
+                          ผู้อนุมัติ {doc.approved_by}
+                          {doc.approved_date ? ` · ${formatThaiDate(doc.approved_date)}` : ""}
+                        </span>
+                      )}
                     </span>
                   </label>
 
@@ -283,6 +299,21 @@ export default function PaymentForm({
             placeholder="เว้นว่างได้ถ้าไม่ผ่านอนุมัติ"
           />
         </div>
+        <div className="sm:col-span-2 lg:col-span-3">
+          <label className="label" htmlFor="expense_detail">
+            รายการค่าใช้จ่าย *
+          </label>
+          <input
+            id="expense_detail"
+            name="expense_detail"
+            value={expenseDetail}
+            onChange={(e) => setExpenseDetail(e.target.value)}
+            className="input"
+            placeholder="จ่ายค่าอะไร เช่น ค่าซ่อมแอร์ห้องประชุม / ค่าน้ำมันรถส่งของ"
+            required
+          />
+        </div>
+
         <div className="sm:col-span-2">
           <label className="label" htmlFor="payee_name">
             ชื่อผู้ขายหรือผู้รับเงิน *
@@ -402,18 +433,36 @@ export default function PaymentForm({
           />
         </div>
         <div>
+          <label className="label" htmlFor="payer_name">
+            ชื่อผู้ทำจ่าย
+          </label>
+          <input
+            id="payer_name"
+            name="payer_name"
+            defaultValue={payment?.payer_name ?? defaultRecorderName ?? ""}
+            className="input"
+            placeholder="คนที่จ่ายเงินสดย่อยออกไป"
+          />
+        </div>
+        <div>
           <label className="label" htmlFor="approver_name">
             ชื่อผู้อนุมัติ
           </label>
           <input
             id="approver_name"
             name="approver_name"
-            defaultValue={payment?.approver_name ?? ""}
+            value={approverName}
+            onChange={(e) => setApproverName(e.target.value)}
             className="input"
-            placeholder="ชื่อผู้อนุมัติจ่าย"
+            placeholder="ดึงมาจากใบอนุมัติที่อ้างถึง"
           />
+          <p className="mt-1 text-xs text-slate-400">
+            ผู้อนุมัติเซ็นไว้ที่ใบอนุมัติแล้ว ใบเบิกจึงเก็บแค่ชื่อ
+          </p>
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-200 p-3">
           <SignaturePad
             name="payee_signature"
@@ -424,9 +473,9 @@ export default function PaymentForm({
         </div>
         <div className="rounded-xl border border-slate-200 p-3">
           <SignaturePad
-            name="approver_signature"
-            label="ลายเซ็นผู้อนุมัติจ่าย"
-            initialPath={payment?.approver_signature ?? null}
+            name="payer_signature"
+            label="ลายเซ็นผู้ทำจ่าย"
+            initialPath={payment?.payer_signature ?? null}
           />
         </div>
       </div>

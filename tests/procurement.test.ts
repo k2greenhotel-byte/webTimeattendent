@@ -56,6 +56,7 @@ function repair(over: Partial<RepairInput> = {}): RepairInput {
     reject_note: null,
     approval_no: null,
     approved_date: null,
+    approved_by: null,
     tech_visit_date: null,
     expected_done_date: null,
     fixed_date: null,
@@ -87,6 +88,7 @@ function purchase(over: Partial<PurchaseInput> = {}): PurchaseInput {
     reject_note: null,
     approval_no: null,
     approved_date: null,
+    approved_by: null,
     received_date: null,
     note: null,
     ...over,
@@ -130,6 +132,7 @@ function doc(over: Partial<PrDocRow> = {}): PrDocRow {
     reject_note: null,
     approval_no: null,
     approved_date: null,
+    approved_by: null,
     job_status: "wait_tech",
     expected_done_date: null,
     done_date: null,
@@ -382,6 +385,7 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
     pay_date: "2026-09-10",
     paid_amount: 3000,
     payee_name: "ร้านแอร์ดี",
+    expense_detail: "ค่าซ่อมแอร์ห้องประชุม",
     company_id: "co1",
     branch_id: "br1",
   };
@@ -406,6 +410,12 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
 
   it("ต้องกรอกชื่อผู้รับเงิน", () => {
     expect(validatePayment({ ...base, payee_name: "  " }, [], new Map())).toContain("ผู้รับเงิน");
+  });
+
+  it("ต้องกรอกรายการค่าใช้จ่าย", () => {
+    expect(validatePayment({ ...base, expense_detail: " " }, [], new Map())).toContain(
+      "รายการค่าใช้จ่าย",
+    );
   });
 
   it("จำนวนเงินต้องมากกว่า 0", () => {

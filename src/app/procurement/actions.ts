@@ -80,6 +80,7 @@ function readRepair(
       | "reject_note"
       | "approval_no"
       | "approved_date"
+      | "approved_by"
     >;
   },
 ): RepairInput {
@@ -110,6 +111,7 @@ function readRepair(
     // เลขที่/วันที่อนุมัติเขียนได้จากหน้าจออนุมัติเท่านั้น ฟอร์มนี้แค่คงค่าเดิมไว้
     approval_no: keep?.approval_no ?? null,
     approved_date: keep?.approved_date ?? null,
+    approved_by: keep?.approved_by ?? null,
     tech_visit_date: optText(form, "tech_visit_date"),
     expected_done_date: optText(form, "expected_done_date"),
     fixed_date: optText(form, "fixed_date"),
@@ -314,6 +316,7 @@ function readPurchase(
       | "reject_note"
       | "approval_no"
       | "approved_date"
+      | "approved_by"
     >;
   },
 ): PurchaseInput {
@@ -342,6 +345,7 @@ function readPurchase(
     // เลขที่/วันที่อนุมัติเขียนได้จากหน้าจออนุมัติเท่านั้น ฟอร์มนี้แค่คงค่าเดิมไว้
     approval_no: keep?.approval_no ?? null,
     approved_date: keep?.approved_date ?? null,
+    approved_by: keep?.approved_by ?? null,
     received_date: optText(form, "received_date"),
     note: optText(form, "note"),
   };

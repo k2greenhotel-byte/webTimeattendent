@@ -1,7 +1,7 @@
 import Link from "next/link";
 import RepairUpdateList from "@/components/procurement/RepairUpdateList";
 import { listRepairUpdates } from "@/lib/procurement-db";
-import { checkPermission } from "@/lib/session";
+import { checkPermission, requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +11,8 @@ export default async function RepairUpdateListPage({
 }: {
   searchParams: Promise<{ q?: string; from?: string; to?: string; msg?: string; err?: string }>;
 }) {
+  // ต้องมีสิทธิ์อ่านเมนูนี้ ไม่ใช่แค่มีสิทธิ์เข้าโปรแกรม PR
+  await requirePermission("PR_REPAIR_UPD", "read");
   const params = await searchParams;
 
   const [rows, canWrite] = await Promise.all([

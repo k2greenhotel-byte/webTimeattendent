@@ -327,6 +327,7 @@ export function validatePayment(
     pay_date: string;
     paid_amount: number;
     payee_name?: string | null;
+    expense_detail?: string | null;
     company_id?: string | null;
     branch_id?: string | null;
   },
@@ -337,6 +338,7 @@ export function validatePayment(
   if (!input.company_id) return "กรุณาเลือกบริษัทที่ทำจ่าย (เลขที่ใบเบิกรันแยกตามบริษัทและสาขา)";
   if (!input.branch_id) return "กรุณาเลือกสาขาที่ทำจ่าย (เลขที่ใบเบิกรันแยกตามบริษัทและสาขา)";
   if (!input.payee_name?.trim()) return "กรุณากรอกชื่อผู้ขายหรือผู้รับเงิน";
+  if (!input.expense_detail?.trim()) return "กรุณากรอกรายการค่าใช้จ่าย";
 
   const problem = checkAmount("จำนวนเงิน", input.paid_amount);
   if (problem) return problem;

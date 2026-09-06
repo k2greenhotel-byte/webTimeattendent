@@ -4,7 +4,7 @@ import DocFilters, { queryFromParams, type PrParams } from "@/components/procure
 import { listCompanies } from "@/lib/core-db";
 import { listBranches } from "@/lib/db";
 import { listRepairs } from "@/lib/procurement-db";
-import { checkPermission } from "@/lib/session";
+import { checkPermission, requirePermission } from "@/lib/session";
 import { workDateOf } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,8 @@ export default async function RepairListPage({
 }: {
   searchParams: Promise<PrParams>;
 }) {
+  // ต้องมีสิทธิ์อ่านเมนูนี้ ไม่ใช่แค่มีสิทธิ์เข้าโปรแกรม PR
+  await requirePermission("PR_REPAIR", "read");
   const params = await searchParams;
   const query = queryFromParams(params);
 
@@ -82,6 +84,7 @@ export default async function RepairListPage({
             reject_note: r.reject_note,
             approval_no: r.approval_no,
             approved_date: r.approved_date,
+            approved_by: r.approved_by,
             job_status: r.job_status,
             expected_done_date: r.expected_done_date,
             done_date: r.fixed_date,

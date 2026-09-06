@@ -10,5 +10,5 @@ export default async function Page({
   searchParams: Promise<{ msg?: string; err?: string }>;
 }) {
   const { id } = await params;
-  return <PaymentDetailView source="petty" id={id} query={await searchParams} />;
+  return <PaymentDetailView source="central" id={id} query={await searchParams} />;
 }

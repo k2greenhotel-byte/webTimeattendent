@@ -9,6 +9,7 @@ const NAV = [
   { href: "/procurement/purchases", label: "2.1 ขอจัดซื้อ", menuCode: "PR_PURCHASE" },
   { href: "/procurement/approvals", label: "3.1 อนุมัติ", menuCode: "PR_APPROVE" },
   { href: "/procurement/payments", label: "4.1 จ่ายเงินสดย่อย", menuCode: "PR_PAYMENT" },
+  { href: "/procurement/central-payments", label: "4.2 จ่ายจากส่วนกลาง", menuCode: "PR_CENTRAL_PAY" },
   { href: "/procurement/search", label: "5. สอบถาม", menuCode: "PR_SEARCH" },
   { href: "/procurement/dashboard", label: "6. Dashboard", menuCode: "PR_DASH" },
 ];

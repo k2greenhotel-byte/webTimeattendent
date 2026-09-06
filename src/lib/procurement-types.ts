@@ -212,6 +212,7 @@ export type Repair = {
   /** เลขที่/วันที่จากใบอนุมัติ (ข้อ 3.1.1-3.1.2) ระบบเขียนให้ตอนอนุมัติผ่าน */
   approval_no: string | null;
   approved_date: string | null;
+  approved_by: string | null;
   tech_visit_date: string | null;
   expected_done_date: string | null;
   fixed_date: string | null;
@@ -287,6 +288,7 @@ export type Purchase = {
   /** เลขที่/วันที่จากใบอนุมัติ (ข้อ 3.1.1-3.1.2) ระบบเขียนให้ตอนอนุมัติผ่าน */
   approval_no: string | null;
   approved_date: string | null;
+  approved_by: string | null;
   received_date: string | null;
   note: string | null;
   created_at: string;
@@ -343,12 +345,19 @@ export type Payment = {
   payee_name: string | null;
   payee_address: string | null;
   payee_phone: string | null;
+  /** รายการค่าใช้จ่าย — จ่ายค่าอะไร (คนละอย่างกับ account_id ที่เป็นบัญชีในผังบัญชี) */
+  expense_detail: string | null;
   /** ประเภทค่าใช้จ่าย = บัญชีในผังบัญชี */
   account_id: string | null;
+  /** ผู้ทำจ่าย = คนที่จ่ายเงินสดย่อยออกไป */
+  payer_name: string | null;
+  /** ชื่อผู้อนุมัติ — ดึงมาจากใบอนุมัติของเอกสารที่อ้างถึง ไม่มีลายเซ็นเพราะเซ็นไว้ที่ใบอนุมัติแล้ว */
   approver_name: string | null;
   /** ลายเซ็นดิจิทัล เก็บเป็นเส้นทางไฟล์ PNG ในถังเดียวกับรูปแนบ */
   payee_signature: string | null;
-  approver_signature: string | null;
+  payer_signature: string | null;
+  /** จ่ายจากเงินสดย่อยหรือจากส่วนกลาง */
+  pay_source: PaySource;
   note: string | null;
   company_id: string | null;
   branch_id: string | null;
@@ -417,6 +426,7 @@ export type PrDocRow = {
   /** เลขที่และวันที่ในใบอนุมัติที่ทำให้เอกสารนี้ผ่าน (ข้อ 3.1.1-3.1.2) */
   approval_no: string | null;
   approved_date: string | null;
+  approved_by: string | null;
   /** มีเฉพาะฝั่งงานซ่อม */
   job_status: JobStatus | null;
   expected_done_date: string | null;
@@ -509,10 +519,68 @@ export type PrAccountInput = {
 /** เงื่อนไขค้นหาของหน้าจอใบเบิกเงินสดย่อย (ข้อ 4) */
 export type PaymentQuery = {
   keyword?: string;
+  pay_source?: PaySource | null;
   company_id?: string | null;
   branch_id?: string | null;
   account_id?: string | null;
   from?: string | null;
   to?: string | null;
   limit?: number;
+};
+
+// ---------- แหล่งเงินที่ใช้จ่าย (ข้อ 4) ----------
+
+/**
+ * ใบเบิกจ่ายมีสองแหล่ง ใช้ตารางและหน้าจอชุดเดียวกันทั้งหมด
+ * ต่างกันแค่ชุดเลขที่เอกสาร เมนู/สิทธิ์ และชื่อที่แสดง
+ */
+export type PaySource = "petty" | "central";
+
+export const PAY_SOURCE_ORDER: PaySource[] = ["petty", "central"];
+
+/** นิยามของแต่ละแหล่งจ่าย — เพิ่มแหล่งใหม่ = เพิ่มหนึ่งรายการที่นี่ + หนึ่งชุดหน้าจอบาง ๆ */
+export type PaySourceSpec = {
+  source: PaySource;
+  /** รหัสเมนูในระบบส่วนกลาง ใช้ตรวจสิทธิ์ อ่าน/เพิ่ม/แก้ไข/ลบ */
+  menuCode: string;
+  /** ส่วนต้นของ URL */
+  basePath: string;
+  /** ตัวอักษรนำหน้าเลขที่เอกสาร — คนละชุดตัวนับกัน */
+  prefix: string;
+  /** ชื่อหน้าจอ */
+  title: string;
+  /** ชื่อเอกสาร ใช้ในหัวเอกสารพิมพ์และข้อความยืนยัน */
+  docLabel: string;
+  description: string;
+};
+
+export const PAY_SOURCES: Record<PaySource, PaySourceSpec> = {
+  petty: {
+    source: "petty",
+    menuCode: "PR_PAYMENT",
+    basePath: "/procurement/payments",
+    prefix: "PV",
+    title: "จ่ายเงินจากเงินสดย่อย",
+    docLabel: "ใบเบิกเงินสดย่อย",
+    description: "จ่ายค่าใช้จ่ายย่อยหน้าสาขา ทั้งรายการที่ผ่านอนุมัติและรายการทั่วไป",
+  },
+  central: {
+    source: "central",
+    menuCode: "PR_CENTRAL_PAY",
+    basePath: "/procurement/central-payments",
+    prefix: "CV",
+    title: "จ่ายเงินจากส่วนกลาง",
+    docLabel: "ใบเบิกจ่ายส่วนกลาง",
+    description: "จ่ายจากส่วนกลาง ใช้ชุดเลขที่เอกสารแยกจากเงินสดย่อย",
+  },
+};
+
+export const PAY_SOURCE_LABEL: Record<PaySource, string> = {
+  petty: "เงินสดย่อย",
+  central: "ส่วนกลาง",
+};
+
+export const PAY_SOURCE_CLASS: Record<PaySource, string> = {
+  petty: "bg-amber-100 text-amber-700",
+  central: "bg-indigo-100 text-indigo-700",
 };

@@ -4,6 +4,7 @@ import { listCompanies } from "@/lib/core-db";
 import { workDateOf } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
 import { listDocs } from "@/lib/procurement-db";
+import { requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,8 @@ export default async function ProcurementSearchPage({
 }: {
   searchParams: Promise<PrParams>;
 }) {
+  // ต้องมีสิทธิ์อ่านเมนูนี้ ไม่ใช่แค่มีสิทธิ์เข้าโปรแกรม PR
+  await requirePermission("PR_SEARCH", "read");
   const params = await searchParams;
   const query = queryFromParams(params);
 
