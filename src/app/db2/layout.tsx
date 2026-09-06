@@ -11,6 +11,8 @@ const MENUS: { code: string; href: string; label: string }[] = [
   { code: "DB2_DASH", href: "/db2/dashboard", label: "Dashboard ยอดขาย" },
   { code: "DB2_STOCK", href: "/db2/stock", label: "สต็อกรถ" },
   { code: "DB2_CUSTOMER", href: "/db2/customers", label: "ค้นลูกค้า / สัญญา" },
+  { code: "DB2_WALL", href: "/db2/wall", label: "จอ War Room" },
+  { code: "DB2_PIVOT", href: "/db2/stock/pivot", label: "สต็อก Cross Tab" },
 ];
 
 /** ทุกหน้าในโปรแกรมนี้ต้องล็อกอิน และมีสิทธิ์อย่างน้อยหนึ่งเมนูของโปรแกรม DB2 */
