@@ -46,7 +46,7 @@ export default async function Db2DashboardPage({
       <div>
         <h1 className="text-xl font-bold text-slate-800">Dashboard ยอดขายสด</h1>
         <p className="text-sm text-slate-500">
-          รวมทุกช่องทาง (ผ่อน · สด · ไฟแนนซ์ · ส่งเอเย่นต์) · กำไรขั้นต้น = ราคาขาย − ต้นทุนรถ · ข้อมูล ณ ตอนนี้
+          รวมทุกช่องทาง (ผ่อน · สด · ไฟแนนซ์ · ส่งเอเย่นต์) · กำไรขั้นต้น = ราคาขายก่อน VAT − ต้นทุนรถก่อน VAT · ข้อมูล ณ ตอนนี้
         </p>
       </div>
 
@@ -112,12 +112,18 @@ export default async function Db2DashboardPage({
 
       {data && s && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Stat label="จำนวนคัน" value={fmtInt(s.units)} />
-            <Stat label="ยอดขาย (บาท)" value={fmtBaht(s.sale)} />
-            <Stat label="ต้นทุนรถ (บาท)" value={fmtBaht(s.cost)} />
-            <Stat label="กำไรขั้นต้น (บาท)" value={fmtBaht(s.profit)} hint={`มาร์จิ้น ${fmtPct(s.marginPct)}`} />
+            <Stat label="ยอดขายก่อน VAT (บาท)" value={fmtBaht(s.sale)} hint={`รวม VAT ${fmtBaht(s.gross)}`} />
+            <Stat label="VAT ขาย (บาท)" value={fmtBaht(s.vat)} />
+            <Stat label="ต้นทุนรถก่อน VAT (บาท)" value={fmtBaht(s.cost)} />
+            <Stat label="กำไรขั้นต้น (บาท)" value={fmtBaht(s.profit)} hint={`มาร์จิ้น ${fmtPct(s.marginPct)} ของยอดก่อน VAT`} />
           </div>
+          {s.noNet > 0 && (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              มี {fmtInt(s.noNet)} คันที่หาราคาก่อน VAT ไม่เจอ — ตัวเลขยอดขายก่อน VAT อาจต่ำกว่าจริงเล็กน้อย
+            </p>
+          )}
 
           <section className="card">
             <h2 className="mb-2 font-semibold text-slate-800">รายเดือน</h2>
@@ -127,7 +133,9 @@ export default async function Db2DashboardPage({
                   <tr>
                     <th className="py-1">เดือน</th>
                     <th className="py-1 text-right">คัน</th>
-                    <th className="py-1 text-right">ยอดขาย</th>
+                    <th className="py-1 text-right">ขายก่อน VAT</th>
+                    <th className="py-1 text-right">VAT</th>
+                    <th className="py-1 text-right">รวม VAT</th>
                     <th className="py-1 text-right">ต้นทุน</th>
                     <th className="py-1 text-right">กำไรขั้นต้น</th>
                     <th className="py-1 text-right">มาร์จิ้น</th>
@@ -139,6 +147,8 @@ export default async function Db2DashboardPage({
                       <td className="py-1">{fmtMonth(m.year, m.month)}</td>
                       <td className="py-1 text-right tabular-nums">{fmtInt(m.units)}</td>
                       <td className="py-1 text-right tabular-nums">{fmtBaht(m.sale)}</td>
+                      <td className="py-1 text-right tabular-nums">{fmtBaht(m.vat)}</td>
+                      <td className="py-1 text-right tabular-nums">{fmtBaht(m.gross)}</td>
                       <td className="py-1 text-right tabular-nums">{fmtBaht(m.cost)}</td>
                       <td className="py-1 text-right tabular-nums">{fmtBaht(m.profit)}</td>
                       <td className="py-1 text-right tabular-nums">
@@ -148,7 +158,7 @@ export default async function Db2DashboardPage({
                   ))}
                   {data.monthly.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-3 text-center text-slate-500">
+                      <td colSpan={8} className="py-3 text-center text-slate-500">
                         ไม่มีข้อมูลในช่วงที่เลือก
                       </td>
                     </tr>
@@ -203,7 +213,9 @@ function GroupTable({
               <th className="py-1">{keyLabel}</th>
               <th className="py-1 text-right">คัน</th>
               <th className="py-1 text-right">สัดส่วน</th>
-              <th className="py-1 text-right">ยอดขาย</th>
+              <th className="py-1 text-right">ขายก่อน VAT</th>
+              <th className="py-1 text-right">รวม VAT</th>
+              <th className="py-1 text-right">ต้นทุน</th>
               <th className="py-1 text-right">กำไรขั้นต้น</th>
               <th className="py-1 text-right">มาร์จิ้น</th>
             </tr>
@@ -218,13 +230,15 @@ function GroupTable({
                 <td className="py-1 text-right tabular-nums">{fmtInt(r.units)}</td>
                 <td className="py-1 text-right tabular-nums">{fmtPct(total ? (r.units / total) * 100 : null)}</td>
                 <td className="py-1 text-right tabular-nums">{fmtBaht(r.sale)}</td>
+                <td className="py-1 text-right tabular-nums">{fmtBaht(r.gross)}</td>
+                <td className="py-1 text-right tabular-nums">{fmtBaht(r.cost)}</td>
                 <td className="py-1 text-right tabular-nums">{fmtBaht(r.profit)}</td>
                 <td className="py-1 text-right tabular-nums">{fmtPct(r.sale > 0 ? (r.profit / r.sale) * 100 : null)}</td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-3 text-center text-slate-500">
+                <td colSpan={8} className="py-3 text-center text-slate-500">
                   ไม่มีข้อมูล
                 </td>
               </tr>

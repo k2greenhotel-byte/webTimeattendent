@@ -59,12 +59,17 @@ async function call<T>(path: string, params: Record<string, string | undefined> 
 /* ชนิดข้อมูลตามที่แอป Db2 ส่งกลับ                                              */
 /* -------------------------------------------------------------------------- */
 
-export type Db2Group = { key: string; units: number; sale: number; cost: number; profit: number };
+/**
+ * ตัวเลขเงินทุกชุด: sale = ราคาขายก่อน VAT · vat = VAT ขาย · gross = รวม VAT ·
+ * cost = ต้นทุนรถก่อน VAT · profit = sale − cost (ก่อน VAT ทั้งคู่)
+ */
+export type Db2Money = { sale: number; vat: number; gross: number; cost: number; profit: number };
+export type Db2Group = Db2Money & { key: string; units: number };
 
 export type Db2Dashboard = {
   filters: { from: string; to: string; locat?: string; tsale?: string; stat?: string };
-  summary: { units: number; sale: number; cost: number; profit: number; marginPct: number | null; noCost: number };
-  monthly: { year: number; month: number; units: number; sale: number; cost: number; profit: number }[];
+  summary: Db2Money & { units: number; marginPct: number | null; noCost: number; noNet: number };
+  monthly: (Db2Money & { year: number; month: number; units: number })[];
   byChannel: Db2Group[];
   byBranch: Db2Group[];
   byCondition: Db2Group[];
