@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import PaymentForm, { type PickedItem } from "@/components/procurement/PaymentForm";
+import { getSelectableContext } from "@/lib/core-db";
 import { remainingToPay } from "@/lib/procurement";
 import {
   getDocsByIds,
   getPayment,
+  listAccounts,
   listDocs,
   listPaymentFiles,
   listPaymentItems,
@@ -14,7 +16,7 @@ import { deletePaymentForm, updatePaymentForm } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-/** หน้าจอ 4 — แก้ไขใบเบิกจ่าย พร้อมสั่งพิมพ์ (4.7) และลบ */
+/** หน้าจอ 4 — แก้ไขใบเบิกเงินสดย่อย พร้อมสั่งพิมพ์ (4.7) และลบ */
 export default async function PaymentDetailPage({
   params,
   searchParams,
@@ -29,10 +31,12 @@ export default async function PaymentDetailPage({
   const payment = await getPayment(id);
   if (!payment) notFound();
 
-  const [items, files, approved, canEdit, canDelete] = await Promise.all([
+  const [items, files, approved, accounts, context, canEdit, canDelete] = await Promise.all([
     listPaymentItems(id),
     listPaymentFiles(id),
-    listDocs({ approve_status: "approved" }),
+    listDocs({ doc_status: "active" }),
+    listAccounts(),
+    getSelectableContext(user.id),
     checkPermission("PR_PAYMENT", "edit"),
     checkPermission("PR_PAYMENT", "delete"),
   ]);
@@ -70,10 +74,13 @@ export default async function PaymentDetailPage({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-slate-800 sm:text-xl">
-            ใบเบิกจ่ายเลขที่ {payment.doc_no}
+            ใบเบิกเงินสดย่อยเลขที่ {payment.doc_no}
           </h1>
           <p className="text-sm text-slate-500">
-            ผู้บันทึก {payment.created_by_name ?? payment.created_by_full_name ?? "—"}
+            {payment.company_name ?? "—"}
+            {payment.branch_name ? ` · สาขา ${payment.branch_name}` : ""} · ผู้รับเงิน{" "}
+            {payment.payee_name ?? "—"}
+            {payment.ref_no ? ` · อ้างอิง ${payment.ref_no}` : ""}
           </p>
         </div>
         <Link href={`/procurement/payments/${payment.id}/print`} className="btn-secondary">
@@ -92,6 +99,9 @@ export default async function PaymentDetailPage({
         <PaymentForm
           payment={payment}
           docs={docs}
+          accounts={accounts}
+          companies={context.companies}
+          branches={context.branches}
           picked={picked}
           photos={photos}
           documents={documents}
@@ -100,12 +110,12 @@ export default async function PaymentDetailPage({
           submitLabel="บันทึกการแก้ไข"
         />
       ) : (
-        <p className="card text-sm text-slate-600">บัญชีนี้ไม่มีสิทธิ์แก้ไขใบเบิกจ่าย (ดูอย่างเดียว)</p>
+        <p className="card text-sm text-slate-600">บัญชีนี้ไม่มีสิทธิ์แก้ไขใบเบิกเงินสดย่อย (ดูอย่างเดียว)</p>
       )}
 
       {canDelete && (
         <section className="card space-y-2 border-rose-200">
-          <h2 className="font-semibold text-rose-700">ลบใบเบิกจ่ายนี้</h2>
+          <h2 className="font-semibold text-rose-700">ลบใบเบิกเงินสดย่อยนี้</h2>
           <p className="text-sm text-slate-600">
             ลบแล้วรูปและไฟล์แนบทั้งหมดจะหายตามไปด้วย และยอดเบิกจริงของเอกสารที่อ้างถึงจะถูกคำนวณใหม่ ย้อนกลับไม่ได้
           </p>
@@ -113,10 +123,10 @@ export default async function PaymentDetailPage({
             <input type="hidden" name="id" value={payment.id} />
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input type="checkbox" name="confirm" />
-              ยืนยันลบใบเบิกจ่าย {payment.doc_no}
+              ยืนยันลบใบเบิกเงินสดย่อย {payment.doc_no}
             </label>
             <button type="submit" className="btn-danger">
-              ลบใบเบิกจ่าย
+              ลบใบเบิกเงินสดย่อย
             </button>
           </form>
         </section>

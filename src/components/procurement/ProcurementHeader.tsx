@@ -8,7 +8,7 @@ const NAV = [
   { href: "/procurement/updates", label: "1.2 Update งานซ่อม", menuCode: "PR_REPAIR_UPD" },
   { href: "/procurement/purchases", label: "2.1 ขอจัดซื้อ", menuCode: "PR_PURCHASE" },
   { href: "/procurement/approvals", label: "3.1 อนุมัติ", menuCode: "PR_APPROVE" },
-  { href: "/procurement/payments", label: "4.1 จ่ายเงิน", menuCode: "PR_PAYMENT" },
+  { href: "/procurement/payments", label: "4.1 จ่ายเงินสดย่อย", menuCode: "PR_PAYMENT" },
   { href: "/procurement/search", label: "5. สอบถาม", menuCode: "PR_SEARCH" },
   { href: "/procurement/dashboard", label: "6. Dashboard", menuCode: "PR_DASH" },
 ];
@@ -22,7 +22,9 @@ export default function ProcurementHeader({
 }) {
   const menus = NAV.filter((n) => readableMenuCodes.includes(n.menuCode));
   const canSetup =
-    readableMenuCodes.includes("PR_ASSET_TYPE") || readableMenuCodes.includes("PR_MATERIAL_TYPE");
+    readableMenuCodes.includes("PR_ASSET_TYPE") ||
+    readableMenuCodes.includes("PR_MATERIAL_TYPE") ||
+    readableMenuCodes.includes("PR_ACCOUNT");
 
   return (
     <header className="no-print border-b border-slate-200 bg-white">

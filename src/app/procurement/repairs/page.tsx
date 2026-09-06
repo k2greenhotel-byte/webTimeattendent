@@ -80,6 +80,8 @@ export default async function RepairListPage({
             approve_status: r.approve_status,
             reject_reason: r.reject_reason,
             reject_note: r.reject_note,
+            approval_no: r.approval_no,
+            approved_date: r.approved_date,
             job_status: r.job_status,
             expected_done_date: r.expected_done_date,
             done_date: r.fixed_date,

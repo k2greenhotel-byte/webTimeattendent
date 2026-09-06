@@ -17,6 +17,8 @@ import {
   type PayStatus,
   type PaymentItem,
   type PrDocRow,
+  type PrAccountInput,
+  type PrAccountRow,
   type PrDocStatus,
   type PrTypeInput,
   type PurchaseInput,
@@ -321,38 +323,64 @@ export function validateApproval(
 
 /** ใบเบิกจ่าย (หน้าจอ 4) */
 export function validatePayment(
-  input: { pay_date: string; paid_amount: number },
+  input: {
+    pay_date: string;
+    paid_amount: number;
+    payee_name?: string | null;
+    company_id?: string | null;
+    branch_id?: string | null;
+  },
   items: PaymentItem[],
   targets: Map<string, Pick<PrDocRow, "doc_no" | "approve_status" | "approved_amount" | "actual_amount">>,
 ): string | null {
-  if (!input.pay_date) return "กรุณาเลือกวันที่ขอเบิกเงิน";
-  if (items.length === 0) return "กรุณาเลือกใบขอซ่อมหรือใบขอซื้อที่ต้องการเบิกจ่ายอย่างน้อยหนึ่งใบ";
+  if (!input.pay_date) return "กรุณาเลือกวันที่ทำจ่าย";
+  if (!input.company_id) return "กรุณาเลือกบริษัทที่ทำจ่าย (เลขที่ใบเบิกรันแยกตามบริษัทและสาขา)";
+  if (!input.branch_id) return "กรุณาเลือกสาขาที่ทำจ่าย (เลขที่ใบเบิกรันแยกตามบริษัทและสาขา)";
+  if (!input.payee_name?.trim()) return "กรุณากรอกชื่อผู้ขายหรือผู้รับเงิน";
 
-  const problem = checkAmount("ยอดเงินที่จ่ายจริง", input.paid_amount);
+  const problem = checkAmount("จำนวนเงิน", input.paid_amount);
   if (problem) return problem;
+  if (input.paid_amount <= 0) return "จำนวนเงินต้องมากกว่า 0";
 
+  // อ้างใบขอซ่อม/ใบขอซื้อหรือไม่ก็ได้ — รายการทั่วไปที่ไม่ต้องขออนุมัติก็จ่ายจากหน้านี้ได้
   for (const item of items) {
     const key = item.repair_id ?? item.purchase_id;
-    if (!key) return "รายการเบิกจ่ายต้องอ้างใบขอซ่อมหรือใบขอซื้อ";
+    if (!key) return "รายการที่อ้างถึงต้องระบุใบขอซ่อมหรือใบขอซื้อ";
 
     const target = targets.get(key);
     if (!target) return "ไม่พบเอกสารที่อ้างถึง อาจถูกลบไปแล้ว";
-    if (target.approve_status !== "approved") {
-      return `เอกสาร ${target.doc_no} ยังไม่ได้รับอนุมัติ จึงเบิกจ่ายไม่ได้`;
-    }
 
     const amountProblem = checkAmount(`ยอดเบิกของ ${target.doc_no}`, item.amount);
     if (amountProblem) return amountProblem;
-
-    if (item.amount > remainingToPay(target)) {
-      return `ยอดเบิกของ ${target.doc_no} เกินยอดที่ยังเบิกได้ (${remainingToPay(target).toLocaleString("th-TH")} บาท)`;
-    }
   }
 
-  if (round2(input.paid_amount) !== sumItems(items)) {
-    return "ยอดเงินที่จ่ายจริงต้องเท่ากับผลรวมของรายการที่เลือก";
+  // ถ้าเลือกเอกสารมาอ้าง ยอดที่กระจายลงเอกสารต้องไม่เกินยอดที่จ่ายจริงทั้งใบ
+  if (items.length > 0 && sumItems(items) > round2(input.paid_amount)) {
+    return "ยอดรวมของเอกสารที่อ้างถึงมากกว่าจำนวนเงินที่จ่ายจริง";
   }
 
+  return null;
+}
+
+/** ตรวจค่าของบัญชีในผังบัญชีก่อนบันทึก */
+export function validateAccount(
+  input: PrAccountInput,
+  /** บัญชีคุมที่เลือก (ถ้ามี) — ใช้ตรวจว่าอยู่หมวดเดียวกันไหม */
+  parent: Pick<PrAccountRow, "id" | "code" | "category"> | null,
+  /** id ของบัญชีที่กำลังแก้ไข — กันเลือกตัวเองเป็นบัญชีคุม */
+  selfId?: string,
+): string | null {
+  if (!input.code.trim()) return "กรุณากรอกรหัสบัญชี";
+  if (input.code.length > 20) return "รหัสบัญชียาวเกินไป (ไม่เกิน 20 ตัวอักษร)";
+  if (!input.name.trim()) return "กรุณากรอกชื่อบัญชี";
+  if (input.name.length > 120) return "ชื่อบัญชียาวเกินไป (ไม่เกิน 120 ตัวอักษร)";
+
+  if (input.parent_id && selfId && input.parent_id === selfId) {
+    return "บัญชีคุมต้องไม่ใช่ตัวมันเอง";
+  }
+  if (input.parent_id && parent && parent.category !== input.category) {
+    return `บัญชีย่อยต้องอยู่หมวดเดียวกับบัญชีคุม ${parent.code}`;
+  }
   return null;
 }
 

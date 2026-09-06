@@ -3,14 +3,53 @@ import PrintButton from "@/components/procurement/PrintButton";
 import { formatThaiDate } from "@/lib/datetime";
 import { formatBaht } from "@/lib/procurement";
 import { getDocsByIds, getPayment, listPaymentFiles, listPaymentItems } from "@/lib/procurement-db";
+import { formatPhone } from "@/lib/phone";
 import { DOC_KIND_LABEL, PAYMENT_FILE_KIND_LABEL } from "@/lib/procurement-types";
 import { requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] text-slate-500">{label}</div>
+      <div className="break-words text-sm text-slate-800">{value || "—"}</div>
+    </div>
+  );
+}
+
+/** ช่องลงนาม — มีลายเซ็นดิจิทัลก็วางรูปลงไป ไม่มีก็เว้นเส้นให้เซ็นด้วยปากกา */
+function Signature({
+  path,
+  name,
+  role,
+}: {
+  path: string | null;
+  name: string | null;
+  role: string;
+}) {
+  return (
+    <div>
+      <div className="flex h-16 items-end justify-center border-b border-slate-400">
+        {path && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`/api/procurement/photo?path=${encodeURIComponent(path)}`}
+            alt={`ลายเซ็น${role}`}
+            className="max-h-16 object-contain"
+          />
+        )}
+      </div>
+      <div className="mt-1 text-slate-700">{name || "\u00a0"}</div>
+      <div className="text-xs text-slate-500">{role}</div>
+    </div>
+  );
+}
+
 /**
- * หน้าจอ 4.7 — เอกสารประกอบการจ่ายเงิน สั่งพิมพ์ได้ (Ctrl+P ของเบราว์เซอร์)
- * ดึงข้อมูลจากใบขอซ่อม/ใบขอซื้อที่ใบเบิกจ่ายนี้อ้างถึงมาประกอบเอกสารให้อัตโนมัติ
+ * หน้าจอ 4.7 — ใบเบิกเงินสดย่อย สั่งพิมพ์ได้ (Ctrl+P ของเบราว์เซอร์)
+ * ดึงเลขที่และวันที่อนุมัติจากใบขอซ่อม/ใบขอซื้อที่อ้างถึงมาประกอบให้อัตโนมัติ
+ * และวางลายเซ็นดิจิทัลของผู้อนุมัติกับผู้รับเงินลงในช่องลงนาม
  */
 export default async function PaymentPrintPage({
   params,
@@ -36,26 +75,32 @@ export default async function PaymentPrintPage({
         <PrintButton />
       </div>
 
-      <header className="space-y-1 text-center">
-        <h1 className="text-lg font-bold text-slate-800">เอกสารประกอบการจ่ายเงิน</h1>
-        <p className="text-sm text-slate-500">เลขที่ {payment.doc_no}</p>
+      <header className="space-y-1 border-b border-slate-300 pb-3 text-center">
+        <h1 className="text-lg font-bold text-slate-800">ใบเบิกเงินสดย่อย</h1>
+        <p className="text-sm text-slate-600">
+          {payment.company_name ?? "—"}
+          {payment.branch_name ? ` · สาขา ${payment.branch_name}` : ""}
+        </p>
+        <p className="text-sm text-slate-500">
+          เลขที่ {payment.doc_no} · วันที่ทำจ่าย {formatThaiDate(payment.pay_date)}
+        </p>
       </header>
 
-      <section className="grid grid-cols-2 gap-2 text-sm">
-        <div>
-          <span className="text-slate-500">วันที่ขอเบิกเงิน:</span> {formatThaiDate(payment.pay_date)}
-        </div>
-        <div>
-          <span className="text-slate-500">ยอดเงินที่จ่ายจริง:</span>{" "}
-          <span className="font-semibold">{formatBaht(payment.paid_amount)}</span>
-        </div>
-        <div>
-          <span className="text-slate-500">บริษัท / สาขา:</span> {payment.company_name ?? "—"}{" "}
-          {payment.branch_name ? `· ${payment.branch_name}` : ""}
-        </div>
-        <div>
-          <span className="text-slate-500">ผู้บันทึก:</span>{" "}
-          {payment.created_by_name ?? payment.created_by_full_name ?? "—"}
+      <section className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+        <Field label="เลขที่อ้างอิง (เลขที่อนุมัติ)" value={payment.ref_no} />
+        <Field
+          label="ประเภทค่าใช้จ่าย"
+          value={payment.account_code ? `${payment.account_code} · ${payment.account_name}` : null}
+        />
+        <Field
+          label="จำนวนเงิน"
+          value={<span className="font-semibold">{formatBaht(payment.paid_amount)}</span>}
+        />
+        <Field label="ชื่อผู้ขาย / ผู้รับเงิน" value={payment.payee_name} />
+        <Field label="เบอร์โทร" value={formatPhone(payment.payee_phone)} />
+        <Field label="ผู้บันทึก" value={payment.created_by_name ?? payment.created_by_full_name} />
+        <div className="col-span-2 sm:col-span-3">
+          <Field label="ที่อยู่ผู้รับเงิน" value={payment.payee_address} />
         </div>
       </section>
 
@@ -66,14 +111,22 @@ export default async function PaymentPrintPage({
       )}
 
       <section className="space-y-2">
-        <h2 className="font-semibold text-slate-800">รายการที่เบิกจ่าย ({items.length} รายการ)</h2>
+        <h2 className="font-semibold text-slate-800">
+          ใบขอซ่อม / ใบขอจัดซื้อที่อ้างถึง ({items.length} รายการ)
+        </h2>
+        {items.length === 0 ? (
+          <p className="rounded-lg bg-slate-50 p-2 text-sm text-slate-600">
+            รายการทั่วไป — ไม่ได้อ้างใบขอซ่อมหรือใบขอจัดซื้อ
+          </p>
+        ) : (
         <table className="table-report w-full">
           <thead>
             <tr>
               <th>ชนิด</th>
               <th>เลขที่เอกสาร</th>
               <th className="text-left">รายการ</th>
-              <th>วันที่</th>
+              <th>เลขที่อนุมัติ</th>
+              <th>วันที่อนุมัติ</th>
               <th>ยอดที่เบิก</th>
             </tr>
           </thead>
@@ -86,19 +139,23 @@ export default async function PaymentPrintPage({
                   <td>{doc ? DOC_KIND_LABEL[doc.kind] : "—"}</td>
                   <td>{doc?.doc_no ?? "ไม่พบเอกสาร"}</td>
                   <td className="text-left">{doc?.item_name ?? "—"}</td>
-                  <td className="text-xs">{doc ? formatThaiDate(doc.doc_date) : "—"}</td>
+                  <td className="text-xs">{doc?.approval_no ?? "—"}</td>
+                  <td className="text-xs">
+                    {doc?.approved_date ? formatThaiDate(doc.approved_date) : "—"}
+                  </td>
                   <td>{formatBaht(item.amount)}</td>
                 </tr>
               );
             })}
             <tr>
-              <td colSpan={4} className="text-right font-semibold">
+              <td colSpan={5} className="text-right font-semibold">
                 รวม
               </td>
               <td className="font-semibold">{formatBaht(payment.paid_amount)}</td>
             </tr>
           </tbody>
         </table>
+        )}
       </section>
 
       {files.length > 0 && (
@@ -127,15 +184,14 @@ export default async function PaymentPrintPage({
         </section>
       )}
 
-      <footer className="grid grid-cols-2 gap-8 pt-12 text-center text-sm">
-        <div>
-          <div className="mb-8 border-b border-slate-400" />
-          ผู้จัดทำ
-        </div>
-        <div>
-          <div className="mb-8 border-b border-slate-400" />
-          ผู้อนุมัติจ่ายเงิน
-        </div>
+      <footer className="grid grid-cols-1 gap-6 pt-10 text-center text-sm sm:grid-cols-3">
+        <Signature
+          path={null}
+          name={payment.created_by_name ?? payment.created_by_full_name}
+          role="ผู้จัดทำ"
+        />
+        <Signature path={payment.approver_signature} name={payment.approver_name} role="ผู้อนุมัติจ่ายเงิน" />
+        <Signature path={payment.payee_signature} name={payment.payee_name} role="ผู้รับเงิน" />
       </footer>
     </main>
   );

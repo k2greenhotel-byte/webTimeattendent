@@ -68,7 +68,20 @@ function readPhotos(form: FormData): string[] {
 /** อ่านใบขอซ่อมจากฟอร์ม — ยอดอนุมัติ/เบิกจริง/สถานะอนุมัติ ไม่รับจากฟอร์มนี้ */
 function readRepair(
   form: FormData,
-  context: { createdBy: string | null; keep?: Pick<RepairInput, "approved_amount" | "actual_amount" | "pay_status" | "approve_status" | "reject_reason" | "reject_note"> },
+  context: {
+    createdBy: string | null;
+    keep?: Pick<
+      RepairInput,
+      | "approved_amount"
+      | "actual_amount"
+      | "pay_status"
+      | "approve_status"
+      | "reject_reason"
+      | "reject_note"
+      | "approval_no"
+      | "approved_date"
+    >;
+  },
 ): RepairInput {
   const keep = context.keep;
 
@@ -94,6 +107,9 @@ function readRepair(
     approve_status: keep?.approve_status ?? "pending",
     reject_reason: keep?.reject_reason ?? null,
     reject_note: keep?.reject_note ?? null,
+    // เลขที่/วันที่อนุมัติเขียนได้จากหน้าจออนุมัติเท่านั้น ฟอร์มนี้แค่คงค่าเดิมไว้
+    approval_no: keep?.approval_no ?? null,
+    approved_date: keep?.approved_date ?? null,
     tech_visit_date: optText(form, "tech_visit_date"),
     expected_done_date: optText(form, "expected_done_date"),
     fixed_date: optText(form, "fixed_date"),
@@ -290,7 +306,14 @@ function readPurchase(
     createdBy: string | null;
     keep?: Pick<
       PurchaseInput,
-      "approved_amount" | "actual_amount" | "pay_status" | "approve_status" | "reject_reason" | "reject_note"
+      | "approved_amount"
+      | "actual_amount"
+      | "pay_status"
+      | "approve_status"
+      | "reject_reason"
+      | "reject_note"
+      | "approval_no"
+      | "approved_date"
     >;
   },
 ): PurchaseInput {
@@ -316,6 +339,9 @@ function readPurchase(
     approve_status: keep?.approve_status ?? "pending",
     reject_reason: keep?.reject_reason ?? null,
     reject_note: keep?.reject_note ?? null,
+    // เลขที่/วันที่อนุมัติเขียนได้จากหน้าจออนุมัติเท่านั้น ฟอร์มนี้แค่คงค่าเดิมไว้
+    approval_no: keep?.approval_no ?? null,
+    approved_date: keep?.approved_date ?? null,
     received_date: optText(form, "received_date"),
     note: optText(form, "note"),
   };

@@ -46,9 +46,20 @@ export default async function PrTypeSetup({
             {rows.length} รายการ · เปิดใช้งาน {activeCount}
           </p>
         </div>
-        <Link href="/procurement" className="btn-secondary">
-          ← กลับหน้าแรก
-        </Link>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <Link
+            href={kind === "asset" ? "/procurement/setup/material-types" : "/procurement/setup/asset-types"}
+            className="btn-secondary flex-1 sm:flex-none"
+          >
+            {kind === "asset" ? "ไปประเภทวัสดุ" : "ไปประเภททรัพย์สิน"}
+          </Link>
+          <Link href="/procurement/setup/accounts" className="btn-secondary flex-1 sm:flex-none">
+            ผังบัญชี
+          </Link>
+          <Link href="/procurement" className="btn-secondary flex-1 sm:flex-none">
+            ← กลับหน้าแรก
+          </Link>
+        </div>
       </div>
 
       {params.msg && (

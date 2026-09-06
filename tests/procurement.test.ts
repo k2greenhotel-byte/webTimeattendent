@@ -12,6 +12,7 @@ import {
   remainingToPay,
   sumItems,
   summarizeDocs,
+  validateAccount,
   validateApproval,
   validatePayment,
   validatePrType,
@@ -53,6 +54,8 @@ function repair(over: Partial<RepairInput> = {}): RepairInput {
     approve_status: "pending",
     reject_reason: null,
     reject_note: null,
+    approval_no: null,
+    approved_date: null,
     tech_visit_date: null,
     expected_done_date: null,
     fixed_date: null,
@@ -82,6 +85,8 @@ function purchase(over: Partial<PurchaseInput> = {}): PurchaseInput {
     approve_status: "pending",
     reject_reason: null,
     reject_note: null,
+    approval_no: null,
+    approved_date: null,
     received_date: null,
     note: null,
     ...over,
@@ -123,6 +128,8 @@ function doc(over: Partial<PrDocRow> = {}): PrDocRow {
     approve_status: "pending",
     reject_reason: null,
     reject_note: null,
+    approval_no: null,
+    approved_date: null,
     job_status: "wait_tech",
     expected_done_date: null,
     done_date: null,
@@ -366,43 +373,85 @@ describe("validateApproval", () => {
   });
 });
 
-describe("validatePayment", () => {
-  const approved = doc({
-    approve_status: "approved",
-    approved_amount: 3000,
-    actual_amount: 0,
-  });
+describe("validatePayment (ใบเบิกเงินสดย่อย)", () => {
+  const approved = doc({ approve_status: "approved", approved_amount: 3000, actual_amount: 0 });
   const targets = new Map([["r1", approved]]);
   const items: PaymentItem[] = [{ repair_id: "r1", purchase_id: null, amount: 3000 }];
 
-  it("ผ่านเมื่อยอดตรงกับผลรวมรายการ", () => {
-    expect(validatePayment({ pay_date: "2026-09-10", paid_amount: 3000 }, items, targets)).toBeNull();
+  const base = {
+    pay_date: "2026-09-10",
+    paid_amount: 3000,
+    payee_name: "ร้านแอร์ดี",
+    company_id: "co1",
+    branch_id: "br1",
+  };
+
+  it("อ้างใบขอซ่อมที่อนุมัติแล้ว ผ่าน", () => {
+    expect(validatePayment(base, items, targets)).toBeNull();
   });
 
-  it("ไม่เลือกเอกสารสักใบ ไม่ผ่าน", () => {
-    expect(validatePayment({ pay_date: "2026-09-10", paid_amount: 0 }, [], targets)).toContain(
-      "อย่างน้อยหนึ่งใบ",
-    );
+  it("รายการทั่วไปที่ไม่อ้างเอกสารเลย ก็จ่ายได้", () => {
+    expect(validatePayment(base, [], new Map())).toBeNull();
   });
 
-  it("เบิกเกินยอดที่ยังเบิกได้ ไม่ผ่าน", () => {
-    const over: PaymentItem[] = [{ repair_id: "r1", purchase_id: null, amount: 3500 }];
-    expect(
-      validatePayment({ pay_date: "2026-09-10", paid_amount: 3500 }, over, targets),
-    ).toContain("เกินยอดที่ยังเบิกได้");
-  });
-
-  it("เอกสารที่ยังไม่อนุมัติ เบิกไม่ได้", () => {
+  it("เอกสารที่ยังไม่ผ่านอนุมัติ ก็จ่ายจากหน้าเงินสดย่อยได้", () => {
     const pending = new Map([["r1", doc({ approve_status: "pending" })]]);
-    expect(
-      validatePayment({ pay_date: "2026-09-10", paid_amount: 3000 }, items, pending),
-    ).toContain("ยังไม่ได้รับอนุมัติ");
+    expect(validatePayment(base, items, pending)).toBeNull();
   });
 
-  it("ยอดจ่ายจริงต้องเท่ากับผลรวมของรายการ", () => {
+  it("ต้องเลือกบริษัทและสาขา เพราะเลขที่ใบเบิกรันแยกตามสาขา", () => {
+    expect(validatePayment({ ...base, company_id: null }, [], new Map())).toContain("บริษัท");
+    expect(validatePayment({ ...base, branch_id: null }, [], new Map())).toContain("สาขา");
+  });
+
+  it("ต้องกรอกชื่อผู้รับเงิน", () => {
+    expect(validatePayment({ ...base, payee_name: "  " }, [], new Map())).toContain("ผู้รับเงิน");
+  });
+
+  it("จำนวนเงินต้องมากกว่า 0", () => {
+    expect(validatePayment({ ...base, paid_amount: 0 }, [], new Map())).toContain("มากกว่า 0");
+  });
+
+  it("ยอดที่กระจายลงเอกสารต้องไม่เกินจำนวนเงินที่จ่ายจริง", () => {
+    const over: PaymentItem[] = [{ repair_id: "r1", purchase_id: null, amount: 4000 }];
+    expect(validatePayment(base, over, targets)).toContain("มากกว่าจำนวนเงินที่จ่ายจริง");
+  });
+
+  it("จ่ายมากกว่ายอดที่กระจายลงเอกสารได้ (ส่วนต่างเป็นรายการทั่วไปในใบเดียวกัน)", () => {
+    expect(validatePayment({ ...base, paid_amount: 3500 }, items, targets)).toBeNull();
+  });
+});
+
+describe("validateAccount (ผังบัญชี)", () => {
+  const input = {
+    code: "5110",
+    name: "ค่าซ่อมแซมอาคาร",
+    category: "expense" as const,
+    parent_id: null,
+    sort_order: 0,
+    is_active: true,
+  };
+
+  it("ผ่านเมื่อกรอกครบ", () => {
+    expect(validateAccount(input, null)).toBeNull();
+  });
+
+  it("ต้องมีรหัสและชื่อบัญชี", () => {
+    expect(validateAccount({ ...input, code: "" }, null)).toContain("รหัสบัญชี");
+    expect(validateAccount({ ...input, name: " " }, null)).toContain("ชื่อบัญชี");
+  });
+
+  it("บัญชีย่อยต้องอยู่หมวดเดียวกับบัญชีคุม", () => {
+    const parent = { id: "a1", code: "1000", category: "asset" as const };
+    expect(validateAccount({ ...input, parent_id: "a1" }, parent)).toContain("หมวดเดียวกับบัญชีคุม");
     expect(
-      validatePayment({ pay_date: "2026-09-10", paid_amount: 2500 }, items, targets),
-    ).toContain("เท่ากับผลรวม");
+      validateAccount({ ...input, category: "asset", parent_id: "a1" }, parent),
+    ).toBeNull();
+  });
+
+  it("เลือกตัวเองเป็นบัญชีคุมไม่ได้", () => {
+    const self = { id: "x1", code: "5000", category: "expense" as const };
+    expect(validateAccount({ ...input, parent_id: "x1" }, self, "x1")).toContain("ตัวมันเอง");
   });
 });
 

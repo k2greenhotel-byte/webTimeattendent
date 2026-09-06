@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getSelectableContext } from "@/lib/core-db";
 import { logAudit } from "@/lib/db";
-import { parseAmount, sumItems, validatePayment } from "@/lib/procurement";
+import { normalizePhone } from "@/lib/phone";
+import { parseAmount, validatePayment } from "@/lib/procurement";
 import {
   createPayment,
   deletePayment,
@@ -27,6 +29,27 @@ function str(form: FormData, key: string): string {
 
 function back(path: string, message: string, isError = false): never {
   redirect(`${path}?${isError ? "err" : "msg"}=${encodeURIComponent(message)}`);
+}
+
+/**
+ * บริษัท/สาขาที่ทำจ่ายต้องอยู่ในขอบเขตของผู้ใช้คนนี้
+ * (ตั้งค่าได้ที่เมนูกำหนดสิทธิ์: ทุกบริษัท-ทุกสาขา หรือเจาะจงเป็นรายบริษัท/รายสาขา)
+ * ตรวจฝั่ง server ด้วย เพราะ dropdown ฝั่งหน้าเว็บถูกแก้ค่าได้
+ */
+async function checkScope(
+  userId: string,
+  companyId: string | null,
+  branchId: string | null,
+): Promise<string | null> {
+  const { companies, branches } = await getSelectableContext(userId);
+
+  if (companyId && !companies.some((c) => c.id === companyId)) {
+    return "บัญชีนี้ไม่มีสิทธิ์ทำจ่ายให้บริษัทที่เลือก กรุณาติดต่อผู้ดูแลระบบ";
+  }
+  if (branchId && !branches.some((b) => b.id === branchId)) {
+    return "บัญชีนี้ไม่มีสิทธิ์ทำจ่ายให้สาขาที่เลือก กรุณาติดต่อผู้ดูแลระบบ";
+  }
+  return null;
 }
 
 /**
@@ -98,9 +121,34 @@ function readFiles(form: FormData): PaymentFile[] {
   return [...readPhotoFiles(form), ...readDocumentFiles(form)];
 }
 
+/** ช่องของใบเบิกเงินสดย่อยที่ไม่เกี่ยวกับเอกสารที่อ้างถึง */
+function readPaymentFields(form: FormData) {
+  return {
+    pay_date: str(form, "pay_date"),
+    paid_amount: parseAmount(str(form, "paid_amount")),
+    ref_no: str(form, "ref_no") || null,
+    payee_name: str(form, "payee_name") || null,
+    payee_address: str(form, "payee_address") || null,
+    payee_phone: normalizePhone(str(form, "payee_phone")) || str(form, "payee_phone") || null,
+    account_id: str(form, "account_id") || null,
+    approver_name: str(form, "approver_name") || null,
+    payee_signature: str(form, "payee_signature") || null,
+    approver_signature: str(form, "approver_signature") || null,
+    note: str(form, "note") || null,
+    company_id: str(form, "company_id") || null,
+    branch_id: str(form, "branch_id") || null,
+  };
+}
+
 /** ตรวจรายการที่เลือกกับสถานะจริงของเอกสารต้นทาง ณ ตอนบันทึก */
 async function checkItems(
-  input: { pay_date: string; paid_amount: number },
+  input: {
+    pay_date: string;
+    paid_amount: number;
+    payee_name?: string | null;
+    company_id?: string | null;
+    branch_id?: string | null;
+  },
   items: PaymentItem[],
   /** ตอนแก้ไข ยอดที่ใบนี้เคยเบิกไว้ไม่ควรถูกนับซ้ำเป็นยอดที่เบิกไปแล้ว */
   alreadyOnThisPayment: Map<string, number> = new Map(),
@@ -121,16 +169,16 @@ export async function createPaymentForm(form: FormData): Promise<void> {
   const path = "/procurement/payments/new";
 
   const items = readItems(form);
-  const input = { pay_date: str(form, "pay_date"), paid_amount: sumItems(items) };
+  const input = readPaymentFields(form);
+
+  const scopeProblem = await checkScope(user.id, input.company_id, input.branch_id);
+  if (scopeProblem) back(path, scopeProblem, true);
 
   const problem = await checkItems(input, items);
   if (problem) back(path, problem, true);
 
   const row: PaymentInput = {
     ...input,
-    note: str(form, "note") || null,
-    company_id: user.company_id ?? null,
-    branch_id: user.branch_id ?? null,
     created_by: user.id,
     created_by_name: str(form, "created_by_name") || user.full_name,
   };
@@ -149,21 +197,21 @@ export async function createPaymentForm(form: FormData): Promise<void> {
       after: { doc_no: docNo, paid_amount: row.paid_amount, items: items.length },
     });
   } catch (err) {
-    back(path, err instanceof Error ? err.message : "บันทึกใบเบิกจ่ายไม่สำเร็จ", true);
+    back(path, err instanceof Error ? err.message : "บันทึกใบเบิกเงินสดย่อยไม่สำเร็จ", true);
   }
 
   revalidatePath("/procurement/payments");
-  back(`/procurement/payments/${id}`, `บันทึกใบเบิกจ่ายเลขที่ ${docNo} เรียบร้อยแล้ว`);
+  back(`/procurement/payments/${id}`, `บันทึกใบเบิกเงินสดย่อยเลขที่ ${docNo} เรียบร้อยแล้ว`);
 }
 
 export async function updatePaymentForm(form: FormData): Promise<void> {
   const user = await requirePermission("PR_PAYMENT", "edit");
   const id = str(form, "id");
-  if (!id) back("/procurement/payments", "ไม่พบใบเบิกจ่ายที่ต้องการแก้ไข", true);
+  if (!id) back("/procurement/payments", "ไม่พบใบเบิกเงินสดย่อยที่ต้องการแก้ไข", true);
 
   const path = `/procurement/payments/${id}`;
   const current = await getPayment(id);
-  if (!current) back("/procurement/payments", "ไม่พบใบเบิกจ่ายนี้ อาจถูกลบไปแล้ว", true);
+  if (!current) back("/procurement/payments", "ไม่พบใบเบิกเงินสดย่อยนี้ อาจถูกลบไปแล้ว", true);
 
   // ยอดที่ใบนี้เคยเบิกไว้ ต้องหักออกก่อนตรวจ ไม่งั้นจะถูกนับซ้ำว่าเบิกเกิน
   const before = await listPaymentItems(id);
@@ -174,7 +222,10 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
   }
 
   const items = readItems(form);
-  const input = { pay_date: str(form, "pay_date"), paid_amount: sumItems(items) };
+  const input = readPaymentFields(form);
+
+  const scopeProblem = await checkScope(user.id, input.company_id, input.branch_id);
+  if (scopeProblem) back(path, scopeProblem, true);
 
   const problem = await checkItems(input, items, previous);
   if (problem) back(path, problem, true);
@@ -182,7 +233,7 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
   try {
     await updatePayment(
       id,
-      { ...input, note: str(form, "note") || null, created_by_name: str(form, "created_by_name") || null },
+      { ...input, created_by_name: str(form, "created_by_name") || null },
       items,
       readFiles(form),
     );
@@ -194,12 +245,12 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
       after: { doc_no: current.doc_no, paid_amount: input.paid_amount, items: items.length },
     });
   } catch (err) {
-    back(path, err instanceof Error ? err.message : "บันทึกใบเบิกจ่ายไม่สำเร็จ", true);
+    back(path, err instanceof Error ? err.message : "บันทึกใบเบิกเงินสดย่อยไม่สำเร็จ", true);
   }
 
   revalidatePath(path);
   revalidatePath("/procurement/payments");
-  back(path, "บันทึกใบเบิกจ่ายเรียบร้อยแล้ว");
+  back(path, "บันทึกใบเบิกเงินสดย่อยเรียบร้อยแล้ว");
 }
 
 export async function deletePaymentForm(form: FormData): Promise<void> {
@@ -207,7 +258,7 @@ export async function deletePaymentForm(form: FormData): Promise<void> {
   const id = str(form, "id");
   const path = `/procurement/payments/${id}`;
 
-  if (!id) back("/procurement/payments", "ไม่พบใบเบิกจ่ายที่ต้องการลบ", true);
+  if (!id) back("/procurement/payments", "ไม่พบใบเบิกเงินสดย่อยที่ต้องการลบ", true);
   if (form.get("confirm") !== "on") {
     back(
       path,
@@ -227,9 +278,9 @@ export async function deletePaymentForm(form: FormData): Promise<void> {
       after: { filesDeleted },
     });
   } catch (err) {
-    back(path, err instanceof Error ? err.message : "ลบใบเบิกจ่ายไม่สำเร็จ", true);
+    back(path, err instanceof Error ? err.message : "ลบใบเบิกเงินสดย่อยไม่สำเร็จ", true);
   }
 
   revalidatePath("/procurement/payments");
-  back("/procurement/payments", `ลบใบเบิกจ่ายและไฟล์แนบ ${filesDeleted} ไฟล์เรียบร้อยแล้ว`);
+  back("/procurement/payments", `ลบใบเบิกเงินสดย่อยและไฟล์แนบ ${filesDeleted} ไฟล์เรียบร้อยแล้ว`);
 }

@@ -4,41 +4,61 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import FileUploader, { type UploadedFile } from "@/components/marketing/FileUploader";
 import PhotoUploader from "@/components/marketing/PhotoUploader";
+import SignaturePad from "@/components/procurement/SignaturePad";
+import type { Company } from "@/lib/core-types";
 import { formatThaiDate } from "@/lib/datetime";
 import { formatBaht, remainingToPay, round2 } from "@/lib/procurement";
 import {
+  ACCOUNT_CATEGORY_LABEL,
   DOC_KIND_LABEL,
   MAX_PAYMENT_DOCS,
   MAX_PHOTOS,
   PR_FILE_ACCEPT,
   type PaymentRow,
+  type PrAccountRow,
   type PrDocRow,
 } from "@/lib/procurement-types";
+import type { Branch } from "@/lib/types";
 
-/** เอกสารต้นทางหนึ่งใบที่ใบเบิกจ่ายนี้เลือกไว้แล้ว (ตอนแก้ไข) */
+/** เอกสารต้นทางหนึ่งใบที่ใบเบิกนี้เลือกไว้แล้ว (ตอนแก้ไข) */
 export type PickedItem = { docId: string; amount: number };
 
 /**
- * ฟอร์มบันทึกประกอบการจ่ายเงิน (หน้าจอ 4)
- * หนึ่งใบเบิกจ่ายอ้างใบขอซ่อม/ใบขอซื้อได้หลายใบ — ยอดรวมคำนวณสดขณะติ๊กเลือก
- * ผู้ใช้จะได้เห็นทันทีว่าจะจ่ายเท่าไหร่ ไม่ต้องกดบันทึกก่อนถึงจะรู้
+ * ฟอร์มใบเบิกเงินสดย่อย (หน้าจอ 4)
+ *
+ * จ่ายได้สองแบบในหน้าเดียว:
+ *   1) อ้างใบขอซ่อม/ใบขอซื้อ — ติ๊กเลือกได้หลายใบ ระบบดึงเลขที่อนุมัติมาใส่ช่องเลขที่อ้างอิงให้
+ *   2) รายการทั่วไปที่ไม่ต้องขออนุมัติ — ไม่ต้องเลือกเอกสารเลย กรอกผู้รับเงินกับจำนวนเงินก็พอ
+ *
+ * เลขที่ใบเบิกรันแยกตามบริษัทและสาขาที่ทำจ่าย จึงบังคับให้เลือกทั้งสองช่อง
+ * และรายการที่เลือกได้จำกัดตามสิทธิ์บริษัท/สาขาของผู้ใช้ (ส่งมาจากฝั่ง server แล้ว)
  */
 export default function PaymentForm({
   payment,
   docs,
+  accounts,
+  companies,
+  branches,
   picked = [],
   photos = [],
   documents = [],
+  defaultCompanyId,
+  defaultBranchId,
   defaultRecorderName,
   action,
   submitLabel,
 }: {
   payment?: PaymentRow | null;
-  /** เอกสารที่อนุมัติแล้วและยังเบิกได้ (รวมใบที่ใบนี้เลือกไว้อยู่แล้วตอนแก้ไข) */
+  /** ใบขอซ่อม/ใบขอซื้อที่ยังเบิกได้ (รวมใบที่ใบนี้เลือกไว้อยู่แล้วตอนแก้ไข) */
   docs: PrDocRow[];
+  accounts: PrAccountRow[];
+  companies: Company[];
+  branches: Branch[];
   picked?: PickedItem[];
   photos?: string[];
   documents?: UploadedFile[];
+  defaultCompanyId?: string | null;
+  defaultBranchId?: string | null;
   defaultRecorderName?: string;
   action: (formData: FormData) => void | Promise<void>;
   submitLabel: string;
@@ -46,42 +66,57 @@ export default function PaymentForm({
   const today = new Date().toISOString().slice(0, 10);
   const pickedMap = useMemo(() => new Map(picked.map((p) => [p.docId, p.amount])), [picked]);
 
+  const [companyId, setCompanyId] = useState(payment?.company_id ?? defaultCompanyId ?? "");
   const [selected, setSelected] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(picked.map((p) => [p.docId, true])),
   );
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      docs.map((d) => [d.id, String(pickedMap.get(d.id) ?? remainingToPay(d))]),
-    ),
+    Object.fromEntries(docs.map((d) => [d.id, String(pickedMap.get(d.id) ?? remainingToPay(d))])),
+  );
+  const [paidAmount, setPaidAmount] = useState(
+    payment ? String(payment.paid_amount) : "",
+  );
+  const [refNo, setRefNo] = useState(payment?.ref_no ?? "");
+
+  const pickedDocs = docs.filter((d) => selected[d.id]);
+  const itemTotal = round2(
+    pickedDocs.reduce((sum, d) => sum + (Number(amounts[d.id]) || 0), 0),
   );
 
-  const total = round2(
-    docs.reduce(
-      (sum, d) => (selected[d.id] ? sum + (Number(amounts[d.id]) || 0) : sum),
-      0,
-    ),
-  );
-  const pickedCount = docs.filter((d) => selected[d.id]).length;
+  /** สาขาที่เลือกได้ต้องอยู่ในบริษัทที่เลือกไว้ (สาขาที่ยังไม่ระบุบริษัทให้เลือกได้เสมอ) */
+  const branchOptions = branches.filter((b) => !companyId || !b.company_id || b.company_id === companyId);
+
+  /** ติ๊กเอกสาร = ดึงยอดและเลขที่อนุมัติของใบนั้นมาเติมให้อัตโนมัติ */
+  const toggle = (doc: PrDocRow, on: boolean) => {
+    const next = { ...selected, [doc.id]: on };
+    setSelected(next);
+
+    const chosen = docs.filter((d) => next[d.id]);
+    setPaidAmount(String(round2(chosen.reduce((s, d) => s + (Number(amounts[d.id]) || 0), 0))));
+
+    const approvals = chosen.map((d) => d.approval_no).filter(Boolean);
+    setRefNo(approvals.join(", "));
+  };
 
   return (
     <form action={action} className="card space-y-5">
       {payment && <input type="hidden" name="id" value={payment.id} />}
 
-      {/* ---------- 4.1-4.3 ---------- */}
+      {/* ---------- หัวเอกสาร ---------- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <label className="label">เลขที่เบิกจ่าย</label>
+          <label className="label">เลขที่ใบเบิกเงินสดย่อย</label>
           <input
             value={payment?.doc_no ?? ""}
             readOnly
             disabled
             className="input bg-slate-50 font-medium text-slate-600"
-            placeholder="ระบบออกให้ตอนบันทึก"
+            placeholder="ระบบออกให้ตามบริษัท/สาขา"
           />
         </div>
         <div>
           <label className="label" htmlFor="pay_date">
-            วันที่ขอเบิกเงิน *
+            วันที่ทำจ่าย *
           </label>
           <input
             id="pay_date"
@@ -93,38 +128,61 @@ export default function PaymentForm({
           />
         </div>
         <div>
-          <label className="label">ยอดเงินที่จ่ายจริง</label>
-          <input
-            value={formatBaht(total)}
-            readOnly
-            disabled
-            className="input bg-slate-50 font-medium text-slate-800"
-          />
-          <p className="mt-1 text-xs text-slate-400">รวมจากรายการที่เลือก {pickedCount} ใบ</p>
+          <label className="label" htmlFor="company_id">
+            บริษัทที่ทำจ่าย *
+          </label>
+          <select
+            id="company_id"
+            name="company_id"
+            value={companyId}
+            onChange={(e) => setCompanyId(e.target.value)}
+            className="input"
+            required
+          >
+            <option value="">— เลือกบริษัท —</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
-          <label className="label" htmlFor="created_by_name">
-            ผู้บันทึก
+          <label className="label" htmlFor="branch_id">
+            สาขาที่ทำจ่าย *
           </label>
-          <input
-            id="created_by_name"
-            name="created_by_name"
-            defaultValue={payment?.created_by_name ?? defaultRecorderName ?? ""}
+          <select
+            id="branch_id"
+            name="branch_id"
+            defaultValue={payment?.branch_id ?? defaultBranchId ?? ""}
             className="input"
-          />
+            required
+          >
+            <option value="">— เลือกสาขา —</option>
+            {branchOptions.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* ---------- 4.4 อ้างอิงใบขอซ่อม/ใบขอซื้อที่อนุมัติแล้ว ---------- */}
+      <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
+        เลขที่ใบเบิกรันแยกตามบริษัทและสาขา (เช่น PV-HQ-BKK-2569-0001) ·
+        รายชื่อบริษัทและสาขาที่เลือกได้เป็นไปตามสิทธิ์ของบัญชีที่ล็อกอินอยู่
+      </p>
+
+      {/* ---------- เอกสารที่อ้างถึง (ไม่บังคับ) ---------- */}
       <section className="space-y-2">
         <h2 className="font-semibold text-slate-800">
-          เอกสารที่ขอเบิกจ่าย{" "}
-          <span className="text-sm font-normal text-slate-400">(เลือกได้หลายใบ)</span>
+          ใบขอซ่อม / ใบขอจัดซื้อที่อ้างถึง{" "}
+          <span className="text-sm font-normal text-slate-400">(ไม่มีก็จ่ายได้)</span>
         </h2>
 
         {docs.length === 0 ? (
-          <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            ยังไม่มีใบขอซ่อมหรือใบขอซื้อที่อนุมัติแล้วและยังเบิกได้ — ต้องผ่านหน้าจออนุมัติ (ข้อ 3) ก่อน
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            ยังไม่มีใบขอซ่อมหรือใบขอซื้อที่รอเบิกจ่าย — จ่ายเป็นรายการทั่วไปได้เลยโดยกรอกช่องด้านล่าง
           </p>
         ) : (
           <ul className="space-y-2">
@@ -144,9 +202,7 @@ export default function PaymentForm({
                       type="checkbox"
                       className="mt-1 h-5 w-5 shrink-0"
                       checked={on}
-                      onChange={(e) =>
-                        setSelected((prev) => ({ ...prev, [doc.id]: e.target.checked }))
-                      }
+                      onChange={(e) => toggle(doc, e.target.checked)}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block font-medium text-slate-800">
@@ -154,6 +210,11 @@ export default function PaymentForm({
                         <span className="ml-2 text-xs font-normal text-slate-500">
                           {DOC_KIND_LABEL[doc.kind]}
                         </span>
+                        {doc.approval_no && (
+                          <span className="ml-2 badge bg-emerald-100 text-emerald-700">
+                            อนุมัติ {doc.approval_no}
+                          </span>
+                        )}
                       </span>
                       <span className="block truncate text-sm text-slate-600">{doc.item_name}</span>
                       <span className="block text-xs text-slate-500">
@@ -175,22 +236,23 @@ export default function PaymentForm({
                           id={`amount_${doc.id}`}
                           name={`amount_${doc.id}`}
                           value={amounts[doc.id] ?? ""}
-                          onChange={(e) =>
-                            setAmounts((prev) => ({ ...prev, [doc.id]: e.target.value }))
-                          }
+                          onChange={(e) => {
+                            const next = { ...amounts, [doc.id]: e.target.value };
+                            setAmounts(next);
+                            setPaidAmount(
+                              String(
+                                round2(
+                                  docs
+                                    .filter((d) => selected[d.id])
+                                    .reduce((s, d) => s + (Number(next[d.id]) || 0), 0),
+                                ),
+                              ),
+                            );
+                          }}
                           className="input"
                           inputMode="decimal"
                         />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAmounts((prev) => ({ ...prev, [doc.id]: String(remaining) }))
-                        }
-                        className="btn-secondary"
-                      >
-                        เบิกเต็มยอด
-                      </button>
                     </div>
                   )}
                 </li>
@@ -198,32 +260,175 @@ export default function PaymentForm({
             })}
           </ul>
         )}
+
+        {pickedDocs.length > 0 && (
+          <p className="text-sm text-slate-600">
+            เลือกไว้ {pickedDocs.length} ใบ · ยอดรวมของเอกสาร {formatBaht(itemTotal)}
+          </p>
+        )}
       </section>
 
-      {/* ---------- 4.5 รูปภาพประกอบ ---------- */}
-      <div className="rounded-xl border border-slate-200 p-3">
-        <PhotoUploader
-          name="photo"
-          label="รูปภาพประกอบ"
-          hint={`แนบได้สูงสุด ${MAX_PHOTOS} รูป เช่น รูปงานที่ซ่อมเสร็จ หรือของที่ได้รับ`}
-          max={MAX_PHOTOS}
-          initialPaths={photos}
-          prefix="payment"
-          endpoint="/api/procurement/photo"
-        />
+      {/* ---------- ผู้รับเงินและจำนวนเงิน ---------- */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <label className="label" htmlFor="ref_no">
+            เลขที่อ้างอิง (เลขที่อนุมัติ)
+          </label>
+          <input
+            id="ref_no"
+            name="ref_no"
+            value={refNo}
+            onChange={(e) => setRefNo(e.target.value)}
+            className="input"
+            placeholder="เว้นว่างได้ถ้าไม่ผ่านอนุมัติ"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="payee_name">
+            ชื่อผู้ขายหรือผู้รับเงิน *
+          </label>
+          <input
+            id="payee_name"
+            name="payee_name"
+            defaultValue={payment?.payee_name ?? ""}
+            className="input"
+            placeholder="ชื่อร้าน ช่าง หรือพนักงานที่รับเงินไป"
+            required
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="payee_phone">
+            เบอร์โทร
+          </label>
+          <input
+            id="payee_phone"
+            name="payee_phone"
+            defaultValue={payment?.payee_phone ?? ""}
+            className="input"
+            inputMode="tel"
+            placeholder="0812345678"
+          />
+        </div>
+
+        <div className="sm:col-span-2 lg:col-span-2">
+          <label className="label" htmlFor="payee_address">
+            ที่อยู่ผู้รับเงิน
+          </label>
+          <textarea
+            id="payee_address"
+            name="payee_address"
+            defaultValue={payment?.payee_address ?? ""}
+            className="input min-h-20"
+            rows={2}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="paid_amount">
+            จำนวนเงิน *
+          </label>
+          <input
+            id="paid_amount"
+            name="paid_amount"
+            value={paidAmount}
+            onChange={(e) => setPaidAmount(e.target.value)}
+            className="input font-medium"
+            inputMode="decimal"
+            placeholder="0.00"
+            required
+          />
+          {pickedDocs.length > 0 && itemTotal > (Number(paidAmount) || 0) && (
+            <p className="mt-1 text-xs text-rose-600">
+              น้อยกว่ายอดรวมของเอกสารที่เลือก ({formatBaht(itemTotal)})
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="label" htmlFor="account_id">
+            ประเภทค่าใช้จ่าย (ผังบัญชี)
+          </label>
+          <select
+            id="account_id"
+            name="account_id"
+            defaultValue={payment?.account_id ?? ""}
+            className="input"
+          >
+            <option value="">— ไม่ระบุ —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.code} · {a.name} ({ACCOUNT_CATEGORY_LABEL[a.category]})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* ---------- 4.6 ไฟล์เอกสารแนบ ---------- */}
-      <div className="rounded-xl border border-slate-200 p-3">
-        <FileUploader
-          name="file_document"
-          label="แนบไฟล์เอกสาร (ใบเสร็จ / ใบรับสินค้า)"
-          hint={`แนบได้สูงสุด ${MAX_PAYMENT_DOCS} ไฟล์ · รองรับรูปและ PDF`}
-          max={MAX_PAYMENT_DOCS}
-          endpoint="/api/procurement/file"
-          accept={PR_FILE_ACCEPT}
-          initialFiles={documents}
-        />
+      {/* ---------- รูปและเอกสารแนบ ---------- */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 p-3">
+          <PhotoUploader
+            name="photo"
+            label="รูปถ่ายแนบประกอบ"
+            hint={`แนบได้สูงสุด ${MAX_PHOTOS} รูป`}
+            max={MAX_PHOTOS}
+            initialPaths={photos}
+            prefix="payment"
+            endpoint="/api/procurement/photo"
+          />
+        </div>
+        <div className="rounded-xl border border-slate-200 p-3">
+          <FileUploader
+            name="file_document"
+            label="เอกสารแนบประกอบ (ใบเสร็จ / ใบรับสินค้า)"
+            hint={`แนบได้สูงสุด ${MAX_PAYMENT_DOCS} ไฟล์ · รองรับรูปและ PDF`}
+            max={MAX_PAYMENT_DOCS}
+            endpoint="/api/procurement/file"
+            accept={PR_FILE_ACCEPT}
+            initialFiles={documents}
+          />
+        </div>
+      </div>
+
+      {/* ---------- ผู้บันทึก ผู้อนุมัติ และลายเซ็น ---------- */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label" htmlFor="created_by_name">
+            ชื่อผู้บันทึก
+          </label>
+          <input
+            id="created_by_name"
+            name="created_by_name"
+            defaultValue={payment?.created_by_name ?? defaultRecorderName ?? ""}
+            className="input"
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="approver_name">
+            ชื่อผู้อนุมัติ
+          </label>
+          <input
+            id="approver_name"
+            name="approver_name"
+            defaultValue={payment?.approver_name ?? ""}
+            className="input"
+            placeholder="ชื่อผู้อนุมัติจ่าย"
+          />
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-3">
+          <SignaturePad
+            name="payee_signature"
+            label="ลายเซ็นผู้รับเงิน"
+            hint="เซ็นด้วยนิ้วบนมือถือหรือเมาส์บน PC แล้วกดบันทึกลายเซ็น"
+            initialPath={payment?.payee_signature ?? null}
+          />
+        </div>
+        <div className="rounded-xl border border-slate-200 p-3">
+          <SignaturePad
+            name="approver_signature"
+            label="ลายเซ็นผู้อนุมัติจ่าย"
+            initialPath={payment?.approver_signature ?? null}
+          />
+        </div>
       </div>
 
       <div>
@@ -234,7 +439,7 @@ export default function PaymentForm({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" className="btn-primary w-full sm:w-auto" disabled={pickedCount === 0}>
+        <button type="submit" className="btn-primary w-full sm:w-auto">
           {submitLabel}
         </button>
         <Link href="/procurement/payments" className="btn-secondary w-full sm:w-auto">

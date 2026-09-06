@@ -8,7 +8,10 @@ import type {
   PaymentFile,
   PaymentInput,
   PaymentItem,
+  PaymentQuery,
   PaymentRow,
+  PrAccountInput,
+  PrAccountRow,
   PrDocQuery,
   PrDocRow,
   PrType,
@@ -606,9 +609,17 @@ export async function createApproval(input: ApprovalInput): Promise<ApprovalRow>
 
   const patch = applyApproval(target, input);
   const table = input.repair_id ? "pr_repairs" : "pr_purchases";
+
+  // อนุมัติผ่าน = ตราเลขที่และวันที่อนุมัติลงบนเอกสารต้นทาง เพื่อให้พิมพ์เอกสารประกอบการจ่ายเงินได้ครบ
+  // ไม่ผ่าน/ให้หาราคาใหม่ = ล้างเลขที่เดิมทิ้ง จะได้ไม่มีเลขอนุมัติค้างบนเอกสารที่ยังไม่ผ่าน
+  const approvalStamp =
+    input.decision === "approved"
+      ? { approval_no: doc_no, approved_date: input.approve_date }
+      : { approval_no: null, approved_date: null };
+
   const { error: targetError } = await supabase
     .from(table)
-    .update({ ...patch, reject_note: input.note })
+    .update({ ...patch, ...approvalStamp, reject_note: input.note })
     .eq("id", targetId);
   if (targetError) {
     throw new Error(`บันทึกใบอนุมัติแล้ว แต่ปรับสถานะเอกสารไม่สำเร็จ: ${targetError.message}`);
@@ -635,12 +646,12 @@ function toPaymentRow(raw: Record<string, unknown>): PaymentRow {
   };
 }
 
-export async function listPayments(
-  query: { from?: string; to?: string; keyword?: string; branch_id?: string | null; limit?: number } = {},
-): Promise<PaymentRow[]> {
+export async function listPayments(query: PaymentQuery = {}): Promise<PaymentRow[]> {
   let q = getSupabase().from("v_pr_payments").select("*");
 
+  if (query.company_id) q = q.eq("company_id", query.company_id);
   if (query.branch_id) q = q.eq("branch_id", query.branch_id);
+  if (query.account_id) q = q.eq("account_id", query.account_id);
   if (query.from) q = q.gte("pay_date", query.from);
   if (query.to) q = q.lte("pay_date", query.to);
 
@@ -648,7 +659,7 @@ export async function listPayments(
     .order("pay_date", { ascending: false })
     .order("doc_no", { ascending: false })
     .limit(query.limit ?? 300);
-  if (error) throw new Error(`อ่านรายการใบเบิกจ่ายไม่สำเร็จ: ${error.message}`);
+  if (error) throw new Error(`อ่านรายการใบเบิกเงินสดย่อยไม่สำเร็จ: ${error.message}`);
 
   const rows = (data ?? []).map((r) => toPaymentRow(r as Record<string, unknown>));
 
@@ -656,7 +667,7 @@ export async function listPayments(
   if (!keyword) return rows;
 
   return rows.filter((r) =>
-    [r.doc_no, r.note, r.branch_name, r.company_name, r.created_by_name]
+    [r.doc_no, r.ref_no, r.payee_name, r.account_name, r.note, r.branch_name, r.company_name, r.created_by_name]
       .join(" ")
       .toLowerCase()
       .includes(keyword),
@@ -669,7 +680,7 @@ export async function getPayment(id: string): Promise<PaymentRow | null> {
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  if (error) throw new Error(`อ่านใบเบิกจ่ายไม่สำเร็จ: ${error.message}`);
+  if (error) throw new Error(`อ่านใบเบิกเงินสดย่อยไม่สำเร็จ: ${error.message}`);
   return data ? toPaymentRow(data as Record<string, unknown>) : null;
 }
 
@@ -717,15 +728,29 @@ async function syncActualAmount(kind: "repair" | "purchase", docId: string): Pro
 
   const { data: doc, error: docError } = await supabase
     .from(table)
-    .select("approved_amount")
+    .select("approved_amount, approve_status")
     .eq("id", docId)
     .maybeSingle();
   if (docError) throw new Error(`อ่านเอกสารต้นทางไม่สำเร็จ: ${docError.message}`);
   if (!doc) return;
 
-  // เบิกครบยอดที่อนุมัติแล้วถือว่าจ่ายจบ ถ้ายังไม่ครบ (รวมถึงถอนรายการออกหมด) ค้างสถานะ "อนุมัติ" ไว้
-  const approved = num((doc as { approved_amount: unknown }).approved_amount);
-  const pay_status = total > 0 && total >= approved ? "settled" : "approved";
+  const row = doc as { approved_amount: unknown; approve_status: unknown };
+  const approved = num(row.approved_amount);
+  const isApproved = row.approve_status === "approved";
+
+  /*
+   * สถานะการเบิกเงินสรุปจากยอดที่จ่ายไปแล้วจริง:
+   *   จ่ายครบยอดที่อนุมัติ (หรือจ่ายทั้งที่ไม่ได้ตั้งยอดอนุมัติไว้) → จ่าย/รับเงินแล้ว
+   *   จ่ายบางส่วน                                                  → ค้างที่ "อนุมัติ"
+   *   ยังไม่จ่ายเลย                                                → กลับไปตามสถานะอนุมัติของเอกสาร
+   * เผื่อกรณีจ่ายจากหน้าเงินสดย่อยโดยที่เอกสารยังไม่ผ่านอนุมัติด้วย
+   */
+  const pay_status =
+    total > 0 && (approved <= 0 || total >= approved)
+      ? "settled"
+      : total > 0 || isApproved
+        ? "approved"
+        : "requested";
 
   const { error: updateError } = await supabase
     .from(table)
@@ -753,20 +778,55 @@ async function syncTargets(items: PaymentItem[]): Promise<void> {
   ]);
 }
 
+/**
+ * รหัสขอบเขตของเลขที่ใบเบิกเงินสดย่อย = รหัสบริษัท-รหัสสาขา
+ * ทำให้แต่ละสาขามีชุดเลขที่ของตัวเอง (PV-HQ-BKK-2569-0001)
+ */
+async function paymentScope(companyId: string | null, branchId: string | null): Promise<string> {
+  const supabase = getSupabase();
+
+  const [company, branch] = await Promise.all([
+    companyId
+      ? supabase.from("companies").select("code").eq("id", companyId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    branchId
+      ? supabase.from("branches").select("code").eq("id", branchId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  const clean = (value: unknown) =>
+    String(value ?? "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8);
+
+  const companyCode = clean((company.data as { code?: string } | null)?.code) || "NA";
+  const branchCode = clean((branch.data as { code?: string } | null)?.code) || "NA";
+  return `${companyCode}-${branchCode}`;
+}
+
 export async function createPayment(
   input: PaymentInput,
   items: PaymentItem[],
   files: PaymentFile[],
 ): Promise<PaymentRow> {
   const supabase = getSupabase();
-  const doc_no = await nextDocNo(PAYMENT_PREFIX, input.pay_date, "ใบเบิกจ่าย");
+
+  const scope = await paymentScope(input.company_id, input.branch_id);
+  const { data: docNoData, error: docError } = await supabase.rpc("pr_next_scoped_doc_no", {
+    doc_prefix: PAYMENT_PREFIX,
+    scope,
+    be_year: beYearOf(input.pay_date),
+  });
+  if (docError) throw new Error(`ออกเลขที่ใบเบิกเงินสดย่อยไม่สำเร็จ: ${docError.message}`);
+  const doc_no = docNoData as string;
 
   const { data, error } = await supabase
     .from("pr_payments")
-    .insert({ ...input, paid_amount: sumItems(items), doc_no })
+    .insert({ ...input, doc_no })
     .select("id")
     .single();
-  if (error) throw new Error(`บันทึกใบเบิกจ่ายไม่สำเร็จ: ${error.message}`);
+  if (error) throw new Error(`บันทึกใบเบิกเงินสดย่อยไม่สำเร็จ: ${error.message}`);
 
   const id = (data as Pick<Payment, "id">).id;
   await replacePaymentItems(id, items);
@@ -785,11 +845,8 @@ export async function updatePayment(
   // เอกสารที่ถูกเอาออกจากใบนี้ก็ต้องคำนวณยอดเบิกจริงใหม่ด้วย ไม่งั้นจะค้างยอดเก่า
   const before = await listPaymentItems(id);
 
-  const { error } = await getSupabase()
-    .from("pr_payments")
-    .update({ ...input, paid_amount: sumItems(items) })
-    .eq("id", id);
-  if (error) throw new Error(`บันทึกใบเบิกจ่ายไม่สำเร็จ: ${error.message}`);
+  const { error } = await getSupabase().from("pr_payments").update(input).eq("id", id);
+  if (error) throw new Error(`บันทึกใบเบิกเงินสดย่อยไม่สำเร็จ: ${error.message}`);
 
   await replacePaymentItems(id, items);
   await replacePaymentFiles(id, files);
@@ -802,7 +859,7 @@ export async function deletePayment(id: string): Promise<{ filesDeleted: number 
   await removeProcurementFiles(files.map((f) => f.path));
 
   const { error } = await getSupabase().from("pr_payments").delete().eq("id", id);
-  if (error) throw new Error(`ลบใบเบิกจ่ายไม่สำเร็จ: ${error.message}`);
+  if (error) throw new Error(`ลบใบเบิกเงินสดย่อยไม่สำเร็จ: ${error.message}`);
 
   await syncTargets(items);
   return { filesDeleted: files.length };
@@ -946,4 +1003,69 @@ export async function procurementFileUrl(path: string | null): Promise<string | 
   const { data, error } = await getSupabase().storage.from(MEMO_BUCKET).createSignedUrl(path, 600);
   if (error) return null;
   return data?.signedUrl ?? null;
+}
+
+// ---------- ผังบัญชี (ใช้เป็นประเภทค่าใช้จ่ายของใบเบิกเงินสดย่อย) ----------
+
+export async function listAccounts(
+  options: { includeInactive?: boolean } = {},
+): Promise<PrAccountRow[]> {
+  let q = getSupabase().from("v_pr_accounts").select("*");
+  if (!options.includeInactive) q = q.eq("is_active", true);
+
+  const { data, error } = await q.order("sort_order").order("code");
+  if (error) throw new Error(`อ่านผังบัญชีไม่สำเร็จ: ${error.message}`);
+
+  return (data ?? []).map((r) => ({
+    ...(r as unknown as PrAccountRow),
+    sort_order: num((r as Record<string, unknown>).sort_order),
+    child_count: num((r as Record<string, unknown>).child_count),
+  }));
+}
+
+export async function getAccount(id: string): Promise<PrAccountRow | null> {
+  const { data, error } = await getSupabase()
+    .from("v_pr_accounts")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`อ่านบัญชีไม่สำเร็จ: ${error.message}`);
+  return data ? (data as unknown as PrAccountRow) : null;
+}
+
+export async function insertAccount(input: PrAccountInput): Promise<void> {
+  const { error } = await getSupabase().from("pr_accounts").insert(input);
+  if (error) {
+    throw new Error(
+      error.code === "23505"
+        ? `รหัสบัญชี ${input.code} มีอยู่แล้ว กรุณาใช้รหัสอื่น`
+        : `บันทึกบัญชีไม่สำเร็จ: ${error.message}`,
+    );
+  }
+}
+
+export async function updateAccount(id: string, patch: Partial<PrAccountInput>): Promise<void> {
+  const { error } = await getSupabase().from("pr_accounts").update(patch).eq("id", id);
+  if (error) {
+    throw new Error(
+      error.code === "23505"
+        ? `รหัสบัญชี ${patch.code} มีอยู่แล้ว กรุณาใช้รหัสอื่น`
+        : `บันทึกบัญชีไม่สำเร็จ: ${error.message}`,
+    );
+  }
+}
+
+/** จำนวนใบเบิกและบัญชีย่อยที่ยังอ้างถึงบัญชีนี้ — ใช้เตือนก่อนลบ */
+export async function countAccountUsage(id: string): Promise<{ payments: number; children: number }> {
+  const supabase = getSupabase();
+  const [payments, children] = await Promise.all([
+    supabase.from("pr_payments").select("id", { count: "exact", head: true }).eq("account_id", id),
+    supabase.from("pr_accounts").select("id", { count: "exact", head: true }).eq("parent_id", id),
+  ]);
+  return { payments: payments.count ?? 0, children: children.count ?? 0 };
+}
+
+export async function deleteAccount(id: string): Promise<void> {
+  const { error } = await getSupabase().from("pr_accounts").delete().eq("id", id);
+  if (error) throw new Error(`ลบบัญชีไม่สำเร็จ: ${error.message}`);
 }

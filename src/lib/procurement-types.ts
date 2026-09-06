@@ -209,6 +209,9 @@ export type Repair = {
   approve_status: ApproveStatus;
   reject_reason: RejectReason | null;
   reject_note: string | null;
+  /** เลขที่/วันที่จากใบอนุมัติ (ข้อ 3.1.1-3.1.2) ระบบเขียนให้ตอนอนุมัติผ่าน */
+  approval_no: string | null;
+  approved_date: string | null;
   tech_visit_date: string | null;
   expected_done_date: string | null;
   fixed_date: string | null;
@@ -281,6 +284,9 @@ export type Purchase = {
   approve_status: ApproveStatus;
   reject_reason: RejectReason | null;
   reject_note: string | null;
+  /** เลขที่/วันที่จากใบอนุมัติ (ข้อ 3.1.1-3.1.2) ระบบเขียนให้ตอนอนุมัติผ่าน */
+  approval_no: string | null;
+  approved_date: string | null;
   received_date: string | null;
   note: string | null;
   created_at: string;
@@ -332,6 +338,17 @@ export type Payment = {
   doc_no: string;
   pay_date: string;
   paid_amount: number;
+  /** เลขที่อ้างอิง — ดึงเลขที่อนุมัติมาใส่ ถ้าเป็นรายการทั่วไปเว้นว่างได้ */
+  ref_no: string | null;
+  payee_name: string | null;
+  payee_address: string | null;
+  payee_phone: string | null;
+  /** ประเภทค่าใช้จ่าย = บัญชีในผังบัญชี */
+  account_id: string | null;
+  approver_name: string | null;
+  /** ลายเซ็นดิจิทัล เก็บเป็นเส้นทางไฟล์ PNG ในถังเดียวกับรูปแนบ */
+  payee_signature: string | null;
+  approver_signature: string | null;
   note: string | null;
   company_id: string | null;
   branch_id: string | null;
@@ -342,7 +359,12 @@ export type Payment = {
 
 export type PaymentRow = Payment & {
   company_name: string | null;
+  company_code: string | null;
   branch_name: string | null;
+  branch_code: string | null;
+  account_code: string | null;
+  account_name: string | null;
+  account_category: AccountCategory | null;
   created_by_full_name: string | null;
   item_count: number;
   file_count: number;
@@ -392,6 +414,9 @@ export type PrDocRow = {
   approve_status: ApproveStatus;
   reject_reason: RejectReason | null;
   reject_note: string | null;
+  /** เลขที่และวันที่ในใบอนุมัติที่ทำให้เอกสารนี้ผ่าน (ข้อ 3.1.1-3.1.2) */
+  approval_no: string | null;
+  approved_date: string | null;
   /** มีเฉพาะฝั่งงานซ่อม */
   job_status: JobStatus | null;
   expected_done_date: string | null;
@@ -424,3 +449,70 @@ export type PrDocQuery = {
 
 export type RepairQuery = Omit<PrDocQuery, "kind">;
 export type PurchaseQuery = Omit<PrDocQuery, "kind" | "job_status">;
+
+// ---------- ผังบัญชี (ใช้เป็น "ประเภทค่าใช้จ่าย" ของใบเบิกเงินสดย่อย) ----------
+
+/** 5 หมวดตามหลักบัญชี */
+export type AccountCategory = "asset" | "liability" | "equity" | "expense" | "revenue";
+
+export const ACCOUNT_CATEGORY_ORDER: AccountCategory[] = [
+  "asset",
+  "liability",
+  "equity",
+  "revenue",
+  "expense",
+];
+
+export const ACCOUNT_CATEGORY_LABEL: Record<AccountCategory, string> = {
+  asset: "สินทรัพย์",
+  liability: "หนี้สิน",
+  equity: "ส่วนของทุน",
+  revenue: "รายได้",
+  expense: "ค่าใช้จ่าย",
+};
+
+export const ACCOUNT_CATEGORY_CLASS: Record<AccountCategory, string> = {
+  asset: "bg-sky-100 text-sky-700",
+  liability: "bg-amber-100 text-amber-700",
+  equity: "bg-violet-100 text-violet-700",
+  revenue: "bg-emerald-100 text-emerald-700",
+  expense: "bg-rose-100 text-rose-700",
+};
+
+/** หนึ่งบัญชีในผังบัญชี — ไม่มี parent_id = บัญชีคุม · มี parent_id = บัญชีย่อย */
+export type PrAccount = {
+  id: string;
+  code: string;
+  name: string;
+  category: AccountCategory;
+  parent_id: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+/** บัญชีพร้อมชื่อบัญชีคุม (มาจาก view v_pr_accounts) */
+export type PrAccountRow = PrAccount & {
+  parent_code: string | null;
+  parent_name: string | null;
+  child_count: number;
+};
+
+export type PrAccountInput = {
+  code: string;
+  name: string;
+  category: AccountCategory;
+  parent_id: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+/** เงื่อนไขค้นหาของหน้าจอใบเบิกเงินสดย่อย (ข้อ 4) */
+export type PaymentQuery = {
+  keyword?: string;
+  company_id?: string | null;
+  branch_id?: string | null;
+  account_id?: string | null;
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+};

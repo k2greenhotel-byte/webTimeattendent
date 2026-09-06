@@ -62,12 +62,31 @@ export default async function RepairDetailPage({
             {repair.fixed_date ? ` · แก้ไขเสร็จ ${formatThaiDate(repair.fixed_date)}` : ""}
           </p>
         </div>
-        {canAddUpdate && (
-          <Link href={`/procurement/updates/new?repair=${repair.id}`} className="btn-primary">
-            + บันทึก Update งานซ่อม
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <Link
+            href={`/procurement/repairs/${repair.id}/print`}
+            className="btn-secondary flex-1 sm:flex-none"
+          >
+            🖨 พิมพ์เอกสาร
           </Link>
-        )}
+          {canAddUpdate && (
+            <Link
+              href={`/procurement/updates/new?repair=${repair.id}`}
+              className="btn-primary flex-1 sm:flex-none"
+            >
+              + บันทึก Update งานซ่อม
+            </Link>
+          )}
+        </div>
       </div>
+
+      {repair.approval_no && (
+        <p className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          อนุมัติแล้วตามใบอนุมัติเลขที่ <span className="font-semibold">{repair.approval_no}</span>
+          {repair.approved_date ? ` วันที่ ${formatThaiDate(repair.approved_date)}` : ""} — กด "พิมพ์เอกสาร"
+          เพื่อใช้ประกอบการจ่ายเงินได้เลย
+        </p>
+      )}
 
       {query.msg && (
         <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{query.msg}</p>

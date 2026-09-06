@@ -8,9 +8,12 @@ const CARDS: { href: string; menuCode: string; title: string; desc: string }[] =
   { href: "/procurement/updates", menuCode: "PR_REPAIR_UPD", title: "1.2 Update งานซ่อม", desc: "บันทึกความคืบหน้าของงานซ่อมที่กำลังดำเนินการ" },
   { href: "/procurement/purchases", menuCode: "PR_PURCHASE", title: "2.1 บันทึกขอจัดซื้อ", desc: "ขอจัดซื้อวัสดุ/ครุภัณฑ์ พร้อมแนบรูปประกอบ" },
   { href: "/procurement/approvals", menuCode: "PR_APPROVE", title: "3.1 อนุมัติซ่อม/จัดซื้อ", desc: "พิจารณาอนุมัติ ไม่อนุมัติ หรือให้หาราคาใหม่มาเทียบ" },
-  { href: "/procurement/payments", menuCode: "PR_PAYMENT", title: "4.1 บันทึกประกอบการจ่ายเงิน", desc: "บันทึกการเบิกจ่ายจริง แนบใบเสร็จ และสั่งพิมพ์เอกสาร" },
+  { href: "/procurement/payments", menuCode: "PR_PAYMENT", title: "4.1 จ่ายเงินจากเงินสดย่อย", desc: "จ่ายทั้งรายการที่อนุมัติแล้วและรายการทั่วไป พร้อมลายเซ็นและพิมพ์เอกสาร" },
   { href: "/procurement/search", menuCode: "PR_SEARCH", title: "5. สอบถามงานซ่อม/งานขอซื้อ", desc: "ค้นหาและติดตามเอกสารทุกสถานะ" },
   { href: "/procurement/dashboard", menuCode: "PR_DASH", title: "6. Dashboard ติดตามงานซ่อม", desc: "ภาพรวมสถานะงาน ยอดเงิน และงานเกินกำหนด" },
+  { href: "/procurement/setup/accounts", menuCode: "PR_ACCOUNT", title: "ตั้งค่า ผังบัญชี", desc: "กำหนดหมวดบัญชี บัญชีคุม และบัญชีย่อย ใช้เป็นประเภทค่าใช้จ่าย" },
+  { href: "/procurement/setup/asset-types", menuCode: "PR_ASSET_TYPE", title: "ตั้งค่า ประเภททรัพย์สิน", desc: "ประเภททรัพย์สินที่ใช้ในใบขอซ่อม" },
+  { href: "/procurement/setup/material-types", menuCode: "PR_MATERIAL_TYPE", title: "ตั้งค่า ประเภทวัสดุ", desc: "ประเภทวัสดุที่ใช้ในใบขอจัดซื้อ" },
 ];
 
 /** หน้าแรกของโปรแกรม — แสดงเฉพาะเมนูที่ผู้ใช้คนนี้มีสิทธิ์เข้าถึง */

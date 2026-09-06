@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import PhotoGrid from "@/components/procurement/PhotoGrid";
 import PurchaseForm from "@/components/procurement/PurchaseForm";
@@ -48,7 +49,18 @@ export default async function PurchaseDetailPage({
             {purchase.received_date ? ` · ได้รับวัสดุ ${formatThaiDate(purchase.received_date)}` : ""}
           </p>
         </div>
+        <Link href={`/procurement/purchases/${purchase.id}/print`} className="btn-secondary">
+          🖨 พิมพ์เอกสาร
+        </Link>
       </div>
+
+      {purchase.approval_no && (
+        <p className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          อนุมัติแล้วตามใบอนุมัติเลขที่ <span className="font-semibold">{purchase.approval_no}</span>
+          {purchase.approved_date ? ` วันที่ ${formatThaiDate(purchase.approved_date)}` : ""} — กด "พิมพ์เอกสาร"
+          เพื่อใช้ประกอบการจ่ายเงินได้เลย
+        </p>
+      )}
 
       {query.msg && (
         <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{query.msg}</p>

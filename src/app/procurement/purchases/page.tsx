@@ -81,6 +81,8 @@ export default async function PurchaseListPage({
             approve_status: r.approve_status,
             reject_reason: r.reject_reason,
             reject_note: r.reject_note,
+            approval_no: r.approval_no,
+            approved_date: r.approved_date,
             job_status: null,
             expected_done_date: null,
             done_date: r.received_date,
