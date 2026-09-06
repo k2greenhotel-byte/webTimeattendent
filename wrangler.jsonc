@@ -13,11 +13,12 @@
     "enabled": true
   },
   // ค่าที่ไม่ใช่ความลับ — ส่วนที่เป็นความลับตั้งด้วย `wrangler secret put`
-  // (SUPABASE_SERVICE_ROLE_KEY, SESSION_SECRET, ADMIN_PIN)
+  // (SUPABASE_SERVICE_ROLE_KEY, SESSION_SECRET, ADMIN_PIN, DB2_API_KEY)
   "vars": {
     "NEXT_PUBLIC_SUPABASE_URL": "https://riqolnbcolvgfxkmgyzn.supabase.co",
     "SUPABASE_PHOTO_BUCKET": "attendance-photos",
     "SUPABASE_MEMO_BUCKET": "marketing-files",
-    "TZ": "Asia/Bangkok"
+    "TZ": "Asia/Bangkok",
+    "DB2_API_URL": "https://db2-sales.tail9c6195.ts.net"
   }
 }

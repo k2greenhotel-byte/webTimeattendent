@@ -905,3 +905,20 @@ const map = await listApprovalsFor("bk_bookings", ids);             // ทั้
 (ปิดฟอร์มกลางไว้ รอโมดูลจัดซื้อย้ายมาเชื่อม)
 
 กฎการอนุมัติทั้งหมดเป็น pure function ใน `src/lib/approval.ts` มี unit test 44 เคสที่ `tests/approval.test.ts`
+
+## ข้อมูลสดจากระบบขาย (Db2) — โปรแกรม `/db2`
+
+ดึงข้อมูล **ณ เวลาที่เปิดดู** จากฐานข้อมูล IBM Db2 ของระบบขายในบริษัท ผ่านแอปตัวกลาง
+(`D:\claude code\DB2\db2-nextjs-starter\db2-nextjs-starter` — รันในวง LAN บริษัท เปิดออกมาที่
+`https://db2-sales.tail9c6195.ts.net` ด้วย Tailscale Funnel) ไม่มีตารางของตัวเองใน Supabase
+
+| เมนู | path | ข้อมูล |
+|---|---|---|
+| `DB2_DASH` | `/db2/dashboard` | ยอดขายทุกช่องทาง รายเดือน/ประเภท/สาขา/รุ่น เลือกช่วงวันที่ได้ |
+| `DB2_STOCK` | `/db2/stock` | รถคงเหลือ อายุสต็อก มูลค่าต้นทุน 50 คันค้างนานสุด |
+| `DB2_CUSTOMER` | `/db2/customers` | ค้นลูกค้า ดูสัญญาผ่อน (คงเหลือจริง) และรถที่เคยซื้อ |
+
+- ตั้งค่า: `DB2_API_URL` (vars ใน `wrangler.jsonc`) + `DB2_API_KEY` (`wrangler secret put DB2_API_KEY` — ค่าเดียวกับ `API_KEY` ของแอป Db2)
+- โค้ดเรียก API อยู่ที่ `src/lib/db2-api.ts` เท่านั้น (server-only, header `x-api-key`, timeout 20 วินาที) — หน้าอื่นที่อยากได้ชื่อลูกค้า/ยอดขายสดให้ import จากไฟล์นี้
+- ลงทะเบียนโปรแกรม/เมนู/สิทธิ์: migration `0029_db2_live.sql` — ทุกระดับอ่านได้อย่างเดียว ให้สิทธิ์เข้าโปรแกรมที่ `/core/program-users`
+- ถ้าเครื่องในบริษัทปิดหรือ Funnel หลุด หน้าเหล่านี้จะขึ้นข้อความ "ต่อระบบขาย (Db2) ไม่ได้" แทนที่จะพัง

@@ -67,6 +67,8 @@ export const config = {
     "/api/punch",
     "/moto",
     "/moto/:path*",
+    "/db2",
+    "/db2/:path*",
     "/marketing",
     "/marketing/:path*",
     "/api/marketing/:path*",

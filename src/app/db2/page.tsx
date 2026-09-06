@@ -1,0 +1,57 @@
+import Link from "next/link";
+import { getMyPermissions } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
+
+const MENUS = [
+  {
+    menuCode: "DB2_DASH",
+    href: "/db2/dashboard",
+    title: "1. Dashboard ยอดขายสด",
+    description: "จำนวนคัน ยอดขาย ต้นทุน กำไรขั้นต้น แยกรายเดือน/ช่องทาง/สาขา/รุ่น — เลือกช่วงวันที่ได้",
+  },
+  {
+    menuCode: "DB2_STOCK",
+    href: "/db2/stock",
+    title: "2. สต็อกรถคงเหลือ",
+    description: "รถที่ยังไม่ขายทุกสาขา อายุสต็อก มูลค่าต้นทุน และรายการค้างนานสุด",
+  },
+  {
+    menuCode: "DB2_CUSTOMER",
+    href: "/db2/customers",
+    title: "3. ค้นลูกค้า / สัญญาผ่อน",
+    description: "ค้นด้วยชื่อ รหัสลูกค้า เลขบัตร หรือเบอร์ ดูสัญญาผ่อนพร้อมยอดคงเหลือจริง และรถที่เคยซื้อ",
+  },
+];
+
+/** หน้าแรกของโปรแกรม — เมนูตามสิทธิ์ */
+export default async function Db2HomePage() {
+  const permissions = await getMyPermissions();
+  const readable = new Set(permissions.filter((p) => p.can_read).map((p) => p.menu_code));
+  const menus = MENUS.filter((m) => readable.has(m.menuCode));
+
+  return (
+    <main className="mx-auto max-w-5xl space-y-4 p-4">
+      <div>
+        <h1 className="text-xl font-bold text-slate-800">ข้อมูลสดจากระบบขาย (Db2)</h1>
+        <p className="text-sm text-slate-500">
+          ทุกหน้าดึงข้อมูล ณ เวลาที่เปิดดูจากฐานข้อมูลระบบขายในบริษัทโดยตรง ไม่ใช่สำเนา —
+          ถ้าเครื่องในบริษัทปิดอยู่จะเปิดไม่ได้ชั่วคราว
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {menus.map((m) => (
+          <Link key={m.menuCode} href={m.href} className="card block hover:border-brand-500">
+            <h2 className="font-semibold text-slate-800">{m.title}</h2>
+            <p className="mt-1 text-sm text-slate-500">{m.description}</p>
+          </Link>
+        ))}
+      </div>
+
+      {menus.length === 0 && (
+        <p className="card text-sm text-slate-600">บัญชีนี้ยังไม่มีสิทธิ์ดูเมนูใดในโปรแกรมนี้</p>
+      )}
+    </main>
+  );
+}
