@@ -15,6 +15,7 @@ import {
   deadlineOf,
   formatBaht,
   jobText,
+  makerText,
   overdueText,
   vehicleText,
 } from "@/lib/claim";
@@ -28,6 +29,7 @@ import {
 import { listCompanies } from "@/lib/core-db";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
+import { listMaster } from "@/lib/moto-db";
 import { checkPermission, requirePermission } from "@/lib/session";
 import { deleteClaimForm, deleteClaimUpdateForm, updateClaimForm } from "../../actions";
 
@@ -48,13 +50,14 @@ export default async function ClaimDetailPage({
   const claim = await getClaim(id);
   if (!claim) notFound();
 
-  const [items, photos, updates, companies, branches, canEdit, canDelete, canAddUpdate, canDeleteUpdate] =
+  const [items, photos, updates, companies, branches, vendors, canEdit, canDelete, canAddUpdate, canDeleteUpdate] =
     await Promise.all([
       listClaimItems(id),
       listClaimPhotos(id),
       listClaimUpdates({ claim_id: id }),
       listCompanies(true),
       listBranches(true),
+      listMaster("vendor"),
       checkPermission("CLM_CLAIM", "edit"),
       checkPermission("CLM_CLAIM", "delete"),
       checkPermission("CLM_UPDATE", "write"),
@@ -137,7 +140,7 @@ export default async function ClaimDetailPage({
           <div>
             <dt className="text-xs text-slate-400">บริษัทผู้ผลิต / ตัวแทน</dt>
             <dd className="text-slate-700">
-              {[claim.maker_name, claim.maker_agent_name].filter(Boolean).join(" · ") || "—"}
+              {[makerText(claim), claim.maker_agent_name].filter(Boolean).join(" · ") || "—"}
               {claim.maker_phone ? ` · ${claim.maker_phone}` : ""}
             </dd>
           </div>
@@ -174,6 +177,7 @@ export default async function ClaimDetailPage({
           photos={photos}
           companies={companies}
           branches={branches}
+          vendors={vendors}
           defaultRecorderName={user.full_name}
           action={updateClaimForm}
           submitLabel="บันทึกการแก้ไข"

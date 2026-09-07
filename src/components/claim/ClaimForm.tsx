@@ -11,10 +11,12 @@ import {
   CLAIM_MAX_PHOTOS,
   CLAIM_URGENCY_LABEL,
   CLAIM_URGENCY_ORDER,
+  LEGACY_MAKER,
   type ClaimItem,
   type ClaimRow,
 } from "@/lib/claim-types";
 import type { Company } from "@/lib/core-types";
+import type { MotoOption } from "@/lib/moto-types";
 import type { Branch } from "@/lib/types";
 
 /**
@@ -33,6 +35,7 @@ export default function ClaimForm({
   photos = [],
   companies,
   branches,
+  vendors,
   defaultCompanyId,
   defaultBranchId,
   defaultRecorderName,
@@ -44,6 +47,8 @@ export default function ClaimForm({
   photos?: string[];
   companies: Company[];
   branches: Branch[];
+  /** ทะเบียนบริษัทรถ / เจ้าหนี้ (ข้อมูลเบื้องต้นของโปรแกรม MC) — ตัวเลือกของช่องบริษัทผู้ผลิต */
+  vendors: MotoOption[];
   defaultCompanyId?: string | null;
   defaultBranchId?: string | null;
   defaultRecorderName?: string;
@@ -51,6 +56,9 @@ export default function ClaimForm({
   submitLabel: string;
 }) {
   const today = new Date().toISOString().slice(0, 10);
+
+  // ใบเก่าที่พิมพ์ชื่อผู้ผลิตเองไว้ (ยังไม่ได้ผูกกับทะเบียน) — ต้องไม่หายไปตอนแก้ใบ
+  const legacyMakerName = !claim?.maker_vendor_id ? (claim?.maker_name ?? "") : "";
 
   return (
     <form action={action} className="card space-y-5">
@@ -213,16 +221,32 @@ export default function ClaimForm({
       {/* ---------- ผู้ผลิต / ผู้ดำเนินการแก้ไข (1.4.15-1.4.17) ---------- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <label className="label" htmlFor="maker_name">
+          <label className="label" htmlFor="maker_vendor_id">
             ชื่อบริษัทผู้ผลิต
           </label>
-          <input
-            id="maker_name"
-            name="maker_name"
-            defaultValue={claim?.maker_name ?? ""}
+          <select
+            id="maker_vendor_id"
+            name="maker_vendor_id"
+            defaultValue={claim?.maker_vendor_id ?? (legacyMakerName ? LEGACY_MAKER : "")}
             className="input"
-            placeholder="เช่น ไทยยามาฮ่ามอเตอร์"
-          />
+          >
+            <option value="">— ไม่ระบุ —</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+            {/* ใบเก่าที่พิมพ์ชื่อเองไว้ก่อนมีทะเบียน — เก็บไว้ให้เลือกต่อได้ จะได้ไม่หายไปเงียบ ๆ */}
+            {legacyMakerName && (
+              <option value={LEGACY_MAKER}>{legacyMakerName} (ข้อความเดิม)</option>
+            )}
+          </select>
+          <p className="mt-1 text-xs text-slate-400">
+            ดึงจากข้อมูลเบื้องต้น “บริษัทรถ / เจ้าหนี้” · ไม่มีในรายการให้เพิ่มที่{" "}
+            <Link href="/moto/setup/vendors" className="text-brand-600 hover:underline">
+              ทะเบียนบริษัทรถ
+            </Link>
+          </p>
         </div>
         <div>
           <label className="label" htmlFor="maker_agent_name">

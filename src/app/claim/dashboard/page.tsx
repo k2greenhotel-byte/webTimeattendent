@@ -5,6 +5,7 @@ import {
   countByKey,
   formatBaht,
   isOverdue,
+  makerText,
   overdueDays,
   summarizeClaims,
   vehicleText,
@@ -82,7 +83,7 @@ export default async function ClaimDashboardPage({
 
   const byBranch = countByKey(rows, (r) => r.branch_name, "— ไม่ระบุสาขา —");
   const byCompany = countByKey(rows, (r) => r.company_name, "— ไม่ระบุบริษัท —");
-  const byMaker = countByKey(rows, (r) => r.maker_name, "— ยังไม่ระบุผู้ผลิต —").slice(0, 12);
+  const byMaker = countByKey(rows, (r) => makerText(r), "— ยังไม่ระบุผู้ผลิต —").slice(0, 12);
   const byModel = countByKey(rows, (r) => r.db2_model_name, "— ไม่ระบุรุ่น —").slice(0, 12);
 
   const statusGroups = [

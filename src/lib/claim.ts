@@ -101,6 +101,17 @@ export function vehicleText(
     .join(" · ");
 }
 
+/**
+ * ชื่อบริษัทผู้ผลิตที่ใช้แสดง (ข้อ 1.4.15)
+ * ยึดชื่อล่าสุดจากทะเบียน "บริษัทรถ / เจ้าหนี้" ก่อน — ทะเบียนแก้ชื่อแล้วทุกใบเปลี่ยนตาม
+ * ไม่มี (ใบเก่าที่พิมพ์ชื่อเอง หรือทะเบียนถูกลบ) จึงถอยไปใช้ชื่อที่บันทึกไว้บนใบ
+ */
+export function makerText(
+  row: Pick<Claim, "maker_name"> & { maker_vendor_name?: string | null },
+): string {
+  return (row.maker_vendor_name ?? "").trim() || (row.maker_name ?? "").trim();
+}
+
 /** ที่มาของข้อมูลลูกค้า — ใช้เป็นป้ายบนหน้าจอ ให้รู้ว่าใบไหนคีย์เองทั้งใบ */
 export function customerSourceText(row: Pick<Claim, "is_external" | "db2_cuscod">): string {
   if (row.is_external) return "ลูกค้าภายนอก (คีย์เอง)";

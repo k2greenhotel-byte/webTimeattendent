@@ -19,11 +19,13 @@ import {
   CLAIM_MAX_ITEMS,
   CLAIM_MAX_PHOTOS,
   CLAIM_URGENCY_ORDER,
+  LEGACY_MAKER,
   type ClaimInput,
   type ClaimItem,
   type ClaimUpdateInput,
 } from "@/lib/claim-types";
 import { logAudit } from "@/lib/db";
+import { getMaster } from "@/lib/moto-db";
 import { normalizePhone } from "@/lib/phone";
 import { requirePermission } from "@/lib/session";
 
@@ -73,6 +75,29 @@ function readItems(form: FormData): ClaimItem[] {
     }))
     .filter((i) => i.item_name)
     .slice(0, CLAIM_MAX_ITEMS);
+}
+
+/**
+ * บริษัทผู้ผลิต (1.4.15) — ผู้ใช้เลือกจากทะเบียน "บริษัทรถ / เจ้าหนี้" (mc_vendors)
+ * เก็บทั้ง id (ใช้จัดกลุ่ม/กรอง) และชื่อ ณ ตอนบันทึก (ใบเก่าต้องอ่านออกแม้ทะเบียนจะแก้ชื่อ)
+ *
+ *   ""          → ไม่ระบุ (ล้างทั้งสองช่อง)
+ *   LEGACY      → ใบเก่าที่พิมพ์ชื่อเองไว้ก่อนมีทะเบียน — คงข้อความเดิมไว้
+ *   <uuid>      → หยิบชื่อจากทะเบียนมาเก็บเป็นสำเนา
+ */
+async function readMaker(
+  form: FormData,
+  keepName: string | null,
+): Promise<{ maker_vendor_id: string | null; maker_name: string | null }> {
+  const value = str(form, "maker_vendor_id");
+
+  if (!value) return { maker_vendor_id: null, maker_name: null };
+  if (value === LEGACY_MAKER) return { maker_vendor_id: null, maker_name: keepName };
+
+  const vendor = await getMaster("vendor", value);
+  if (!vendor) throw new Error("ไม่พบบริษัทผู้ผลิตที่เลือก อาจถูกลบออกจากทะเบียนไปแล้ว");
+
+  return { maker_vendor_id: vendor.id, maker_name: vendor.name };
 }
 
 // ---------- หน้าจอ 1.4 ใบขอเคลม ----------
@@ -129,7 +154,9 @@ function readClaim(
     created_by: context.createdBy,
     created_by_name: optText(form, "created_by_name"),
 
-    maker_name: optText(form, "maker_name"),
+    // 1.4.15 บริษัทผู้ผลิตเลือกจากทะเบียน — ชื่อเติมจากทะเบียนใน createClaimForm/updateClaimForm
+    maker_vendor_id: null,
+    maker_name: null,
     maker_agent_name: optText(form, "maker_agent_name"),
     maker_phone: normalizePhone(str(form, "maker_phone")) || optText(form, "maker_phone"),
 
@@ -159,6 +186,12 @@ export async function createClaimForm(form: FormData): Promise<void> {
   const row = readClaim(form, { createdBy: user.id });
   if (!row.created_by_name) row.created_by_name = user.full_name;
   const items = readItems(form);
+
+  try {
+    Object.assign(row, await readMaker(form, null));
+  } catch (err) {
+    back(path, err instanceof Error ? err.message : "อ่านบริษัทผู้ผลิตไม่สำเร็จ", true);
+  }
 
   const problem = validateClaim(row, items);
   if (problem) back(path, problem, true);
@@ -200,6 +233,12 @@ export async function updateClaimForm(form: FormData): Promise<void> {
 
   const row = readClaim(form, { createdBy: current.created_by, keep: current });
   const items = readItems(form);
+
+  try {
+    Object.assign(row, await readMaker(form, current.maker_name));
+  } catch (err) {
+    back(path, err instanceof Error ? err.message : "อ่านบริษัทผู้ผลิตไม่สำเร็จ", true);
+  }
 
   const problem = validateClaim(row, items);
   if (problem) back(path, problem, true);

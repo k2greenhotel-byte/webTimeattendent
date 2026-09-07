@@ -85,6 +85,12 @@ export const CLAIM_URGENCY_DAYS: Record<ClaimUrgency, number> = {
 /** จำนวนรูปสูงสุดต่อหนึ่งเอกสาร (ข้อ 1.4.14 / 1.5.9) */
 export const CLAIM_MAX_PHOTOS = 10;
 
+/**
+ * ค่าพิเศษของช่องบริษัทผู้ผลิต (1.4.15) = "คงข้อความเดิมที่พิมพ์ไว้ก่อนมีทะเบียนบริษัทรถ"
+ * ใบเก่าที่ยังไม่ผูกกับทะเบียนจะไม่ถูกล้างทิ้งตอนแก้ใบ
+ */
+export const LEGACY_MAKER = "__legacy__";
+
 /** จำนวนรายการที่ขอเคลมสูงสุดต่อหนึ่งใบ (ข้อ 1.4.10) — กันฟอร์มบวมจนบันทึกไม่ไหว */
 export const CLAIM_MAX_ITEMS = 20;
 
@@ -134,6 +140,9 @@ export type Claim = {
   created_by: string | null;
   created_by_name: string | null;
 
+  /** 1.4.15 บริษัทผู้ผลิต — เลือกจากทะเบียน "บริษัทรถ / เจ้าหนี้" (mc_vendors) */
+  maker_vendor_id: string | null;
+  /** ชื่อบริษัทผู้ผลิต ณ ตอนบันทึก (ใบเก่าที่พิมพ์เองยังใช้ช่องนี้ช่องเดียว) */
   maker_name: string | null;
   maker_agent_name: string | null;
   maker_phone: string | null;
@@ -166,6 +175,9 @@ export type ClaimRow = Claim & {
   branch_name: string | null;
   branch_code: string | null;
   created_by_full_name: string | null;
+  /** ชื่อ/รหัสล่าสุดจากทะเบียนบริษัทรถ (null = ใบนี้พิมพ์ชื่อผู้ผลิตเองไว้) */
+  maker_vendor_code: string | null;
+  maker_vendor_name: string | null;
   photo_count: number;
   item_count: number;
   update_count: number;

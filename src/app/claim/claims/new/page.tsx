@@ -1,6 +1,7 @@
 import ClaimForm from "@/components/claim/ClaimForm";
 import { listCompanies } from "@/lib/core-db";
 import { listBranches } from "@/lib/db";
+import { listMaster } from "@/lib/moto-db";
 import { requirePermission } from "@/lib/session";
 import { createClaimForm } from "../../actions";
 
@@ -15,7 +16,12 @@ export default async function NewClaimPage({
   const user = await requirePermission("CLM_CLAIM", "write");
   const params = await searchParams;
 
-  const [companies, branches] = await Promise.all([listCompanies(true), listBranches(true)]);
+  const [companies, branches, vendors] = await Promise.all([
+    listCompanies(true),
+    listBranches(true),
+    // ตัวเลือกบริษัทผู้ผลิต (1.4.15) — ข้อมูลเบื้องต้น "บริษัทรถ / เจ้าหนี้" ของโปรแกรม MC
+    listMaster("vendor"),
+  ]);
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
@@ -33,6 +39,7 @@ export default async function NewClaimPage({
       <ClaimForm
         companies={companies}
         branches={branches}
+        vendors={vendors}
         defaultCompanyId={user.company_id ?? null}
         defaultBranchId={user.branch_id ?? null}
         defaultRecorderName={user.full_name}
