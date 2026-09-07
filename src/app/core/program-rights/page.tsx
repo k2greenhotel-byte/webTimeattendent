@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 export default async function ProgramRightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ program?: string; user?: string; msg?: string; err?: string }>;
+  searchParams: Promise<{ program?: string; user?: string; q?: string; msg?: string; err?: string }>;
 }) {
   const params = await searchParams;
 
@@ -42,6 +42,14 @@ export default async function ProgramRightsPage({
         .filter((u) => u.program_ids.includes(current.id))
         .sort((a, b) => a.emp_code.localeCompare(b.emp_code))
     : [];
+
+  // ค้นหาตามชื่อ / User ID / รหัสพนักงาน / เบอร์ — พิมพ์บางส่วนก็เจอ ไม่สนตัวพิมพ์เล็กใหญ่
+  const q = (params.q ?? "").trim().toLowerCase();
+  const shownUsers = q
+    ? programUsers.filter((u) =>
+        [u.full_name, u.username, u.emp_code, u.phone].some((v) => (v ?? "").toLowerCase().includes(q)),
+      )
+    : programUsers;
 
   const perms = current ? await getProgramPermissions(current.code) : [];
   const permsByUser = new Map<string, EffectiveMenuPermission[]>();
@@ -150,9 +158,45 @@ export default async function ProgramRightsPage({
               </div>
             </div>
 
+            {programUsers.length > 0 && (
+              <form method="get" action="/core/program-rights" className="flex flex-wrap items-center gap-2">
+                <input type="hidden" name="program" value={current.id} />
+                {selected && <input type="hidden" name="user" value={selected.id} />}
+                <input
+                  type="search"
+                  name="q"
+                  defaultValue={params.q ?? ""}
+                  placeholder="ค้นหา ชื่อ / User ID / รหัสพนักงาน / เบอร์"
+                  className="input w-full sm:w-80"
+                  autoComplete="off"
+                />
+                <button type="submit" className="btn-secondary sm:py-2 sm:text-sm">
+                  ค้นหา
+                </button>
+                {q && (
+                  <Link
+                    href={`/core/program-rights?program=${current.id}${selected ? `&user=${selected.id}` : ""}`}
+                    className="text-sm text-slate-500 hover:underline"
+                  >
+                    ล้างคำค้น
+                  </Link>
+                )}
+                {q && (
+                  <span className="text-sm text-slate-500">
+                    พบ {shownUsers.length} จาก {programUsers.length} คน
+                  </span>
+                )}
+              </form>
+            )}
+
             {programUsers.length === 0 ? (
               <p className="text-sm text-slate-500">
                 ยังไม่มีใครมีสิทธิ์เข้าโปรแกรมนี้ — ไปให้สิทธิ์ที่เมนู 5 ก่อน แล้วค่อยกลับมากำหนดเมนู
+              </p>
+            ) : shownUsers.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                ไม่พบผู้ใช้ที่ตรงกับ &quot;{params.q}&quot; ในโปรแกรมนี้ — ถ้าคนนั้นยังไม่มีสิทธิ์เข้าโปรแกรม
+                ให้เพิ่มที่เมนู 5 ก่อน
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -169,7 +213,7 @@ export default async function ProgramRightsPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {programUsers.map((u) => {
+                    {shownUsers.map((u) => {
                       const summary = summarizeAccess(permsByUser.get(u.id) ?? []);
                       const isSelected = u.id === selected?.id;
                       return (
@@ -178,7 +222,7 @@ export default async function ProgramRightsPage({
                           <td>{u.emp_code}</td>
                           <td className="text-left">
                             <Link
-                              href={`/core/program-rights?program=${current.id}&user=${u.id}`}
+                              href={`/core/program-rights?program=${current.id}&user=${u.id}${q ? `&q=${encodeURIComponent(params.q ?? "")}` : ""}`}
                               className={`hover:underline ${isSelected ? "font-semibold text-brand-700" : "text-brand-600"}`}
                             >
                               {u.full_name}
