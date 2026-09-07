@@ -1,3 +1,4 @@
+import Link from "next/link";
 import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
@@ -39,6 +40,20 @@ export default async function PayrollMapPage({
   const scoped = access.branchIds
     ? allEmployees.filter((e) => e.branch_id !== null && access.branchIds!.has(e.branch_id))
     : allEmployees;
+
+  // นับคนที่ยังไม่จับคู่ของ "ทุกบริษัท" ด้วย ไม่งั้นเปิดมาเจอบริษัทที่ครบแล้วจะนึกว่าไม่เหลือใคร
+  const otherCompanies = await Promise.all(
+    scope.companies
+      .filter((c) => c.id !== scope.companyId)
+      .map(async (c) => {
+        const staff = await listEmployees({ activeOnly: true, companyId: c.id });
+        const inScope = access.branchIds
+          ? staff.filter((e) => e.branch_id !== null && access.branchIds!.has(e.branch_id))
+          : staff;
+        return { company: c, remaining: inScope.filter((e) => !e.payroll_code).length };
+      }),
+  );
+  const pending = otherCompanies.filter((c) => c.remaining > 0);
 
   const mappedCount = scoped.filter((e) => e.payroll_code).length;
   const duplicates = findPayrollDuplicates(scoped);
@@ -95,6 +110,21 @@ export default async function PayrollMapPage({
             </span>
             <span className="text-xs text-slate-500">จากพนักงานที่ยังทำงานอยู่ {scoped.length} คน</span>
           </div>
+
+          {pending.length > 0 && (
+            <p className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span>บริษัทอื่นยังจับคู่ไม่ครบ:</span>
+              {pending.map((c) => (
+                <Link
+                  key={c.company.id}
+                  href={`/admin/payroll-map?company=${c.company.id}&only=unmapped`}
+                  className="badge bg-white text-amber-800 underline"
+                >
+                  {c.company.name} · เหลือ {c.remaining} คน
+                </Link>
+              ))}
+            </p>
+          )}
 
           <form method="get" className="flex flex-wrap items-end gap-3">
             <CompanyFilter companies={scope.companies} value={scope.companyId} />
