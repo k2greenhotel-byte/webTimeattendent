@@ -281,7 +281,19 @@ export type Db2StockUnit = {
   ageDays: number | null;
 };
 
-export type Db2StockCombo = { model: string; variant: string; color: string; units: number };
+/**
+ * ยอดรถในสต็อกหนึ่งแถว = รุ่น + แบบ + สี + **สถานที่เก็บ**
+ * ฝั่งหน้าเว็บรวมเป็นระดับ รุ่น/แบบ/สี เพื่อ map กับใบจอง แล้วกางดูสาขาได้จากแถวเดิม
+ */
+export type Db2StockCombo = {
+  model: string;
+  modelName: string;
+  variant: string;
+  variantName: string;
+  color: string;
+  locat: string;
+  units: number;
+};
 
 export type Db2StockList = {
   total: number;
@@ -315,4 +327,156 @@ export function db2StockList(f: Db2StockFilter = {}) {
     q: f.q,
     limit: f.limit ? String(f.limit) : undefined,
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* War room: ยอดขายแยกตามมิติ (ใช้โดยระบบบันทึกงานประจำวันพนักงานขาย)            */
+/* -------------------------------------------------------------------------- */
+
+export type Db2WallItem = Db2Money & { key: string; label: string | null; units: number };
+
+/**
+ * ผลลัพธ์ /api/wall เท่าที่ฝั่ง server ใช้ — มิติที่มี:
+ * branch · salesman · model · brand · channel · condition · color · group · finance
+ */
+export type Db2Wall = {
+  range: { from: string; to: string; days: number };
+  kpi: Db2Money & { units: number };
+  dims: Record<string, { title: string; items: Db2WallItem[] }>;
+};
+
+/** ยอดขายในช่วงวันที่ แยกตามทุกมิติ (ค่าเริ่มต้นฝั่ง Db2 = ตั้งแต่ต้นเดือนถึงวันนี้ · กว้างสุด 400 วัน) */
+export function db2Wall(f: { from?: string; to?: string; locat?: string } = {}) {
+  return call<Db2Wall>("/api/wall", f);
+}
+
+/**
+ * รายชื่อพนักงานขายที่มีการขายจริงในช่วงที่ระบุ (SALCOD + ชื่อเท่าที่ระบบขายมี)
+ * ใช้เป็นตัวเลือกในหน้าจอจับคู่พนักงานขาย — ระบบขายไม่มีทะเบียนพนักงานขายแยกต่างหาก
+ */
+export async function db2Salesmen(f: { from?: string; to?: string } = {}) {
+  const wall = await db2Wall(f);
+  return (wall.dims?.salesman?.items ?? [])
+    .filter((i) => i.key && i.key !== "?")
+    .map((i) => ({ salcod: i.key, name: i.label, units: i.units }));
+}
+
+/* -------------------------------------------------------------------------- */
+/* รถของลูกค้า (ใช้โดยระบบแจ้งเคลม)                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * รถหนึ่งคันที่ค้นเจอจากระบบขาย — รวมข้อมูลรถ การขาย และลูกค้าไว้ในแถวเดียว
+ * (แอป Db2 ต่อ INVTRAN + VIEW_SALEALL + CUSTMAST ให้แล้วที่ /api/vehicles)
+ * ไม่มีราคาขาย/ต้นทุนโดยตั้งใจ — หน้าจอแจ้งเคลมเปิดให้พนักงานหน้าร้านทุกคนใช้
+ */
+export type Db2Vehicle = {
+  strno: string;
+  engno: string;
+  brand: string;
+  model: string;
+  modelName: string;
+  variant: string;
+  variantName: string;
+  color: string;
+  group: string;
+  groupName: string;
+  /** N รถใหม่ · O รถเก่า */
+  stat: string;
+  /** C = ขายออกไปแล้ว · D = ยังอยู่ในสต็อก */
+  flag: string;
+  stockLocat: string;
+  sale: { locat: string; contno: string; date: string | null; tsale: string };
+  customer: { cuscod: string; fullName: string; mobile: string; phone: string; address: string };
+};
+
+export type Db2VehicleResult = {
+  /** จำนวนที่ตรงเงื่อนไขทั้งหมด (ก่อนตัดตาม limit) */
+  matched: number;
+  count: number;
+  truncated: boolean;
+  vehicles: Db2Vehicle[];
+};
+
+/**
+ * ค้นรถของลูกค้าจากระบบขาย — คำค้นเดียวเทียบได้ทั้ง
+ * เลขตัวถัง · เลขเครื่อง · เลขที่สัญญา · รหัสลูกค้า · ชื่อ · นามสกุล · เบอร์มือถือ
+ *   sold = true  เฉพาะรถที่ขายออกไปแล้ว (งานเคลมตามปกติ)
+ */
+export function db2Vehicles(f: { q: string; limit?: number; sold?: boolean }) {
+  return call<Db2VehicleResult>("/api/vehicles", {
+    q: f.q,
+    limit: f.limit ? String(f.limit) : undefined,
+    sold: f.sold ? "1" : undefined,
+  });
+}
+
+/** เบอร์ที่ใช้ติดต่อลูกค้าได้จริง — มือถือมาก่อน ไม่มีจึงใช้เบอร์บ้าน */
+export function db2VehiclePhone(v: Db2Vehicle): string {
+  return v.customer.mobile || v.customer.phone || "";
+}
+
+/* -------------------------------------------------------------------------- */
+/* ทะเบียนพนักงานในระบบขาย (OFFICER) — ใช้จับคู่ชื่อพนักงานขาย                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * พนักงานหนึ่งคนในทะเบียนของระบบขาย (`ASVSHPV.OFFICER`)
+ *
+ * `code` เป็นรหัสเดียวกับ `SALCOD` ในรายการขาย — ตรวจกับข้อมูลจริง 2026-09-07 แล้วว่า
+ * ครอบคลุมคนที่ขายจริงรอบ 12 เดือนครบ 33/33 รหัส
+ * ตารางนี้มีทั้งพนักงานทุกแผนกและรายการที่ไม่ใช่คน (ชื่อบริษัท/ระบบ) จึงต้องดู `units`
+ * ประกอบว่ารหัสไหนคือพนักงานขายตัวจริง — `department` ใช้แยกไม่ได้ (คนขายกระจายหลายแผนก)
+ */
+export type Db2Officer = {
+  code: string;
+  name: string;
+  branch: string | null;
+  department: string | null;
+  position: string | null;
+  /** ยังทำงานอยู่ (OFFICER.STATUS = 'Y') */
+  active: boolean;
+  /** จำนวนคันที่ขายได้ในช่วงที่ถาม (null = ไม่ได้สั่งให้นับ) */
+  units: number | null;
+};
+
+export type Db2OfficerResult = {
+  filters: { q: string | null; status: string; locat: string | null };
+  range: { from: string; to: string } | null;
+  matched: number;
+  truncated: boolean;
+  count: number;
+  officers: Db2Officer[];
+};
+
+/**
+ * ทะเบียนพนักงานจากระบบขาย — ค่าเริ่มต้นคือคนที่ยังทำงานอยู่ พร้อมยอดขาย 365 วันล่าสุด
+ *   status  "Y" ยังทำงานอยู่ (ค่าเริ่มต้น) · "N" ออกแล้ว · "all" ทั้งหมด
+ *   codes   ดึงเฉพาะรหัสที่ระบุ — ใช้แสดงชื่อของค่าที่บันทึกไว้แล้ว
+ *   units   false = ไม่ต้องนับยอดขาย (เร็วขึ้นมากเมื่อไม่ได้ใช้)
+ */
+export function db2Officers(
+  f: {
+    q?: string;
+    status?: "Y" | "N" | "all";
+    locat?: string;
+    codes?: string[];
+    from?: string;
+    to?: string;
+    units?: boolean;
+    limit?: number;
+  } = {},
+) {
+  const search = new URLSearchParams();
+  if (f.q) search.set("q", f.q);
+  if (f.status) search.set("status", f.status);
+  if (f.locat) search.set("locat", f.locat);
+  if (f.from) search.set("from", f.from);
+  if (f.to) search.set("to", f.to);
+  if (f.units === false) search.set("units", "0");
+  if (f.limit) search.set("limit", String(f.limit));
+  for (const code of f.codes ?? []) search.append("code", code);
+
+  const qs = search.toString();
+  return call<Db2OfficerResult>(`/api/officers${qs ? `?${qs}` : ""}`);
 }

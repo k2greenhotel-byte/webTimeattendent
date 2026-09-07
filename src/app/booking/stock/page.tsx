@@ -6,6 +6,7 @@ import {
   summarizeMatches,
   unitBookingOf,
   type BookingForMatch,
+  type StockLocation,
 } from "@/lib/booking-stock";
 import { Db2ApiError, db2StockList, fmtDate, fmtInt, STAT_LABEL } from "@/lib/db2-api";
 import { requirePermission } from "@/lib/session";
@@ -19,6 +20,41 @@ const FILTER_FIELDS = [
   { key: "color", label: "สี" },
   { key: "branch", label: "สถานที่เก็บ" },
 ] as const;
+
+/**
+ * กางดูว่ารถของกลุ่มนี้เก็บอยู่สาขาไหนบ้าง
+ * ใช้ <details> ล้วน ๆ ไม่ต้องพึ่ง JavaScript — กดได้ทั้งบนมือถือและ PC และพิมพ์ออกมาก็ยังอ่านได้
+ */
+function LocationBreakdown({
+  locations,
+  compact = false,
+}: {
+  locations: StockLocation[];
+  compact?: boolean;
+}) {
+  if (locations.length === 0) {
+    return <span className="text-xs text-slate-300">— ไม่มีรถในสต็อก —</span>;
+  }
+
+  return (
+    <details className="group">
+      <summary className="cursor-pointer list-none text-xs text-brand-600 hover:underline">
+        <span className="group-open:hidden">
+          ▸ ดูที่เก็บ ({locations.length} สาขา)
+        </span>
+        <span className="hidden group-open:inline">▾ ซ่อนที่เก็บ</span>
+      </summary>
+      <ul className={`mt-1 space-y-0.5 ${compact ? "" : "ml-3"}`}>
+        {locations.map((l) => (
+          <li key={l.locat} className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-slate-600">{l.locat}</span>
+            <span className="font-medium text-slate-800">{l.units} คัน</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 /** ป้ายบอกสถานะการจองของกลุ่ม รุ่น+แบบ+สี */
 function BookedBadge({ booked, units }: { booked: number; units: number }) {
@@ -98,7 +134,7 @@ export default async function BookingStockPage({
                   <option value="">ทั้งหมด</option>
                   {values.map((v) => (
                     <option key={v.key} value={v.key}>
-                      {v.label} ({v.units})
+                      {v.label === v.key ? v.label : `${v.key} · ${v.label}`} ({v.units})
                     </option>
                   ))}
                 </select>
@@ -171,7 +207,9 @@ export default async function BookingStockPage({
                     <BookedBadge booked={m.booked} units={m.units} />
                   </div>
                   <p className="text-xs text-slate-500">
-                    แบบ {m.variant || "—"} · สี {m.color || "—"}
+                    แบบ {m.variant || "—"}
+                    {m.variantName && m.variantName !== m.variant ? ` (${m.variantName})` : ""} · สี{" "}
+                    {m.color || "—"}
                   </p>
                   <p className="mt-1 text-xs text-slate-600">
                     ในสต็อก {m.units} คัน · ติดจอง {m.booked} ใบ · เหลือ {m.free} คัน
@@ -182,6 +220,9 @@ export default async function BookingStockPage({
                       ใบจอง: {m.bookings.map((b) => b.doc_no).join(", ")}
                     </p>
                   )}
+                  <div className="mt-2 border-t border-slate-100 pt-2">
+                    <LocationBreakdown locations={m.locations} compact />
+                  </div>
                 </li>
               ))}
             </ul>
@@ -199,6 +240,7 @@ export default async function BookingStockPage({
                     <th>เหลือขายได้</th>
                     <th>ขาด</th>
                     <th>สถานะ</th>
+                    <th className="text-left">ที่เก็บ</th>
                     <th className="text-left">เลขที่ใบจอง</th>
                   </tr>
                 </thead>
@@ -206,7 +248,12 @@ export default async function BookingStockPage({
                   {matches.map((m) => (
                     <tr key={m.key}>
                       <td className="text-left font-medium">{m.model}</td>
-                      <td className="text-left text-xs">{m.variant || "—"}</td>
+                      <td className="whitespace-normal text-left text-xs">
+                        {m.variant || "—"}
+                        {m.variantName && m.variantName !== m.variant && (
+                          <div className="text-[11px] text-slate-400">{m.variantName}</div>
+                        )}
+                      </td>
                       <td className="text-left text-xs">{m.color || "—"}</td>
                       <td>{m.units}</td>
                       <td className={m.booked > 0 ? "font-medium text-amber-700" : "text-slate-300"}>
@@ -220,6 +267,9 @@ export default async function BookingStockPage({
                       </td>
                       <td>
                         <BookedBadge booked={m.booked} units={m.units} />
+                      </td>
+                      <td className="whitespace-normal text-left">
+                        <LocationBreakdown locations={m.locations} />
                       </td>
                       <td className="whitespace-normal text-left text-xs">
                         {m.bookings.length === 0 ? (

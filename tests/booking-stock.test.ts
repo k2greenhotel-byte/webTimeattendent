@@ -21,12 +21,13 @@ function bk(over: Partial<BookingForMatch> = {}): BookingForMatch {
   };
 }
 
-const combo = (model: string, variant: string, color: string, units: number): StockCombo => ({
-  model,
-  variant,
-  color,
-  units,
-});
+const combo = (
+  model: string,
+  variant: string,
+  color: string,
+  units: number,
+  locat = "KMS01",
+): StockCombo => ({ model, variant, color, units, locat });
 
 describe("รหัสกลุ่ม รุ่น+แบบ+สี", () => {
   it("ตัดช่องว่างและไม่สนตัวพิมพ์ (Db2 เก็บเป็น CHAR ความยาวคงที่)", () => {
@@ -103,6 +104,39 @@ describe("จับคู่สต็อกกับใบจอง", () => {
     const [m] = matchStockWithBookings([combo("A", "v", "c", 4)], []);
     expect(m.booked).toBe(0);
     expect(m.free).toBe(4);
+  });
+});
+
+describe("กางดูที่เก็บรถ (drill down)", () => {
+  it("รวมแถวระดับสาขาเป็นกลุ่มเดียว แล้วเก็บรายละเอียดสาขาไว้", () => {
+    const [m] = matchStockWithBookings(
+      [
+        combo("WAVE", "B1", "ดำ", 4, "KMS01"),
+        combo("WAVE", "B1", "ดำ", 2, "KMS06"),
+        combo("WAVE", "B1", "ดำ", 1, "KMS02"),
+      ],
+      [],
+    );
+    expect(m.units).toBe(7);
+    expect(m.locations).toEqual([
+      { locat: "KMS01", units: 4 },
+      { locat: "KMS06", units: 2 },
+      { locat: "KMS02", units: 1 },
+    ]);
+  });
+
+  it("สาขาว่างเปล่าจัดเข้ากลุ่มไม่ระบุ ไม่หายไป", () => {
+    const [m] = matchStockWithBookings([combo("WAVE", "B1", "ดำ", 3, "")], []);
+    expect(m.locations).toEqual([{ locat: "— ไม่ระบุสาขา —", units: 3 }]);
+  });
+
+  it("กลุ่มที่จองไว้แต่ไม่มีรถ ไม่มีสาขาให้กาง", () => {
+    const matches = matchStockWithBookings(
+      [],
+      [bk({ db2_model_code: "NMAX", db2_variant_code: "Z", db2_color_code: "ฟ้า" })],
+    );
+    expect(matches[0].locations).toEqual([]);
+    expect(matches[0].units).toBe(0);
   });
 });
 

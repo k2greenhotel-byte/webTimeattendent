@@ -6,7 +6,22 @@
  * ผลลัพธ์จึงเป็น "กลุ่มนี้มีในสต็อกกี่คัน ติดจองไปแล้วกี่ใบ เหลือขายได้กี่คัน"
  */
 
-export type StockCombo = { model: string; variant: string; color: string; units: number };
+/**
+ * หนึ่งแถวจากระบบขาย = รุ่น + แบบ + สี + สถานที่เก็บ
+ * (แยกสาขาไว้ตั้งแต่ต้นทาง เพื่อให้กางดูได้ว่ารถของกลุ่มนี้อยู่สาขาไหนบ้าง)
+ */
+export type StockCombo = {
+  model: string;
+  variant: string;
+  color: string;
+  units: number;
+  locat?: string;
+  modelName?: string;
+  variantName?: string;
+};
+
+/** ที่เก็บรถของกลุ่มหนึ่ง */
+export type StockLocation = { locat: string; units: number };
 
 /** ใบจองเท่าที่ต้องใช้จับคู่ (ทั้งหมดมาจาก v_bk_bookings) */
 export type BookingForMatch = {
@@ -44,7 +59,13 @@ export function groupBookingsByCombo(
   return map;
 }
 
-export type ComboMatch = StockCombo & {
+export type ComboMatch = {
+  model: string;
+  variant: string;
+  color: string;
+  modelName: string;
+  variantName: string;
+  units: number;
   key: string;
   /** จำนวนใบจองที่รออยู่ในกลุ่มนี้ */
   booked: number;
@@ -53,7 +74,47 @@ export type ComboMatch = StockCombo & {
   /** จองเกินจำนวนรถที่มี — ต้องรีบสั่งเพิ่ม */
   shortage: number;
   bookings: BookingForMatch[];
+  /** รถของกลุ่มนี้เก็บอยู่สาขาไหนบ้าง เรียงจากมากไปน้อย */
+  locations: StockLocation[];
 };
+
+/** รวมแถวระดับสาขาให้เป็นระดับ รุ่น+แบบ+สี พร้อมเก็บรายละเอียดสาขาไว้ */
+function rollUpByCombo(combos: StockCombo[]) {
+  const map = new Map<
+    string,
+    { model: string; variant: string; color: string; modelName: string; variantName: string; units: number; locations: Map<string, number> }
+  >();
+
+  for (const c of combos) {
+    const key = comboKey(c.model, c.variant, c.color);
+    let entry = map.get(key);
+    if (!entry) {
+      entry = {
+        model: c.model,
+        variant: c.variant,
+        color: c.color,
+        modelName: c.modelName || c.model,
+        variantName: c.variantName || c.variant,
+        units: 0,
+        locations: new Map(),
+      };
+      map.set(key, entry);
+    }
+    entry.units += c.units;
+
+    const locat = (c.locat ?? "").trim() || "— ไม่ระบุสาขา —";
+    entry.locations.set(locat, (entry.locations.get(locat) ?? 0) + c.units);
+  }
+
+  return map;
+}
+
+/** เรียงสาขาจากคันมากไปน้อย ชื่อเท่ากันเรียงตามรหัสสาขา */
+function sortLocations(locations: Map<string, number>): StockLocation[] {
+  return [...locations.entries()]
+    .map(([locat, units]) => ({ locat, units }))
+    .sort((a, b) => b.units - a.units || a.locat.localeCompare(b.locat, "th"));
+}
 
 /**
  * จับคู่สต็อกกับใบจอง แล้วเรียงกลุ่มที่ "ติดจองแล้ว" ขึ้นก่อน
@@ -64,37 +125,44 @@ export function matchStockWithBookings(
   bookings: BookingForMatch[],
 ): ComboMatch[] {
   const byCombo = groupBookingsByCombo(bookings);
-  const seen = new Set<string>();
+  const rolled = rollUpByCombo(combos);
   const out: ComboMatch[] = [];
 
-  for (const combo of combos) {
-    const key = comboKey(combo.model, combo.variant, combo.color);
-    seen.add(key);
+  for (const [key, entry] of rolled) {
     const matched = byCombo.get(key) ?? [];
     out.push({
-      ...combo,
+      model: entry.model,
+      variant: entry.variant,
+      color: entry.color,
+      modelName: entry.modelName,
+      variantName: entry.variantName,
+      units: entry.units,
       key,
       booked: matched.length,
-      free: Math.max(0, combo.units - matched.length),
-      shortage: Math.max(0, matched.length - combo.units),
+      free: Math.max(0, entry.units - matched.length),
+      shortage: Math.max(0, matched.length - entry.units),
       bookings: matched,
+      locations: sortLocations(entry.locations),
     });
   }
 
   // กลุ่มที่มีใบจองรออยู่ แต่ไม่มีรถในสต็อกเลย
   for (const [key, matched] of byCombo) {
-    if (seen.has(key)) continue;
+    if (rolled.has(key)) continue;
     const [model, variant, color] = key.split("|");
     out.push({
       model,
       variant,
       color,
+      modelName: model,
+      variantName: variant,
       units: 0,
       key,
       booked: matched.length,
       free: 0,
       shortage: matched.length,
       bookings: matched,
+      locations: [],
     });
   }
 
