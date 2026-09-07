@@ -9,7 +9,7 @@
     "db:setup": "node scripts/db-setup.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "cf:build": "opennextjs-cloudflare build",
+    "cf:build": "node scripts/strip-sharp.mjs && opennextjs-cloudflare build",
     "cf:deploy": "node scripts/cf-deploy.mjs",
     "cf:preview": "opennextjs-cloudflare preview",
     "db:geo": "node scripts/seed-thai-geo.mjs"
