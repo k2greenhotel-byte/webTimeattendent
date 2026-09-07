@@ -42,6 +42,8 @@ type CredContract = {
   salesman: string | null;
   total: number;
   paid: number;
+  paidCash: number;
+  paidCheque: number;
   outstanding: number;
   daysSinceSale: number;
   daysOverdue: number | null;
@@ -236,7 +238,7 @@ export default function ReceivablesPanel({ locat }: { locat: string }) {
       <div className="rounded-2xl bg-slate-900 p-4">
         <div className="mb-2 flex flex-wrap items-baseline gap-2">
           <h3 className="font-semibold text-slate-200">รายสัญญาขายเครดิตที่ค้างชำระ</h3>
-          <span className="text-xs text-slate-500">ค้าง = ยอดค้างชำระ (TKANG) − ชำระแล้ว (SMPAY) · เกินกำหนดนับจากวันครบกำหนด</span>
+          <span className="text-xs text-slate-500">ค้าง = ยอดค้างชำระ (TKANG) − ชำระแล้ว (เงินสด SMPAY + เช็ค SMCHQ) · เกินกำหนดนับจากวันครบกำหนด</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -248,7 +250,7 @@ export default function ReceivablesPanel({ locat }: { locat: string }) {
                 <th className="py-1">วันขาย</th>
                 <th className="py-1">ครบกำหนด</th>
                 <th className="py-1 text-right">ยอดค้าง</th>
-                <th className="py-1 text-right">ชำระแล้ว</th>
+                <th className="py-1 text-right">ชำระแล้ว (สด+เช็ค)</th>
                 <th className="py-1 text-right">คงค้าง</th>
                 <th className="py-1 text-right">เกินกำหนด (วัน)</th>
                 <th className="py-1">ชำระล่าสุด</th>
@@ -266,7 +268,10 @@ export default function ReceivablesPanel({ locat }: { locat: string }) {
                   <td className="py-1 whitespace-nowrap">{thDate(x.saleDate)}</td>
                   <td className="py-1 whitespace-nowrap">{thDate(x.dueDate)}</td>
                   <td className="py-1 text-right tabular-nums">{baht(x.total)}</td>
-                  <td className="py-1 text-right tabular-nums text-slate-400">{baht(x.paid)}</td>
+                  <td className="py-1 text-right tabular-nums text-slate-400" title={`เงินสด ${baht(x.paidCash)} · เช็ค ${baht(x.paidCheque)}`}>
+                    {baht(x.paid)}
+                    {x.paidCheque > 0 && <span className="ml-1 text-[10px] text-slate-500">เช็ค {baht(x.paidCheque)}</span>}
+                  </td>
                   <td className="py-1 text-right font-semibold tabular-nums text-rose-300">{baht(x.outstanding)}</td>
                   <td className={`py-1 text-right font-semibold tabular-nums ${dayColor(x.daysOverdue)}`}>{x.daysOverdue === null ? "—" : int(x.daysOverdue)}</td>
                   <td className="py-1 whitespace-nowrap text-slate-400">{thDate(x.lastPayDate)}</td>
