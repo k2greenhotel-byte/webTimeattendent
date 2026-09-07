@@ -147,7 +147,8 @@ export function applyUpdate(
 /** ตรวจใบจอง — ผ่านคืน null ไม่ผ่านคืนข้อความไทยที่บอกวิธีแก้ */
 export function validateBooking(input: {
   booking_date: string;
-  customer_id: string | null;
+  /** รหัสลูกค้าของระบบขาย (Db2 CUSTMAST) */
+  db2_cuscod?: string | null;
   /** รหัสยี่ห้อ/รุ่นจากระบบขาย (Db2) — ต้องเลือกทั้งคู่ก่อนบันทึกใบจอง */
   db2_brand_code?: string | null;
   db2_model_code?: string | null;
@@ -161,7 +162,7 @@ export function validateBooking(input: {
 }): string | null {
   if (!input.booking_date) return "กรุณาระบุวันที่รับจอง";
   if (!(input.taken_by_name ?? "").trim()) return "กรุณาระบุชื่อพนักงานที่รับจอง";
-  if (!input.customer_id) return "กรุณาเลือกลูกค้า — ถ้ายังไม่มีในระบบให้เพิ่มที่เมนูประวัติลูกค้าก่อน";
+  if (!(input.db2_cuscod ?? "").trim()) return "กรุณาเลือกลูกค้าจากทะเบียนลูกค้าของระบบขาย";
   if (!(input.db2_brand_code ?? "").trim()) return "กรุณาเลือกยี่ห้อรถ";
   if (!(input.db2_model_code ?? "").trim()) return "กรุณาเลือกรุ่นรถ";
   if (input.deposit_amount < 0) return "จำนวนเงินมัดจำติดลบไม่ได้";

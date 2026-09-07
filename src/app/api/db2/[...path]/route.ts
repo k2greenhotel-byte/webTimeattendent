@@ -16,6 +16,7 @@ const ALLOWED: Record<string, string> = {
   "stock/pivot": "DB2_PIVOT",
   "stock/list": "BOOK_STOCK",
   masters: "BOOK_ENTRY",
+  customers: "BOOK_ENTRY",
   dashboard: "DB2_DASH",
   stock: "DB2_STOCK",
 };

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import CustomerPicker, { type CustomerBrief } from "@/components/booking/CustomerPicker";
+import Db2CustomerPicker from "@/components/booking/Db2CustomerPicker";
 import DraftRestorer from "@/components/booking/DraftRestorer";
 import Db2VehiclePicker from "@/components/booking/Db2VehiclePicker";
 import FileUploader from "@/components/marketing/FileUploader";
@@ -43,7 +43,6 @@ function filesOfKind(files: BookingFile[], kind: BookingFileKind) {
 /** ฟอร์มใบจองรถ (หน้าจอ 1.1) ใช้ร่วมกันทั้งหน้าเพิ่มใหม่และหน้าแก้ไข */
 export default function BookingForm({
   booking,
-  customer,
   files = [],
   branches,
   defaultBranchId,
@@ -52,7 +51,6 @@ export default function BookingForm({
   submitLabel,
 }: {
   booking?: BookingRow | null;
-  customer?: CustomerBrief | null;
   files?: BookingFile[];
   branches: Branch[];
   defaultBranchId?: string | null;
@@ -143,7 +141,14 @@ export default function BookingForm({
       </div>
 
       {/* ---------- ลูกค้า ---------- */}
-      <CustomerPicker defaultCustomer={customer ?? null} defaultPhone={booking?.customer_phone} />
+      <Db2CustomerPicker
+        defaultCustomer={
+          booking?.db2_cuscod
+            ? { cuscod: booking.db2_cuscod, name: booking.db2_customer_name || booking.db2_cuscod }
+            : null
+        }
+        defaultPhone={booking?.customer_phone}
+      />
 
       {/* ---------- รถที่จอง (ข้อมูลหลักจากระบบขาย Db2) ---------- */}
       <Db2VehiclePicker

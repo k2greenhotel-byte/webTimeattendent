@@ -85,6 +85,7 @@ export async function listBookings(query: BookingQuery = {}): Promise<BookingRow
       r.customer_name,
       r.customer_code,
       r.customer_phone,
+      r.db2_cuscod,
       r.receipt_no,
       r.sale_contract_no,
       r.taken_by_name,

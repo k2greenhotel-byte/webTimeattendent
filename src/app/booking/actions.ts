@@ -122,7 +122,10 @@ function readBooking(
     branch_id: optText(form, "branch_id"),
     ref_no: optText(form, "ref_no"),
     booking_date: str(form, "booking_date"),
-    customer_id: optText(form, "customer_id"),
+    // ทะเบียนลูกค้าเดิมไม่ใช้กับใบใหม่แล้ว — ใบเก่ายังอ่านค่าเดิมได้
+    customer_id: null,
+    db2_cuscod: optText(form, "db2_cuscod"),
+    db2_customer_name: optText(form, "db2_customer_name"),
     customer_phone: normalizePhone(str(form, "customer_phone")) || null,
     // ทะเบียนรถเดิม (mc_*) ไม่ใช้กับใบใหม่แล้ว — เก็บ null ไว้ ใบเก่ายังอ่านค่าเดิมได้
     brand_id: null,

@@ -159,6 +159,9 @@ export type Booking = {
   sale_contract_no: string | null;
   sale_date: string | null;
   refunded: boolean;
+  /** ลูกค้าจากทะเบียนของระบบขาย (Db2 CUSTMAST) — เก็บทั้งรหัสและชื่อ ณ ตอนบันทึก */
+  db2_cuscod: string | null;
+  db2_customer_name: string | null;
   /** รถที่จอง — อ้างข้อมูลหลักของระบบขาย (Db2) เก็บทั้งรหัสและชื่อ ณ ตอนบันทึก */
   db2_brand_code: string | null;
   db2_brand_name: string | null;

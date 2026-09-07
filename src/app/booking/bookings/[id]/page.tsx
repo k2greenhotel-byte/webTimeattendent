@@ -5,7 +5,6 @@ import { DocStatusBadge } from "@/components/booking/StatusBadges";
 import UpdateList, { UpdateFileLinks } from "@/components/booking/UpdateList";
 import { formatBaht } from "@/lib/booking";
 import { getBooking, listBookingFiles, listUpdateFiles, listUpdates } from "@/lib/booking-db";
-import { getCustomer } from "@/lib/customer-db";
 import { formatThaiDate } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
 import { checkPermission, requirePermission } from "@/lib/session";
@@ -31,7 +30,6 @@ export default async function BookingDetailPage({
   const [
     files,
     updates,
-    customer,
     branches,
     canEdit,
     canDelete,
@@ -40,7 +38,6 @@ export default async function BookingDetailPage({
   ] = await Promise.all([
     listBookingFiles(id),
     listUpdates({ booking_id: id }),
-    booking.customer_id ? getCustomer(booking.customer_id) : Promise.resolve(null),
     listBranches(true),
     checkPermission("BOOK_ENTRY", "edit"),
     checkPermission("BOOK_ENTRY", "delete"),
@@ -82,17 +79,6 @@ export default async function BookingDetailPage({
       {canEdit ? (
         <BookingForm
           booking={booking}
-          customer={
-            customer
-              ? {
-                  id: customer.id,
-                  code: customer.code,
-                  full_name: customer.full_name,
-                  phone: customer.phone,
-                  province_name: customer.province_name ?? null,
-                }
-              : null
-          }
           files={files}
           branches={branches}
           defaultStaffName={user.full_name}

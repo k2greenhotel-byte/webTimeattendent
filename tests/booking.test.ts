@@ -58,6 +58,8 @@ function booking(over: Partial<BookingRow> = {}): BookingRow {
     sale_contract_no: null,
     sale_date: null,
     refunded: false,
+    db2_cuscod: "C0001",
+    db2_customer_name: "นายสมชาย ใจดี",
     db2_brand_code: "HONDA",
     db2_brand_name: "HONDA",
     db2_model_code: "WAVE 125-I",
@@ -224,7 +226,7 @@ describe("ข้อ 1.2 ใบ update เปลี่ยนสถานะใบ
 describe("ตรวจใบจองก่อนบันทึก", () => {
   const base = {
     booking_date: "2026-09-01",
-    customer_id: "c1",
+    db2_cuscod: "C0001",
     db2_brand_code: "HONDA",
     db2_model_code: "WAVE 125-I",
     pickup_date: "2026-09-10",
@@ -245,7 +247,7 @@ describe("ตรวจใบจองก่อนบันทึก", () => {
   });
 
   it("ต้องมีลูกค้า ยี่ห้อ และรุ่นรถ", () => {
-    expect(validateBooking({ ...base, customer_id: null })).toContain("เลือกลูกค้า");
+    expect(validateBooking({ ...base, db2_cuscod: null })).toContain("เลือกลูกค้า");
     expect(validateBooking({ ...base, db2_brand_code: null })).toContain("ยี่ห้อรถ");
     expect(validateBooking({ ...base, db2_model_code: null })).toContain("รุ่นรถ");
   });
