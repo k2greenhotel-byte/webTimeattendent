@@ -36,13 +36,13 @@ export default async function LeaveApprovalPage({
     listRejectReasons(true),
     listLeaveTypes(true),
     listLeaveRequests({
-      statuses: ["pending", "need_docs"],
+      statuses: ["pending", "need_docs", "need_type_change", "escalated"],
       typeId: params.type || undefined,
       companyId: params.company || undefined,
     }),
     showDone
       ? listLeaveRequests({
-          statuses: ["approved", "rejected", "cancelled"],
+          statuses: ["approved_hr", "approved_exec", "rejected_hr", "rejected_exec", "cancelled"],
           typeId: params.type || undefined,
           companyId: params.company || undefined,
           limit: 100,

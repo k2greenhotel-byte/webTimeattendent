@@ -2,42 +2,85 @@
 
 // ---------- สถานะใบแจ้งลา ----------
 
-export type LeaveStatus = "pending" | "need_docs" | "approved" | "rejected" | "cancelled";
+export type LeaveStatus =
+  | "pending"
+  | "need_docs"
+  | "approved_hr"
+  | "escalated"
+  | "approved_exec"
+  | "rejected_hr"
+  | "rejected_exec"
+  | "need_type_change"
+  | "cancelled";
 
-/** สถานะที่ผู้อนุมัติเลือกได้จากหน้าจออนุมัติ (ตามข้อ 7 ของสเปก) */
-export const LEAVE_DECISION_ORDER: LeaveStatus[] = ["approved", "need_docs", "rejected"];
+/** ชุดผลการพิจารณาที่เป็นไปได้ทั้งหมด (ใช้เป็นตัวกรองคร่าว ๆ ใน action — ตัวเลือกจริงมาจาก leaveDecisionOptions) */
+export const LEAVE_DECISION_ORDER: LeaveStatus[] = [
+  "approved_hr",
+  "escalated",
+  "approved_exec",
+  "rejected_hr",
+  "rejected_exec",
+  "need_docs",
+  "need_type_change",
+];
 
 export const LEAVE_STATUS_ORDER: LeaveStatus[] = [
   "pending",
   "need_docs",
-  "approved",
-  "rejected",
+  "approved_hr",
+  "escalated",
+  "approved_exec",
+  "rejected_hr",
+  "rejected_exec",
+  "need_type_change",
   "cancelled",
 ];
 
+/** สถานะที่หน้าจอฝ่ายบุคคล (/hr/manage/leave) เลือกได้ — สงวน อนุมัติ/ไม่อนุมัติโดยผู้บริหาร ให้หน้าอนุมัติเท่านั้น */
+export const HR_MANAGE_STATUS_ORDER: LeaveStatus[] = LEAVE_STATUS_ORDER.filter(
+  (s) => s !== "approved_exec" && s !== "rejected_exec",
+);
+
 export const LEAVE_STATUS_LABEL: Record<LeaveStatus, string> = {
   pending: "รออนุมัติ",
-  need_docs: "อนุมัติแต่ขอหลักฐานเพิ่ม",
-  approved: "อนุมัติ",
-  rejected: "ไม่อนุมัติ",
+  need_docs: "ขอเอกสารเพิ่ม",
+  approved_hr: "อนุมัติโดยฝ่ายบุคคล",
+  escalated: "ส่งให้ผู้บริหารอนุมัติ",
+  approved_exec: "อนุมัติโดยผู้บริหาร",
+  rejected_hr: "ไม่อนุมัติโดยฝ่ายบุคคล",
+  rejected_exec: "ไม่อนุมัติโดยฝ่ายบริหาร",
+  need_type_change: "ให้เปลี่ยนประเภทการลา",
   cancelled: "ยกเลิก",
 };
 
 export const LEAVE_STATUS_HINT: Record<LeaveStatus, string> = {
   pending: "ยังไม่มีผู้อนุมัติพิจารณา",
-  need_docs: "อนุมัติให้ก่อน แต่ผู้แจ้งต้องส่งหลักฐานเพิ่มตามที่ระบุในหมายเหตุ",
-  approved: "อนุมัติตามที่แจ้ง",
-  rejected: "ไม่อนุมัติ — ต้องเลือกเหตุผล",
+  need_docs: "ต้องส่งหลักฐานเพิ่มตามที่ระบุในหมายเหตุ ก่อนพิจารณาต่อ",
+  approved_hr: "อนุมัติโดยฝ่ายบุคคลตามที่แจ้ง",
+  escalated: "เกินอำนาจฝ่ายบุคคล ส่งให้ผู้บริหารตัดสินต่อ",
+  approved_exec: "อนุมัติโดยผู้บริหาร",
+  rejected_hr: "ไม่อนุมัติโดยฝ่ายบุคคล — ต้องเลือกเหตุผล",
+  rejected_exec: "ไม่อนุมัติโดยผู้บริหาร — ต้องเลือกเหตุผล",
+  need_type_change: "ควรใช้สิทธิ์ลาประเภทอื่น — ดูรายละเอียดในหมายเหตุ",
   cancelled: "ผู้แจ้งยกเลิกใบนี้เอง",
 };
 
 export const LEAVE_STATUS_CLASS: Record<LeaveStatus, string> = {
   pending: "bg-amber-50 text-amber-700",
   need_docs: "bg-sky-50 text-sky-700",
-  approved: "bg-emerald-50 text-emerald-700",
-  rejected: "bg-rose-50 text-rose-700",
+  approved_hr: "bg-emerald-50 text-emerald-700",
+  escalated: "bg-violet-50 text-violet-700",
+  approved_exec: "bg-emerald-100 text-emerald-800",
+  rejected_hr: "bg-rose-50 text-rose-700",
+  rejected_exec: "bg-rose-100 text-rose-800",
+  need_type_change: "bg-orange-50 text-orange-700",
   cancelled: "bg-slate-100 text-slate-500",
 };
+
+/** สี text-* ของสถานะ ใช้ทำการ์ดสรุปบน dashboard/รายงาน */
+export function leaveStatusTone(status: LeaveStatus): string {
+  return LEAVE_STATUS_CLASS[status].split(" ").find((c) => c.startsWith("text-")) ?? "text-slate-700";
+}
 
 // ---------- สถานะใบขอเบิกเงิน ----------
 

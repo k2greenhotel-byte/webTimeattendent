@@ -19,6 +19,7 @@ import {
   topN,
 } from "@/lib/leave";
 import { listAdvanceRequests, listLeaveRequests } from "@/lib/leave-db";
+import { LEAVE_STATUS_LABEL, LEAVE_STATUS_ORDER, leaveStatusTone } from "@/lib/leave-types";
 import { requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -117,18 +118,14 @@ export default async function HrDashboardPage({
             <p className="text-xs text-slate-500">ใบทั้งหมด</p>
             <p className="text-2xl font-semibold text-slate-800">{leaveOverview.total}</p>
           </div>
-          <div className="card">
-            <p className="text-xs text-slate-500">รออนุมัติ</p>
-            <p className="text-2xl font-semibold text-amber-600">{leaveOverview.byStatus.pending}</p>
-          </div>
-          <div className="card">
-            <p className="text-xs text-slate-500">อนุมัติแล้ว</p>
-            <p className="text-2xl font-semibold text-emerald-600">{leaveOverview.byStatus.approved}</p>
-          </div>
-          <div className="card">
-            <p className="text-xs text-slate-500">ไม่อนุมัติ</p>
-            <p className="text-2xl font-semibold text-rose-600">{leaveOverview.byStatus.rejected}</p>
-          </div>
+          {LEAVE_STATUS_ORDER.filter((s) => s !== "cancelled").map((s) => (
+            <div key={s} className="card">
+              <p className="text-xs text-slate-500">{LEAVE_STATUS_LABEL[s]}</p>
+              <p className={`text-2xl font-semibold ${leaveStatusTone(s)}`}>
+                {leaveOverview.byStatus[s]}
+              </p>
+            </div>
+          ))}
           <div className="card bg-rose-50">
             <p className="text-xs text-rose-700">ถือเป็นขาดงาน</p>
             <p className="text-2xl font-semibold text-rose-800">{leaveOverview.absentCount}</p>

@@ -15,6 +15,7 @@ import {
   formatServiceMonths,
   groupByCompany,
   isCertOverdue,
+  leaveDecisionOptions,
   leaveFlags,
   leaveRangeText,
   resolveApprovedAmount,
@@ -367,9 +368,13 @@ describe("ลาป่วย: ใบรับรองแพทย์ภาย�
     expect(certDaysLeft(row, "2026-09-06")).toBe(2);
   });
 
-  it("ใบที่ไม่อนุมัติแล้ว ไม่ต้องตามใบรับรองแพทย์ต่อ", () => {
-    const row = leaveRow({ cert_due_date: "2026-09-08", status: "rejected" });
-    expect(isCertOverdue(row, "2026-09-20")).toBe(false);
+  it("ใบที่ไม่อนุมัติแล้ว (ฝ่ายบุคคลหรือผู้บริหาร) ไม่ต้องตามใบรับรองแพทย์ต่อ", () => {
+    expect(isCertOverdue(leaveRow({ cert_due_date: "2026-09-08", status: "rejected_hr" }), "2026-09-20")).toBe(
+      false,
+    );
+    expect(
+      isCertOverdue(leaveRow({ cert_due_date: "2026-09-08", status: "rejected_exec" }), "2026-09-20"),
+    ).toBe(false);
   });
 });
 
@@ -438,32 +443,37 @@ describe("ตรวจฟอร์มใบแจ้งลา", () => {
 // ---------- ตัดสินใบแจ้งลา ----------
 
 describe("ตัดสินใบแจ้งลา", () => {
-  it("สถานะที่ตัดสินได้คือรออนุมัติและอนุมัติแต่ขอหลักฐานเพิ่ม", () => {
+  it("สถานะที่ตัดสินได้ครอบคลุมทุกสถานะที่ยังไม่จบ", () => {
     expect(canDecideLeave("pending")).toBe(true);
     expect(canDecideLeave("need_docs")).toBe(true);
-    expect(canDecideLeave("approved")).toBe(false);
+    expect(canDecideLeave("need_type_change")).toBe(true);
+    expect(canDecideLeave("escalated")).toBe(true);
+    expect(canDecideLeave("approved_hr")).toBe(false);
+    expect(canDecideLeave("approved_exec")).toBe(false);
+    expect(canDecideLeave("rejected_hr")).toBe(false);
+    expect(canDecideLeave("rejected_exec")).toBe(false);
     expect(canDecideLeave("cancelled")).toBe(false);
   });
 
   it("ใบที่ตัดสินไปแล้วตัดสินซ้ำไม่ได้", () => {
-    const problem = validateLeaveDecision(leaveRow({ status: "approved" }), {
-      status: "rejected",
+    const problem = validateLeaveDecision(leaveRow({ status: "approved_hr" }), {
+      status: "rejected_hr",
       note: "",
       reasonId: "x",
     });
     expect(problem).toContain("ตัดสินไปแล้ว");
   });
 
-  it("ไม่อนุมัติต้องเลือกเหตุผล", () => {
+  it("ไม่อนุมัติโดยฝ่ายบุคคลต้องเลือกเหตุผล", () => {
     const problem = validateLeaveDecision(leaveRow(), {
-      status: "rejected",
+      status: "rejected_hr",
       note: "",
       reasonId: null,
     });
     expect(problem).toContain("เหตุผล");
   });
 
-  it("อนุมัติแต่ขอหลักฐานเพิ่ม ต้องบอกว่าขออะไร", () => {
+  it("ขอเอกสารเพิ่ม ต้องบอกว่าขออะไร", () => {
     expect(
       validateLeaveDecision(leaveRow(), { status: "need_docs", note: "", reasonId: null }),
     ).toContain("หลักฐาน");
@@ -476,9 +486,54 @@ describe("ตัดสินใบแจ้งลา", () => {
     ).toBeNull();
   });
 
-  it("อนุมัติตามปกติผ่าน", () => {
+  it("ให้เปลี่ยนประเภทการลา ต้องระบุว่าควรเป็นประเภทใด", () => {
     expect(
-      validateLeaveDecision(leaveRow(), { status: "approved", note: "", reasonId: null }),
+      validateLeaveDecision(leaveRow(), { status: "need_type_change", note: "", reasonId: null }),
+    ).toContain("ประเภท");
+    expect(
+      validateLeaveDecision(leaveRow(), {
+        status: "need_type_change",
+        note: "ควรใช้ลากิจแทนลาป่วย",
+        reasonId: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("ส่งให้ผู้บริหารอนุมัติ ต้องมีความเห็นประกอบ", () => {
+    expect(
+      validateLeaveDecision(leaveRow(), { status: "escalated", note: "", reasonId: null }),
+    ).toContain("ความเห็น");
+    expect(
+      validateLeaveDecision(leaveRow(), { status: "escalated", note: "เกินอำนาจฝ่ายบุคคล", reasonId: null }),
+    ).toBeNull();
+  });
+
+  it("อนุมัติโดยฝ่ายบุคคลตามปกติผ่าน", () => {
+    expect(
+      validateLeaveDecision(leaveRow(), { status: "approved_hr", note: "", reasonId: null }),
+    ).toBeNull();
+  });
+
+  it("เรื่องที่ยังไม่ถูกส่งผู้บริหาร เลือกอนุมัติ/ไม่อนุมัติโดยผู้บริหารตรง ๆ ไม่ได้ (ต้อง escalate ก่อน)", () => {
+    expect(
+      validateLeaveDecision(leaveRow({ status: "pending" }), {
+        status: "approved_exec",
+        note: "",
+        reasonId: null,
+      }),
+    ).toContain("ผลการพิจารณา");
+  });
+
+  it("เรื่องที่ถูกส่งผู้บริหารแล้ว เลือกได้เฉพาะอนุมัติ/ไม่อนุมัติโดยผู้บริหาร", () => {
+    const escalatedRow = leaveRow({ status: "escalated" });
+    expect(
+      validateLeaveDecision(escalatedRow, { status: "approved_hr", note: "", reasonId: null }),
+    ).toContain("เกินอำนาจฝ่ายบุคคล");
+    expect(
+      validateLeaveDecision(escalatedRow, { status: "approved_exec", note: "", reasonId: null }),
+    ).toBeNull();
+    expect(
+      validateLeaveDecision(escalatedRow, { status: "rejected_exec", note: "", reasonId: "r1" }),
     ).toBeNull();
   });
 
@@ -486,6 +541,22 @@ describe("ตัดสินใบแจ้งลา", () => {
     expect(
       validateLeaveDecision(leaveRow(), { status: "cancelled", note: "", reasonId: null }),
     ).toContain("ผลการพิจารณา");
+  });
+});
+
+describe("leaveDecisionOptions", () => {
+  it("ใบปกติเลือกได้ อนุมัติ/ไม่อนุมัติฝ่ายบุคคล/ขอเอกสาร/เปลี่ยนประเภท/ส่งผู้บริหาร", () => {
+    expect(leaveDecisionOptions("pending")).toEqual([
+      "approved_hr",
+      "rejected_hr",
+      "need_docs",
+      "need_type_change",
+      "escalated",
+    ]);
+  });
+
+  it("ใบที่ส่งผู้บริหารแล้วเลือกได้เฉพาะอนุมัติ/ไม่อนุมัติโดยผู้บริหาร", () => {
+    expect(leaveDecisionOptions("escalated")).toEqual(["approved_exec", "rejected_exec"]);
   });
 });
 
@@ -497,40 +568,58 @@ describe("ฝ่ายบุคคลแก้ไขใบแจ้งลาข�
     endDate: "2026-09-10",
     totalDays: 1,
     arrivalTime: null,
-    status: "approved" as const,
+    status: "approved_hr" as const,
     reasonId: null,
     ...over,
   });
 
   it("แก้ใบที่ตัดสินไปแล้วได้ (ต่างจากหน้าอนุมัติปกติ)", () => {
-    expect(validateLeaveAdminEdit(edit({ status: "pending" }), type())).toBeNull();
-    expect(validateLeaveAdminEdit(edit({ status: "cancelled" }), type())).toBeNull();
+    expect(validateLeaveAdminEdit(edit({ status: "pending" }), type(), "approved_hr")).toBeNull();
+    expect(validateLeaveAdminEdit(edit({ status: "cancelled" }), type(), "approved_hr")).toBeNull();
   });
 
   it("เลือกประเภทที่ปิดใช้งานอยู่ได้ (แก้ไขข้อมูลเดิม ไม่ใช่ใช้สิทธิ์ใหม่)", () => {
-    expect(validateLeaveAdminEdit(edit(), type({ is_active: false }))).toBeNull();
+    expect(validateLeaveAdminEdit(edit(), type({ is_active: false }), "approved_hr")).toBeNull();
   });
 
   it("ยังต้องกรอกรายละเอียดและช่วงวันที่ให้ครบเหมือนฟอร์มปกติ", () => {
-    expect(validateLeaveAdminEdit(edit({ detail: "" }), type())).toContain("รายละเอียด");
+    expect(validateLeaveAdminEdit(edit({ detail: "" }), type(), "approved_hr")).toContain("รายละเอียด");
     expect(
-      validateLeaveAdminEdit(edit({ startDate: "2026-09-10", endDate: "2026-09-05" }), type()),
+      validateLeaveAdminEdit(edit({ startDate: "2026-09-10", endDate: "2026-09-05" }), type(), "approved_hr"),
     ).toContain("วันที่สิ้นสุด");
   });
 
-  it("ตั้งสถานะไม่อนุมัติต้องเลือกเหตุผล", () => {
-    expect(validateLeaveAdminEdit(edit({ status: "rejected", reasonId: null }), type())).toContain(
-      "เหตุผล",
-    );
+  it("ตั้งสถานะไม่อนุมัติโดยฝ่ายบุคคลต้องเลือกเหตุผล", () => {
     expect(
-      validateLeaveAdminEdit(edit({ status: "rejected", reasonId: "r1" }), type()),
+      validateLeaveAdminEdit(edit({ status: "rejected_hr", reasonId: null }), type(), "pending"),
+    ).toContain("เหตุผล");
+    expect(
+      validateLeaveAdminEdit(edit({ status: "rejected_hr", reasonId: "r1" }), type(), "pending"),
+    ).toBeNull();
+  });
+
+  it('ตั้งสถานะ "อนุมัติ/ไม่อนุมัติโดยผู้บริหาร" ขึ้นใหม่ไม่ได้ — สงวนให้หน้าอนุมัติเท่านั้น', () => {
+    expect(
+      validateLeaveAdminEdit(edit({ status: "approved_exec" }), type(), "pending"),
+    ).toContain("หน้าอนุมัติ");
+    expect(
+      validateLeaveAdminEdit(edit({ status: "rejected_exec", reasonId: "r1" }), type(), "escalated"),
+    ).toContain("หน้าอนุมัติ");
+  });
+
+  it("แก้ไขข้อมูลอื่นของใบที่ผู้บริหารตัดสินไปแล้วได้ ตราบใดที่ไม่เปลี่ยนสถานะนั้น", () => {
+    expect(
+      validateLeaveAdminEdit(edit({ status: "approved_exec" }), type(), "approved_exec"),
+    ).toBeNull();
+    expect(
+      validateLeaveAdminEdit(edit({ status: "rejected_exec", reasonId: "r1" }), type(), "rejected_exec"),
     ).toBeNull();
   });
 
   it("ไม่ต้องมีอายุงานถึงเกณฑ์ก็แก้ได้ (ฝ่ายบุคคลมีอำนาจแก้ไขข้อมูลตรงให้ได้เลย)", () => {
     const vacation = type({ min_service_months: 12 });
     // validateLeaveAdminEdit ไม่ตรวจอายุงานเลย ต่างจาก evaluateLeave().blocked ที่ใช้ตอนพนักงานยื่นเอง
-    expect(validateLeaveAdminEdit(edit(), vacation)).toBeNull();
+    expect(validateLeaveAdminEdit(edit(), vacation, "approved_hr")).toBeNull();
   });
 });
 
@@ -683,21 +772,29 @@ describe("ภาพรวมใบแจ้งลา (ทุกสถานะ)"
   it("นับครบทุกสถานะ รวมวันลา และธงเตือน", () => {
     const rows = [
       leaveRow({ id: "1", status: "pending", total_days: 2 }),
-      leaveRow({ id: "2", status: "approved", total_days: 1, counts_as_absent: true }),
-      leaveRow({ id: "3", status: "rejected", total_days: 3, is_late_notice: true }),
+      leaveRow({ id: "2", status: "approved_hr", total_days: 1, counts_as_absent: true }),
+      leaveRow({ id: "3", status: "rejected_hr", total_days: 3, is_late_notice: true }),
       leaveRow({ id: "4", status: "need_docs", total_days: 1 }),
       leaveRow({ id: "5", status: "cancelled", total_days: 1 }),
+      leaveRow({ id: "6", status: "escalated", total_days: 1 }),
+      leaveRow({ id: "7", status: "approved_exec", total_days: 1 }),
+      leaveRow({ id: "8", status: "rejected_exec", total_days: 1 }),
+      leaveRow({ id: "9", status: "need_type_change", total_days: 1 }),
     ];
     const overview = buildLeaveOverview(rows);
-    expect(overview.total).toBe(5);
+    expect(overview.total).toBe(9);
     expect(overview.byStatus).toEqual({
       pending: 1,
       need_docs: 1,
-      approved: 1,
-      rejected: 1,
+      approved_hr: 1,
+      escalated: 1,
+      approved_exec: 1,
+      rejected_hr: 1,
+      rejected_exec: 1,
+      need_type_change: 1,
       cancelled: 1,
     });
-    expect(overview.totalDays).toBe(8);
+    expect(overview.totalDays).toBe(12);
     expect(overview.absentCount).toBe(1);
     expect(overview.lateCount).toBe(1);
   });
@@ -717,16 +814,16 @@ describe("ภาพรวมใบแจ้งลา (ทุกสถานะ)"
 describe("จัดกลุ่มใบแจ้งลาตามกุญแจที่กำหนด", () => {
   it("จัดกลุ่มตามบริษัทและสรุปแยกแต่ละกลุ่มถูกต้อง", () => {
     const rows = [
-      leaveRow({ id: "1", company_id: "c1", company_name: "บริษัท ก", status: "approved", total_days: 2 }),
+      leaveRow({ id: "1", company_id: "c1", company_name: "บริษัท ก", status: "approved_hr", total_days: 2 }),
       leaveRow({ id: "2", company_id: "c1", company_name: "บริษัท ก", status: "pending", total_days: 1 }),
-      leaveRow({ id: "3", company_id: "c2", company_name: "บริษัท ข", status: "approved", total_days: 5 }),
+      leaveRow({ id: "3", company_id: "c2", company_name: "บริษัท ข", status: "approved_hr", total_days: 5 }),
     ];
     const groups = summarizeLeaveByKey(rows, byCompanyKey);
     const a = groups.find((g) => g.key === "c1")!;
     const b = groups.find((g) => g.key === "c2")!;
     expect(a.total).toBe(2);
     expect(a.totalDays).toBe(3);
-    expect(a.byStatus.approved).toBe(1);
+    expect(a.byStatus.approved_hr).toBe(1);
     expect(a.byStatus.pending).toBe(1);
     expect(b.total).toBe(1);
     expect(b.totalDays).toBe(5);

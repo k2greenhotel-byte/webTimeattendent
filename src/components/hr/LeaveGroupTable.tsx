@@ -15,6 +15,10 @@ export default function LeaveGroupTable({
 }) {
   if (rows.length === 0) return <p className="text-sm text-slate-400">{emptyText}</p>;
 
+  const approved = (row: LeaveGroupSummary) => row.byStatus.approved_hr + row.byStatus.approved_exec;
+  const rejected = (row: LeaveGroupSummary) => row.byStatus.rejected_hr + row.byStatus.rejected_exec;
+  const needsFix = (row: LeaveGroupSummary) => row.byStatus.need_docs + row.byStatus.need_type_change;
+
   return (
     <>
       {/* มือถือ: การ์ด */}
@@ -26,8 +30,8 @@ export default function LeaveGroupTable({
               <span className="shrink-0 text-sm text-slate-500">{row.total} ใบ</span>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              รออนุมัติ {row.byStatus.pending} · อนุมัติ {row.byStatus.approved} · ไม่อนุมัติ{" "}
-              {row.byStatus.rejected} · ขอหลักฐานเพิ่ม {row.byStatus.need_docs}
+              รออนุมัติ {row.byStatus.pending} · ส่งผู้บริหาร {row.byStatus.escalated} · ต้องแก้ไข{" "}
+              {needsFix(row)} · อนุมัติ {approved(row)} · ไม่อนุมัติ {rejected(row)}
             </p>
             <p className="mt-1 text-xs text-slate-600">
               รวมวันลา {row.totalDays} วัน
@@ -46,8 +50,9 @@ export default function LeaveGroupTable({
               <th className="text-left">{labelHeader}</th>
               <th>ทั้งหมด</th>
               <th>รออนุมัติ</th>
+              <th>ส่งผู้บริหาร</th>
+              <th>ต้องแก้ไข</th>
               <th>อนุมัติ</th>
-              <th>ขอหลักฐานเพิ่ม</th>
               <th>ไม่อนุมัติ</th>
               <th>ยกเลิก</th>
               <th>รวมวันลา</th>
@@ -61,9 +66,10 @@ export default function LeaveGroupTable({
                 <td className="text-left font-medium">{row.label}</td>
                 <td>{row.total}</td>
                 <td>{row.byStatus.pending}</td>
-                <td>{row.byStatus.approved}</td>
-                <td>{row.byStatus.need_docs}</td>
-                <td>{row.byStatus.rejected}</td>
+                <td>{row.byStatus.escalated}</td>
+                <td>{needsFix(row)}</td>
+                <td>{approved(row)}</td>
+                <td>{rejected(row)}</td>
                 <td>{row.byStatus.cancelled}</td>
                 <td>{row.totalDays}</td>
                 <td className={row.absentCount > 0 ? "font-medium text-rose-600" : undefined}>

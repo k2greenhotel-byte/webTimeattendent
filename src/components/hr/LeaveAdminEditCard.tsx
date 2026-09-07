@@ -7,8 +7,8 @@ import type { ApvRejectReason } from "@/lib/approval-types";
 import { formatStampThai } from "@/lib/datetime";
 import { daysInRange, formatServiceMonths } from "@/lib/leave";
 import {
+  HR_MANAGE_STATUS_ORDER,
   LEAVE_STATUS_LABEL,
-  LEAVE_STATUS_ORDER,
   type LeaveRequestRow,
   type LeaveStatus,
   type LeaveType,
@@ -18,10 +18,14 @@ import { LeaveStatusBadge, LeaveTypeBadge } from "./StatusBadges";
 const TONE: Record<string, string> = {
   pending: "border-amber-300 bg-amber-50",
   need_docs: "border-sky-300 bg-sky-50",
-  approved: "border-emerald-300 bg-emerald-50",
-  rejected: "border-rose-300 bg-rose-50",
+  need_type_change: "border-orange-300 bg-orange-50",
+  escalated: "border-violet-300 bg-violet-50",
+  approved_hr: "border-emerald-300 bg-emerald-50",
+  rejected_hr: "border-rose-300 bg-rose-50",
   cancelled: "border-slate-300 bg-slate-50",
 };
+
+const REJECT_STATUSES: LeaveStatus[] = ["rejected_hr", "rejected_exec"];
 
 /**
  * หนึ่งใบแจ้งลาในหน้าฝ่ายบุคคล — แก้ไขได้ทุกฟิลด์ ทุกสถานะ
@@ -49,6 +53,7 @@ export default function LeaveAdminEditCard({
   const [status, setStatus] = useState<LeaveStatus>(row.status);
 
   const type = types.find((t) => t.id === typeId) ?? null;
+  const isExecLocked = row.status === "approved_exec" || row.status === "rejected_exec";
 
   function pickStart(value: string) {
     setStartDate(value);
@@ -205,45 +210,59 @@ export default function LeaveAdminEditCard({
         <div className="w-full space-y-2 lg:w-80 lg:border-l lg:border-slate-200 lg:pl-4">
           {canEdit ? (
             <>
-              <span className="label">เปลี่ยนสถานะเป็น</span>
-              <div className="space-y-1">
-                {LEAVE_STATUS_ORDER.map((option) => (
-                  <label
-                    key={option}
-                    className={`flex items-center gap-2 rounded-lg border p-2 text-sm ${
-                      status === option ? TONE[option] : "border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="status"
-                      value={option}
-                      checked={status === option}
-                      onChange={() => setStatus(option)}
-                    />
-                    <span className="font-medium">{LEAVE_STATUS_LABEL[option]}</span>
-                  </label>
-                ))}
-              </div>
+              {isExecLocked ? (
+                <>
+                  <input type="hidden" name="status" value={row.status} />
+                  <input type="hidden" name="reason_id" value={row.reason_id ?? ""} />
+                  <input type="hidden" name="note" value={row.decision_note ?? ""} />
+                  <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                    สถานะนี้ตัดสินโดยผู้บริหารแล้ว ฝ่ายบุคคลแก้ไขสถานะไม่ได้ — แก้ได้เฉพาะข้อมูล
+                    ด้านซ้าย (ประเภท/ช่วงวัน/รายละเอียด)
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span className="label">เปลี่ยนสถานะเป็น</span>
+                  <div className="space-y-1">
+                    {HR_MANAGE_STATUS_ORDER.map((option) => (
+                      <label
+                        key={option}
+                        className={`flex items-center gap-2 rounded-lg border p-2 text-sm ${
+                          status === option ? TONE[option] : "border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="status"
+                          value={option}
+                          checked={status === option}
+                          onChange={() => setStatus(option)}
+                        />
+                        <span className="font-medium">{LEAVE_STATUS_LABEL[option]}</span>
+                      </label>
+                    ))}
+                  </div>
 
-              {status === "rejected" && (
-                <select name="reason_id" className="input" defaultValue={row.reason_id ?? ""} required>
-                  <option value="">— เลือกเหตุผลที่ไม่อนุมัติ —</option>
-                  {reasons.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                  {REJECT_STATUSES.includes(status) && (
+                    <select name="reason_id" className="input" defaultValue={row.reason_id ?? ""} required>
+                      <option value="">— เลือกเหตุผลที่ไม่อนุมัติ —</option>
+                      {reasons.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <textarea
+                    name="note"
+                    rows={2}
+                    className="input"
+                    placeholder="เหตุผลที่แก้ไข เช่น พนักงานแจ้งประเภทลาผิด แก้จากลาป่วยเป็นลากิจ"
+                    defaultValue={row.decision_note ?? ""}
+                  />
+                </>
               )}
-
-              <textarea
-                name="note"
-                rows={2}
-                className="input"
-                placeholder="เหตุผลที่แก้ไข เช่น พนักงานแจ้งประเภทลาผิด แก้จากลาป่วยเป็นลากิจ"
-                defaultValue={row.decision_note ?? ""}
-              />
 
               <button type="submit" className="btn-primary w-full">
                 บันทึกการแก้ไข

@@ -11,7 +11,7 @@ import FileUploader from "@/components/marketing/FileUploader";
 import { LeaveFlagList, LeaveStatusBadge, LeaveTypeBadge } from "@/components/hr/StatusBadges";
 import { listRejectReasons } from "@/lib/approval-db";
 import { formatStampThai, formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
-import { formatServiceMonths, leaveFlags, leaveRangeText } from "@/lib/leave";
+import { canDecideLeave, formatServiceMonths, leaveFlags, leaveRangeText } from "@/lib/leave";
 import { getLeaveRequest, listLeaveFiles } from "@/lib/leave-db";
 import { HR_FILE_ACCEPT, LEAVE_FILE_KIND_LABEL, MAX_LEAVE_FILES } from "@/lib/leave-types";
 import { checkPermission, isApproverAuthed, requireActiveUser } from "@/lib/session";
@@ -46,7 +46,7 @@ export default async function LeaveDetailPage({
     listRejectReasons(true),
   ]);
 
-  const editable = row.status === "pending" || row.status === "need_docs";
+  const editable = canDecideLeave(row.status);
   const flags = leaveFlags(row, today);
 
   const facts: { label: string; value: string }[] = [
@@ -210,7 +210,7 @@ export default async function LeaveDetailPage({
       </section>
 
       {/* ---------- ผู้อนุมัติพิจารณาจากหน้านี้ได้เลย ---------- */}
-      {canDecide && approverAuthed && (row.status === "pending" || row.status === "need_docs") && (
+      {canDecide && approverAuthed && canDecideLeave(row.status) && (
         <section className="space-y-2">
           <h2 className="font-semibold text-slate-800">พิจารณาใบนี้</h2>
           <LeaveDecisionCard
@@ -237,7 +237,7 @@ export default async function LeaveDetailPage({
         </section>
       )}
 
-      {canDecide && !approverAuthed && row.status === "pending" && (
+      {canDecide && !approverAuthed && canDecideLeave(row.status) && (
         <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
           ต้องยืนยันรหัสผ่านผู้อนุมัติก่อนจึงจะพิจารณาได้ —{" "}
           <Link href="/hr/approvals/leave" className="text-brand-600 hover:underline">

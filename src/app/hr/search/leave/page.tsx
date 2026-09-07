@@ -6,7 +6,7 @@ import { workDateOf } from "@/lib/datetime";
 import { listBranches, listEmployees } from "@/lib/db";
 import { buildLeaveOverview } from "@/lib/leave";
 import { listLeaveRequests, listLeaveTypes } from "@/lib/leave-db";
-import { LEAVE_STATUS_LABEL, LEAVE_STATUS_ORDER, type LeaveStatus } from "@/lib/leave-types";
+import { LEAVE_STATUS_LABEL, LEAVE_STATUS_ORDER, leaveStatusTone, type LeaveStatus } from "@/lib/leave-types";
 import { requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -57,9 +57,11 @@ export default async function LeaveSearchPage({
 
   const cards = [
     { label: "จำนวนใบทั้งหมด", value: String(overview.total), tone: "text-slate-800" },
-    { label: "รออนุมัติ", value: String(overview.byStatus.pending), tone: "text-amber-600" },
-    { label: "อนุมัติแล้ว", value: String(overview.byStatus.approved), tone: "text-emerald-600" },
-    { label: "ไม่อนุมัติ", value: String(overview.byStatus.rejected), tone: "text-rose-600" },
+    ...LEAVE_STATUS_ORDER.filter((s) => s !== "cancelled").map((s) => ({
+      label: LEAVE_STATUS_LABEL[s],
+      value: String(overview.byStatus[s]),
+      tone: leaveStatusTone(s),
+    })),
     { label: "รวมวันลา", value: `${overview.totalDays} วัน`, tone: "text-slate-800" },
     { label: "ถือเป็นขาดงาน", value: String(overview.absentCount), tone: "text-rose-600" },
   ];

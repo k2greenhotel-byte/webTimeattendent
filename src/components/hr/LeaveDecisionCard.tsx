@@ -4,9 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { decideLeaveForm } from "@/app/hr/actions";
 import { formatThaiDate, formatTime } from "@/lib/datetime";
-import { formatServiceMonths, leaveFlags, leaveRangeText } from "@/lib/leave";
+import { formatServiceMonths, leaveDecisionOptions, leaveFlags, leaveRangeText } from "@/lib/leave";
 import {
-  LEAVE_DECISION_ORDER,
   LEAVE_STATUS_HINT,
   LEAVE_STATUS_LABEL,
   type LeaveRequestRow,
@@ -16,10 +15,17 @@ import type { ApvRejectReason } from "@/lib/approval-types";
 import { LeaveFlagList, LeaveStatusBadge, LeaveTypeBadge } from "./StatusBadges";
 
 const TONE: Record<string, string> = {
-  approved: "border-emerald-300 bg-emerald-50",
+  approved_hr: "border-emerald-300 bg-emerald-50",
+  approved_exec: "border-emerald-400 bg-emerald-100",
+  escalated: "border-violet-300 bg-violet-50",
   need_docs: "border-sky-300 bg-sky-50",
-  rejected: "border-rose-300 bg-rose-50",
+  need_type_change: "border-orange-300 bg-orange-50",
+  rejected_hr: "border-rose-300 bg-rose-50",
+  rejected_exec: "border-rose-400 bg-rose-100",
 };
+
+const REJECT_STATUSES: LeaveStatus[] = ["rejected_hr", "rejected_exec"];
+const NOTE_REQUIRED_STATUSES: LeaveStatus[] = ["need_docs", "need_type_change", "escalated"];
 
 /**
  * หนึ่งใบแจ้งลาในหน้าจออนุมัติ พร้อมช่องเปลี่ยนสถานะท้ายรายการ
@@ -40,6 +46,7 @@ export default function LeaveDecisionCard({
 }) {
   const [status, setStatus] = useState<LeaveStatus | "">("");
   const flags = leaveFlags(row, today);
+  const options = leaveDecisionOptions(row.status);
 
   return (
     <form
@@ -99,9 +106,14 @@ export default function LeaveDecisionCard({
         <div className="w-full space-y-2 lg:w-80 lg:border-l lg:border-slate-200 lg:pl-4">
           {canDecide ? (
             <>
+              {row.status === "escalated" && (
+                <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-700">
+                  เรื่องนี้ถูกส่งให้ผู้บริหารอนุมัติแล้ว — เหลือแค่ผู้บริหารตัดสิน
+                </p>
+              )}
               <span className="label">เปลี่ยนสถานะเป็น</span>
               <div className="space-y-1">
-                {LEAVE_DECISION_ORDER.map((option) => (
+                {options.map((option) => (
                   <label
                     key={option}
                     className={`flex items-start gap-2 rounded-lg border p-2 text-sm ${
@@ -126,7 +138,7 @@ export default function LeaveDecisionCard({
                 ))}
               </div>
 
-              {status === "rejected" && (
+              {status !== "" && REJECT_STATUSES.includes(status) && (
                 <select name="reason_id" className="input" required>
                   <option value="">— เลือกเหตุผลที่ไม่อนุมัติ —</option>
                   {reasons.map((r) => (
@@ -145,9 +157,13 @@ export default function LeaveDecisionCard({
                   placeholder={
                     status === "need_docs"
                       ? "ระบุว่าต้องการหลักฐานอะไรเพิ่ม เช่น ใบรับรองแพทย์ฉบับจริง"
-                      : "หมายเหตุถึงผู้แจ้ง (ถ้ามี)"
+                      : status === "need_type_change"
+                        ? "ระบุว่าควรใช้สิทธิ์ลาประเภทใดแทน"
+                        : status === "escalated"
+                          ? "ระบุความเห็นประกอบก่อนส่งให้ผู้บริหารพิจารณา"
+                          : "หมายเหตุถึงผู้แจ้ง (ถ้ามี)"
                   }
-                  required={status === "need_docs"}
+                  required={NOTE_REQUIRED_STATUSES.includes(status)}
                 />
               )}
 

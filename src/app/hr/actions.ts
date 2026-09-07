@@ -7,6 +7,7 @@ import { verifyEmployeePin } from "@/lib/auth";
 import { workDateOf } from "@/lib/datetime";
 import { logAudit } from "@/lib/db";
 import {
+  canDecideLeave,
   evaluateLeave,
   parseAmount,
   validateAdvanceDecision,
@@ -287,7 +288,7 @@ export async function deleteLeaveFileForm(form: FormData): Promise<void> {
   const row = await getLeaveRequest(id);
   if (!row) back("/hr/leave", "ไม่พบใบแจ้งลา", true);
   if (row.employee_id !== user.id) back(path, "ลบไฟล์ได้เฉพาะใบแจ้งของตัวเอง", true);
-  if (row.status !== "pending" && row.status !== "need_docs") {
+  if (!canDecideLeave(row.status)) {
     back(path, "ใบนี้ตัดสินไปแล้ว ลบไฟล์แนบไม่ได้", true);
   }
 
@@ -387,7 +388,7 @@ export async function adminUpdateLeaveForm(form: FormData): Promise<void> {
     reasonId: str(form, "reason_id") || null,
   };
 
-  const problem = validateLeaveAdminEdit(edit, type);
+  const problem = validateLeaveAdminEdit(edit, type, row.status);
   if (problem || !type) back(backTo, problem ?? "ไม่พบประเภทการลา", true);
 
   // คำนวณธงเตือน (ขาดงาน/แจ้งช้า/กำหนดใบรับรองแพทย์) ใหม่ตามข้อมูลที่แก้ไข แต่ยังยึดวันเวลาที่แจ้งจริงเดิม

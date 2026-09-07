@@ -15,7 +15,6 @@ import { withinLimit } from "./approval";
 import {
   ADVANCE_DECISION_ORDER,
   ADVANCE_STATUS_ORDER,
-  LEAVE_DECISION_ORDER,
   LEAVE_STATUS_ORDER,
   type AdvanceRequestRow,
   type AdvanceStatus,
@@ -223,9 +222,24 @@ export type LeaveDecisionInput = {
   reasonId: string | null;
 };
 
-/** ใบนี้ยังตัดสินได้ไหม — "อนุมัติแต่ขอหลักฐานเพิ่ม" ยังตัดสินซ้ำได้เมื่อหลักฐานมาครบ */
+/** ใบนี้ยังตัดสินได้ไหม — เปิดกว้างสำหรับทุกสถานะที่ยังไม่จบ (รวมที่ส่งผู้บริหารแล้วด้วย) */
 export function canDecideLeave(status: LeaveStatus): boolean {
-  return status === "pending" || status === "need_docs";
+  return (
+    status === "pending" ||
+    status === "need_docs" ||
+    status === "need_type_change" ||
+    status === "escalated"
+  );
+}
+
+/**
+ * ตัวเลือกผลการพิจารณาตามสถานะปัจจุบันของใบ — สองชั้นตามผู้ตัดสิน:
+ *   - ใบที่ยังไม่ถูกส่งผู้บริหาร: ฝ่ายบุคคลเลือกอนุมัติ/ไม่อนุมัติเอง หรือส่งต่อผู้บริหารได้
+ *   - ใบที่ถูกส่งผู้บริหารแล้ว (escalated): เหลือแค่ผู้บริหารตัดสิน อนุมัติ/ไม่อนุมัติเท่านั้น
+ */
+export function leaveDecisionOptions(status: LeaveStatus): LeaveStatus[] {
+  if (status === "escalated") return ["approved_exec", "rejected_exec"];
+  return ["approved_hr", "rejected_hr", "need_docs", "need_type_change", "escalated"];
 }
 
 export function validateLeaveDecision(
@@ -237,10 +251,23 @@ export function validateLeaveDecision(
       ? `ใบ ${row.doc_no} ถูกยกเลิกไปแล้ว ตัดสินไม่ได้`
       : `ใบ ${row.doc_no} ตัดสินไปแล้ว ตัดสินซ้ำไม่ได้`;
   }
-  if (!LEAVE_DECISION_ORDER.includes(input.status)) return "กรุณาเลือกผลการพิจารณา";
-  if (input.status === "rejected" && !input.reasonId) return "กรุณาเลือกเหตุผลที่ไม่อนุมัติ";
+  const options = leaveDecisionOptions(row.status);
+  if (!options.includes(input.status)) {
+    return row.status === "escalated"
+      ? "เรื่องนี้เกินอำนาจฝ่ายบุคคลแล้ว เลือกได้เฉพาะอนุมัติหรือไม่อนุมัติโดยผู้บริหาร"
+      : "กรุณาเลือกผลการพิจารณา";
+  }
+  if ((input.status === "rejected_hr" || input.status === "rejected_exec") && !input.reasonId) {
+    return "กรุณาเลือกเหตุผลที่ไม่อนุมัติ";
+  }
   if (input.status === "need_docs" && !input.note.trim()) {
     return "กรุณาระบุในหมายเหตุว่าต้องการหลักฐานอะไรเพิ่ม";
+  }
+  if (input.status === "need_type_change" && !input.note.trim()) {
+    return "กรุณาระบุในหมายเหตุว่าควรใช้สิทธิ์ลาประเภทใดแทน";
+  }
+  if (input.status === "escalated" && !input.note.trim()) {
+    return "กรุณาระบุความเห็นประกอบก่อนส่งให้ผู้บริหารพิจารณา";
   }
   return null;
 }
@@ -248,7 +275,9 @@ export function validateLeaveDecision(
 /** ใบลาป่วยที่เลยกำหนดส่งใบรับรองแพทย์แล้วและยังไม่ได้ส่ง */
 export function isCertOverdue(row: LeaveRequestRow, today: string): boolean {
   if (!row.cert_due_date || row.cert_received || row.cert_count > 0) return false;
-  if (row.status === "rejected" || row.status === "cancelled") return false;
+  if (row.status === "rejected_hr" || row.status === "rejected_exec" || row.status === "cancelled") {
+    return false;
+  }
   return today > row.cert_due_date;
 }
 
@@ -273,11 +302,19 @@ export type LeaveAdminEdit = LeaveInput & {
   reasonId: string | null;
 };
 
-export function validateLeaveAdminEdit(edit: LeaveAdminEdit, type: LeaveType | null): string | null {
+export function validateLeaveAdminEdit(
+  edit: LeaveAdminEdit,
+  type: LeaveType | null,
+  currentStatus: LeaveStatus,
+): string | null {
   const problem = validateLeaveInput(edit, type, { skipActiveCheck: true });
   if (problem) return problem;
   if (!LEAVE_STATUS_ORDER.includes(edit.status)) return "กรุณาเลือกสถานะ";
-  if (edit.status === "rejected" && !edit.reasonId) return "กรุณาเลือกเหตุผลที่ไม่อนุมัติ";
+  const isExecStatus = edit.status === "approved_exec" || edit.status === "rejected_exec";
+  if (isExecStatus && edit.status !== currentStatus) {
+    return 'สถานะ "อนุมัติ/ไม่อนุมัติโดยผู้บริหาร" ตั้งได้เฉพาะจากหน้าอนุมัติเท่านั้น';
+  }
+  if (edit.status === "rejected_hr" && !edit.reasonId) return "กรุณาเลือกเหตุผลที่ไม่อนุมัติ";
   return null;
 }
 

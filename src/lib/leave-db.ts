@@ -110,7 +110,7 @@ export async function usedLeaveDays(
     .select("total_days")
     .eq("employee_id", employeeId)
     .eq("type_id", typeId)
-    .in("status", ["pending", "need_docs", "approved"])
+    .in("status", ["pending", "need_docs", "escalated", "approved_hr", "approved_exec"])
     .gte("start_date", `${year}-01-01`)
     .lte("start_date", `${year}-12-31`);
   if (error) return 0;
@@ -274,7 +274,7 @@ export async function decideLeaveRequest(
     decided_by: approver.id,
     decided_by_name: approver.name,
     decision_note: input.note || null,
-    reason_id: input.status === "rejected" ? input.reasonId : null,
+    reason_id: input.status === "rejected_hr" || input.status === "rejected_exec" ? input.reasonId : null,
   };
 
   const { error } = await getSupabase().from("hr_leave_requests").update(patch).eq("id", row.id);
@@ -310,7 +310,14 @@ export async function adminUpdateLeaveRequest(
   edit: LeaveAdminEditPatch,
   actor: Approver,
 ): Promise<void> {
-  const isDecision = edit.status === "approved" || edit.status === "rejected" || edit.status === "need_docs";
+  const isDecision =
+    edit.status === "approved_hr" ||
+    edit.status === "approved_exec" ||
+    edit.status === "rejected_hr" ||
+    edit.status === "rejected_exec" ||
+    edit.status === "need_docs" ||
+    edit.status === "need_type_change" ||
+    edit.status === "escalated";
 
   const patch = {
     type_id: edit.typeId,
@@ -330,7 +337,7 @@ export async function adminUpdateLeaveRequest(
     decided_by: isDecision ? actor.id : null,
     decided_by_name: isDecision ? actor.name : null,
     decision_note: edit.note || null,
-    reason_id: edit.status === "rejected" ? edit.reasonId : null,
+    reason_id: edit.status === "rejected_hr" || edit.status === "rejected_exec" ? edit.reasonId : null,
   };
 
   const { error } = await getSupabase().from("hr_leave_requests").update(patch).eq("id", row.id);
