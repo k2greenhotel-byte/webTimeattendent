@@ -22,34 +22,35 @@ function withParams(base: Record<string, string | undefined>): string {
  * หน้าจอ 5 — จับคู่บัญชีผู้ใช้ในเว็บ (ที่ใช้ทั้งระบบบันทึกงานและระบบรับจอง)
  * กับพนักงานขายในระบบขาย (Db2)
  *
- * รายชื่อฝั่งระบบขายมาจาก **ทะเบียนพนักงาน `ASVSHPV.OFFICER`** ซึ่งรหัส `CODE`
- * เป็นตัวเดียวกับ `SALCOD` ในรายการขาย และมีชื่อครบทุกรหัส
- * ตารางนี้รวมพนักงานทุกแผนก (และมีรายการที่ไม่ใช่คน เช่น ชื่อบริษัท) จึงแสดง
+ * รายชื่อฝั่งระบบขายมาจาก **ทะเบียนพนักงาน `ASVSHPV.OFFICER` เฉพาะคนที่ยังทำงานอยู่**
+ * (`STATUS = 'Y'` 88 คน จากทั้งตาราง 302 แถว) ซึ่งรหัส `CODE` เป็นตัวเดียวกับ `SALCOD` ในรายการขาย
+ *
+ * ทะเบียนนี้รวมพนักงานทุกแผนก (และมีรายการที่ไม่ใช่คน เช่น ชื่อบริษัท) จึงแสดง
  * "จำนวนคันที่ขายได้ 365 วัน" กำกับไว้เสมอ ให้แอดมินแยกออกว่ารหัสไหนคือพนักงานขายตัวจริง
+ *
+ * ข้อยกเว้นเดียวที่ดึงคนที่ออกแล้วมาด้วยคือ "รหัสที่จับคู่ไว้อยู่ก่อนแล้ว" — ดึงมาเพื่อแสดงชื่อ
+ * บนแถวของตัวเองเท่านั้น (ติดป้าย "ออกแล้ว") จะไม่ถูกเสนอเป็นตัวเลือกใหม่ให้บัญชีอื่น
  */
 export default async function SaleWorkMappingPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    all?: string;
-    resigned?: string;
-    q?: string;
-    msg?: string;
-    err?: string;
-  }>;
+  searchParams: Promise<{ all?: string; q?: string; msg?: string; err?: string }>;
 }) {
   const params = await searchParams;
   await requirePermission("SW_MAP", "read");
 
   const showAllUsers = params.all === "1";
-  const includeResigned = params.resigned === "1";
 
-  const [rows, canWrite, canDelete, db2] = await Promise.all([
+  const [rows, canWrite, canDelete] = await Promise.all([
     listMapRows(!showAllUsers),
     checkPermission("SW_MAP", "write"),
     checkPermission("SW_MAP", "delete"),
-    loadDb2Salesmen({ includeResigned }),
   ]);
+
+  // ต้องรู้ก่อนว่ามีคู่ไหนผูกไว้แล้ว จึงดึงชื่อของคนที่ลาออกไปแล้วมาแสดงได้ครบ
+  const db2 = await loadDb2Salesmen({
+    mappedCodes: rows.map((r) => r.db2_salcod).filter(Boolean) as string[],
+  });
 
   const salesmen = sortSalesmen(db2.salesmen);
 
@@ -82,7 +83,7 @@ export default async function SaleWorkMappingPage({
         <h1 className="text-xl font-bold text-slate-800">5. จับคู่พนักงานขายกับระบบขาย (Db2)</h1>
         <p className="text-sm text-slate-500">
           จับคู่บัญชีผู้ใช้ในเว็บ (ใช้ทั้งระบบบันทึกงานประจำวันและระบบรับจอง) กับพนักงานขายในทะเบียน
-          พนักงานของระบบขาย เพื่อให้ dashboard เทียบงานประจำวันกับยอดขายจริงได้
+          พนักงานของระบบขาย (เฉพาะคนที่ยังทำงานอยู่) เพื่อให้ dashboard เทียบงานประจำวันกับยอดขายจริงได้
         </p>
       </div>
 
@@ -102,7 +103,6 @@ export default async function SaleWorkMappingPage({
       <div className="card flex flex-wrap items-end gap-3">
         <form method="get" className="flex grow flex-wrap items-end gap-2">
           {showAllUsers && <input type="hidden" name="all" value="1" />}
-          {includeResigned && <input type="hidden" name="resigned" value="1" />}
           <div className="grow">
             <label className="label" htmlFor="q">
               ค้นชื่อ / รหัสพนักงาน
@@ -115,25 +115,10 @@ export default async function SaleWorkMappingPage({
         </form>
 
         <Link
-          href={withParams({
-            q: params.q,
-            resigned: includeResigned ? "1" : undefined,
-            all: showAllUsers ? undefined : "1",
-          })}
+          href={withParams({ q: params.q, all: showAllUsers ? undefined : "1" })}
           className="btn-secondary"
         >
           {showAllUsers ? "แสดงเฉพาะผู้ใช้โปรแกรมนี้" : "แสดงผู้ใช้ทุกคน"}
-        </Link>
-
-        <Link
-          href={withParams({
-            q: params.q,
-            all: showAllUsers ? "1" : undefined,
-            resigned: includeResigned ? undefined : "1",
-          })}
-          className="btn-secondary"
-        >
-          {includeResigned ? "ซ่อนคนที่ออกแล้ว" : "รวมคนที่ออกแล้ว"}
         </Link>
       </div>
 
@@ -148,7 +133,7 @@ export default async function SaleWorkMappingPage({
         </div>
         <div className="card">
           <p className="text-xs text-slate-500">
-            {db2.source === "officer" ? "ทะเบียนพนักงานในระบบขาย" : "รหัสในระบบขาย"}
+            {db2.source === "officer" ? "พนักงานที่ยังทำงานอยู่" : "รหัสในระบบขาย"}
           </p>
           <p className="text-lg font-semibold text-slate-800">{salesmen.length}</p>
         </div>

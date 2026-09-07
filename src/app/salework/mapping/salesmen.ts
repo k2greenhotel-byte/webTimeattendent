@@ -18,36 +18,50 @@ export function salesRange(): { from: string; to: string } {
 }
 
 /**
- * รายชื่อพนักงานขายให้เลือกจับคู่
+ * รายชื่อพนักงานขายให้เลือกจับคู่ — **เฉพาะคนที่ยังทำงานอยู่ (`OFFICER.STATUS = 'Y'` 88 คน)**
+ * ทะเบียนทั้งตารางมี 302 แถวแต่ 214 แถวเป็นคนที่ออกไปแล้ว ไม่ควรเอามาให้เลือกจับคู่
  *
- * เอาจากทะเบียนพนักงาน (`OFFICER`) เป็นหลัก เพราะมีชื่อครบทุกรหัส —
+ * เอาจากทะเบียนพนักงาน (`OFFICER`) เพราะมีชื่อครบทุกรหัส —
  * ตารางชื่อเดิม (`SECRET`) มีชื่อแค่ 13 จาก 33 รหัสที่ขายจริง
  * ถ้าแอป Db2 ยังไม่มี `/api/officers` (ยังไม่ได้ build ใหม่) จะถอยไปใช้รายชื่อจากยอดขายให้อัตโนมัติ
  * เพื่อให้หน้าจอยังใช้งานได้ ไม่ค้าง
  */
 export async function loadDb2Salesmen(
-  opts: { includeResigned?: boolean } = {},
+  opts: { mappedCodes?: string[] } = {},
 ): Promise<{ salesmen: Db2Salesman[]; source: SalesmanSource; error: string | null }> {
   const { from, to } = salesRange();
 
+  const toSalesman = (o: {
+    code: string;
+    name: string;
+    branch: string | null;
+    active: boolean;
+    units: number | null;
+  }): Db2Salesman => ({
+    salcod: o.code,
+    name: o.name || null,
+    units: o.units ?? 0,
+    branch: o.branch,
+    active: o.active,
+  });
+
   try {
-    const res = await db2Officers({
-      status: opts.includeResigned ? "all" : "Y",
-      from,
-      to,
-      limit: 500,
-    });
-    return {
-      salesmen: res.officers.map((o) => ({
-        salcod: o.code,
-        name: o.name || null,
-        units: o.units ?? 0,
-        branch: o.branch,
-        active: o.active,
-      })),
-      source: "officer",
-      error: null,
-    };
+    const res = await db2Officers({ status: "Y", from, to, limit: 500 });
+    const salesmen = res.officers.map(toSalesman);
+
+    /*
+     * คนที่จับคู่ไว้แล้วแต่ลาออกไป จะไม่อยู่ในรายการ active — ต้องดึงชื่อมาต่างหาก
+     * ไม่งั้นแถวที่จับคู่ไว้จะกลายเป็นช่องว่างจนดูไม่ออกว่าเคยผูกกับใคร
+     * (ดึงมาเพื่อ "แสดง" เท่านั้น คนที่ออกแล้วจะไม่ถูกเสนอเป็นตัวเลือกใหม่ให้ใคร)
+     */
+    const known = new Set(salesmen.map((s) => s.salcod));
+    const missing = [...new Set(opts.mappedCodes ?? [])].filter((c) => c && !known.has(c));
+    if (missing.length > 0) {
+      const extra = await db2Officers({ codes: missing, status: "all", from, to });
+      salesmen.push(...extra.officers.map(toSalesman));
+    }
+
+    return { salesmen, source: "officer", error: null };
   } catch (err) {
     const notDeployed = err instanceof Db2ApiError && err.status === 404;
 
