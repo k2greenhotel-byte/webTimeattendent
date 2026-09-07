@@ -1,0 +1,73 @@
+import Link from "next/link";
+import { logoutAction } from "@/app/login/actions";
+import type { SessionUser } from "@/lib/types";
+
+/** เมนูของระบบบันทึกงานประจำวันพนักงานขาย — ลำดับตรงกับที่ลงทะเบียนไว้ใน program_menus */
+const NAV = [
+  { href: "/salework/daily", label: "1. บันทึกงานวันนี้", menuCode: "SW_ENTRY" },
+  { href: "/salework/search", label: "2. ประวัติการทำงาน", menuCode: "SW_SEARCH" },
+  { href: "/salework/dashboard", label: "3. Dashboard", menuCode: "SW_DASH" },
+  { href: "/salework/setup", label: "4. ตั้งค่าประเภทงาน", menuCode: "SW_SETUP" },
+  { href: "/salework/mapping", label: "5. จับคู่กับระบบขาย", menuCode: "SW_MAP" },
+];
+
+export default function SaleWorkHeader({
+  user,
+  readableMenuCodes,
+}: {
+  user: SessionUser;
+  readableMenuCodes: string[];
+}) {
+  const menus = NAV.filter((n) => readableMenuCodes.includes(n.menuCode));
+
+  return (
+    <header className="no-print border-b border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4">
+        <div className="w-full sm:mr-auto sm:w-auto">
+          <p className="text-sm font-semibold text-slate-800">
+            บันทึกงานประจำวันพนักงานขาย
+            <span className="ml-2 font-normal text-slate-500">· {user.full_name}</span>
+          </p>
+          <p className="text-xs text-slate-500">
+            {user.emp_code}
+            {user.company_name ? ` · ${user.company_name}` : ""}
+            {user.branch_name ? ` · สาขา ${user.branch_name}` : ""}
+          </p>
+        </div>
+
+        {/* จอเล็กเลื่อนเมนูซ้าย-ขวาแทนการตัดขึ้นบรรทัดใหม่หลายแถว (กินพื้นที่จอมือถือ) */}
+        <nav className="-mx-1 flex w-full items-center gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-visible sm:px-0">
+          <Link
+            href="/salework"
+            className="shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+          >
+            หน้าแรก
+          </Link>
+          {menus.map((m) => (
+            <Link
+              key={m.href}
+              href={m.href}
+              className="shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+            >
+              {m.label}
+            </Link>
+          ))}
+          <Link
+            href="/apps"
+            className="shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
+          >
+            โปรแกรมอื่น
+          </Link>
+          <form action={logoutAction} className="shrink-0">
+            <button
+              type="submit"
+              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50"
+            >
+              ออกจากระบบ
+            </button>
+          </form>
+        </nav>
+      </div>
+    </header>
+  );
+}

@@ -84,5 +84,8 @@ export const config = {
     "/hr",
     "/hr/:path*",
     "/api/hr/:path*",
+    "/salework",
+    "/salework/:path*",
+    "/api/salework/:path*",
   ],
 };
