@@ -7,6 +7,7 @@ const MENU_LINKS: { code: string; href: string; label: string }[] = [
   { code: "ATT_FIELD_ROSTER", href: "/admin/field/roster", label: "ตารางบูธ" },
   { code: "ATT_FIELD", href: "/admin/field", label: "งานนอกสถานที่" },
   { code: "ATT_REP_FIELD", href: "/admin/reports/field", label: "รายงานนอกสถานที่" },
+  { code: "ATT_PAYROLL_MAP", href: "/admin/payroll-map", label: "จับคู่รหัสเงินเดือน" },
 ];
 
 /**

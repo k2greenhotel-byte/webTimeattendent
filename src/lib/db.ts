@@ -27,7 +27,7 @@ import type {
 } from "./types";
 
 const EMPLOYEE_COLUMNS =
-  "id, emp_code, full_name, nickname, phone, email, role, is_active, hire_date, branch_id, department_id, position_id";
+  "id, emp_code, full_name, nickname, phone, email, role, is_active, hire_date, branch_id, department_id, position_id, payroll_code";
 
 const DEFAULT_ORG: OrgSettings = {
   company_id: null,
@@ -1653,4 +1653,74 @@ export async function deleteErrandRange(filter: {
     if (deleteError) throw new Error(`ลบการลงเวลาธุระไม่สำเร็จ: ${deleteError.message}`);
   }
   return { deleted: rows.length, photosDeleted: paths.length };
+}
+
+// ---------- จับคู่รหัสเงินเดือน (payroll) ----------
+
+/** พนักงานที่มีรหัสเงินเดือนซ้ำกันในบริษัทเดียวกัน (ใช้เตือนบนหน้าจอ) */
+export type PayrollDuplicate = { code: string; employees: { id: string; emp_code: string; full_name: string }[] };
+
+/**
+ * บันทึกรหัสเงินเดือนหลายคนพร้อมกัน
+ * ค่าว่าง = ล้างรหัสออก · ตรวจซ้ำภายใน "บริษัทเดียวกัน" เท่านั้น
+ * (แต่ละบริษัทมีเลขชุดของตัวเอง เลขเดียวกันข้ามบริษัทถือว่าคนละคน ไม่ใช่ข้อผิดพลาด)
+ */
+export async function setPayrollCodes(
+  rows: { employee_id: string; payroll_code: string | null }[],
+  companyId: string | null,
+): Promise<{ saved: number; cleared: number }> {
+  const supabase = getSupabase();
+  const clean = rows.map((r) => ({ ...r, payroll_code: r.payroll_code?.trim() || null }));
+
+  // ---- กันซ้ำในชุดที่ส่งมาเอง ----
+  const seen = new Map<string, string>();
+  for (const r of clean) {
+    if (!r.payroll_code) continue;
+    const key = r.payroll_code.toLowerCase();
+    if (seen.has(key)) throw new Error(`รหัสเงินเดือน "${r.payroll_code}" ถูกใส่ซ้ำในหน้านี้ กรุณาแก้ให้เหลือคนเดียว`);
+    seen.set(key, r.employee_id);
+  }
+
+  // ---- กันซ้ำกับคนอื่นในบริษัทเดียวกันที่ไม่ได้อยู่ในชุดนี้ ----
+  const codes = [...seen.keys()];
+  if (codes.length > 0) {
+    const scope = await listEmployees({ companyId });
+    const editing = new Set(clean.map((r) => r.employee_id));
+    for (const e of scope) {
+      if (editing.has(e.id) || !e.payroll_code) continue;
+      const owner = seen.get(e.payroll_code.toLowerCase());
+      if (owner) {
+        throw new Error(`รหัสเงินเดือน "${e.payroll_code}" ถูกใช้โดย ${e.emp_code} ${e.full_name} อยู่แล้ว`);
+      }
+    }
+  }
+
+  let saved = 0;
+  let cleared = 0;
+  for (const r of clean) {
+    const { error } = await supabase
+      .from("employees")
+      .update({ payroll_code: r.payroll_code })
+      .eq("id", r.employee_id);
+    if (error) throw new Error(`บันทึกรหัสเงินเดือนไม่สำเร็จ: ${error.message}`);
+    if (r.payroll_code) saved += 1;
+    else cleared += 1;
+  }
+  return { saved, cleared };
+}
+
+/** รหัสเงินเดือนที่ซ้ำกันภายในบริษัทเดียวกัน (ข้อมูลเก่าที่อาจซ้ำมาก่อน) */
+export function findPayrollDuplicates(employees: Employee[]): PayrollDuplicate[] {
+  const byCode = new Map<string, Employee[]>();
+  for (const e of employees) {
+    if (!e.payroll_code) continue;
+    const key = e.payroll_code.trim().toLowerCase();
+    byCode.set(key, [...(byCode.get(key) ?? []), e]);
+  }
+  return [...byCode.entries()]
+    .filter(([, list]) => list.length > 1)
+    .map(([, list]) => ({
+      code: list[0].payroll_code!,
+      employees: list.map((e) => ({ id: e.id, emp_code: e.emp_code, full_name: e.full_name })),
+    }));
 }

@@ -22,7 +22,7 @@ export function reportRowsToTable(
 
   const headers = [
     "วันที่",
-    ...(showEmployee ? ["รหัสพนักงาน", "ชื่อ-สกุล", "สาขา", "แผนก"] : []),
+    ...(showEmployee ? ["รหัสลงเวลา", "รหัสเงินเดือน", "ชื่อ-สกุล", "บริษัท", "สาขา", "แผนก"] : []),
     "กะ",
     "สถานที่ประจำ",
     "เข้าเช้า",
@@ -45,7 +45,16 @@ export function reportRowsToTable(
     const s = r.summary;
     return [
       formatThaiDate(s.workDate),
-      ...(showEmployee ? [r.empCode, r.fullName, r.branchName ?? "-", r.department ?? "-"] : []),
+      ...(showEmployee
+        ? [
+            r.empCode,
+            r.payrollCode ?? "-",
+            r.fullName,
+            r.companyName ?? "-",
+            r.branchName ?? "-",
+            r.department ?? "-",
+          ]
+        : []),
       r.scheduleName,
       r.siteName ?? "-",
       formatTime(s.checkInAt),
@@ -84,8 +93,10 @@ export function reportRowsToTable(
 /** ตารางสรุปรายเดือน (1 แถวต่อพนักงาน) */
 export function monthlyToTable(title: string, employees: MonthlyEmployeeRow[]): Table {
   const headers = [
-    "รหัสพนักงาน",
+    "รหัสลงเวลา",
+    "รหัสเงินเดือน",
     "ชื่อ-สกุล",
+    "บริษัท",
     "สาขา",
     "แผนก",
     "วันทำงาน",
@@ -105,7 +116,9 @@ export function monthlyToTable(title: string, employees: MonthlyEmployeeRow[]): 
 
   const rows = employees.map((e) => [
     e.employee.emp_code,
+    e.employee.payroll_code ?? "-",
     e.employee.full_name,
+    e.companyName ?? "-",
     e.employee.branch_name ?? "-",
     e.employee.department_name ?? "-",
     e.totals.workedDays,

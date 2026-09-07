@@ -11,6 +11,7 @@ import {
   parseAmount,
   validateAdvanceDecision,
   validateAdvanceInput,
+  validateLeaveAdminEdit,
   validateLeaveDecision,
   validateLeaveInput,
   type AdvanceDecisionInput,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/leave";
 import {
   addLeaveFiles,
+  adminUpdateLeaveRequest,
   cancelAdvanceRequest,
   cancelLeaveRequest,
   createAdvanceRequest,
@@ -38,6 +40,7 @@ import {
   advanceAuthorityFor,
   advanceAutoApproveLimit,
   requireAdvanceApprover,
+  requireLeaveAdmin,
   requireLeaveApprover,
 } from "@/lib/leave-session";
 import {
@@ -45,6 +48,7 @@ import {
   ADVANCE_STATUS_LABEL,
   LEAVE_DECISION_ORDER,
   LEAVE_STATUS_LABEL,
+  LEAVE_STATUS_ORDER,
   MAX_LEAVE_FILES,
   type AdvanceStatus,
   type LeaveFileKind,
@@ -97,6 +101,7 @@ export type HrGateState = { error: string | null };
 const GATE_MENU: Record<string, { menu: string; path: string }> = {
   leave: { menu: "HR_LEAVE_APPROVE", path: "/hr/approvals/leave" },
   advance: { menu: "HR_ADV_APPROVE", path: "/hr/approvals/advance" },
+  manage: { menu: "HR_LEAVE_MANAGE", path: "/hr/manage/leave" },
 };
 
 export async function hrApproverLoginAction(
@@ -344,6 +349,78 @@ export async function markCertForm(form: FormData): Promise<void> {
 
   revalidatePath(backTo);
   back(backTo, "บันทึกสถานะใบรับรองแพทย์เรียบร้อยแล้ว");
+}
+
+// ---------- ฝ่ายบุคคล: แก้ไขใบแจ้งลาของพนักงานคนอื่น ----------
+
+/**
+ * แก้ไขใบแจ้งลาที่พนักงานบันทึกผิด หรือใช้สิทธิ์ผิดประเภท — แก้ได้ทุกฟิลด์ทุกสถานะ
+ * ต่างจาก decideLeaveForm ตรงที่ไม่จำกัดว่าต้องเป็นใบที่ยังเปิดอยู่ และไม่ตรวจกฎสิทธิ์
+ * (อายุงานขั้นต่ำ ฯลฯ) เพราะฝ่ายบุคคลมีอำนาจแก้ไขข้อมูลให้ตรงกับความเป็นจริงได้เลย
+ */
+export async function adminUpdateLeaveForm(form: FormData): Promise<void> {
+  const user = await requireLeaveAdmin();
+  const id = str(form, "id");
+  const backTo = str(form, "back") || "/hr/manage/leave";
+
+  const row = await getLeaveRequest(id);
+  if (!row) back(backTo, "ไม่พบใบแจ้งลา", true);
+
+  const typeId = str(form, "type_id");
+  const type = (await listLeaveTypes()).find((t) => t.id === typeId) ?? null;
+
+  const startDate = str(form, "start_date");
+  const endDate = type?.needs_date_range ? str(form, "end_date") || startDate : startDate;
+  const statusValue = str(form, "status");
+  const status = (LEAVE_STATUS_ORDER as string[]).includes(statusValue)
+    ? (statusValue as LeaveStatus)
+    : row.status;
+
+  const edit = {
+    typeId,
+    detail: str(form, "detail"),
+    startDate,
+    endDate,
+    totalDays: type?.needs_date_range ? Number(str(form, "total_days") || 1) : 1,
+    arrivalTime: str(form, "arrival_time") || null,
+    status,
+    reasonId: str(form, "reason_id") || null,
+  };
+
+  const problem = validateLeaveAdminEdit(edit, type);
+  if (problem || !type) back(backTo, problem ?? "ไม่พบประเภทการลา", true);
+
+  // คำนวณธงเตือน (ขาดงาน/แจ้งช้า/กำหนดใบรับรองแพทย์) ใหม่ตามข้อมูลที่แก้ไข แต่ยังยึดวันเวลาที่แจ้งจริงเดิม
+  const evaluation = evaluateLeave(type, edit, {
+    requestDate: row.request_date,
+    reportedAt: new Date(row.reported_at),
+    hireDate: row.employee_id ? await getHireDate(row.employee_id) : null,
+  });
+
+  try {
+    await adminUpdateLeaveRequest(
+      row,
+      {
+        ...edit,
+        note: str(form, "note"),
+        noticeDays: evaluation.noticeDays,
+        serviceMonths: evaluation.serviceMonths,
+        countsAsAbsent: evaluation.countsAsAbsent,
+        isLateNotice: evaluation.isLateNotice,
+        penaltyMultiplier: evaluation.penaltyMultiplier,
+        certDueDate: evaluation.certDueDate,
+      },
+      { id: user.id, name: user.full_name },
+    );
+  } catch (err) {
+    back(backTo, err instanceof Error ? err.message : "บันทึกการแก้ไขไม่สำเร็จ", true);
+  }
+
+  revalidatePath("/hr/manage/leave");
+  revalidatePath(`/hr/leave/${id}`);
+  revalidatePath("/hr/approvals/leave");
+  revalidatePath("/approvals");
+  back(backTo, `แก้ไขใบ ${row.doc_no} เรียบร้อยแล้ว`);
 }
 
 // ---------- ขอเบิกเงินเดือน ----------

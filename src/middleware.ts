@@ -2,7 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ADMIN_COOKIE, SESSION_COOKIE, verifyAdminToken, verifySessionToken } from "@/lib/session-token";
 
 /** เส้นทางใต้ /admin ที่ผู้ใช้ทั่วไปเข้าได้ด้วยสิทธิ์รายเมนู (ไม่ต้องผ่าน PIN) */
-const SHARED_ADMIN_PATHS = ["/admin/roster", "/admin/field", "/admin/reports/field"];
+const SHARED_ADMIN_PATHS = [
+  "/admin/roster",
+  "/admin/field",
+  "/admin/reports/field",
+  "/admin/payroll-map",
+];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

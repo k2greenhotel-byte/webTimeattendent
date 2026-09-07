@@ -13,6 +13,7 @@ const NAV = [
   { href: "/hr/search/leave", label: "8. สอบถามข้อมูลการลา", menu: "HR_SEARCH_LEAVE" },
   { href: "/hr/search/advance", label: "9. สอบถามข้อมูลขอเบิกเงิน", menu: "HR_SEARCH_ADV" },
   { href: "/hr/dashboard", label: "10. Dashboard สรุป", menu: "HR_DASHBOARD" },
+  { href: "/hr/manage/leave", label: "11. แก้ไขข้อมูลการลา (ฝ่ายบุคคล)", menu: "HR_LEAVE_MANAGE" },
 ];
 
 export default function HrHeader({

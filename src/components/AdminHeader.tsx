@@ -13,6 +13,7 @@ const NAV = [
   { href: "/admin/field/roster", label: "ตารางบูธ" },
   { href: "/admin/field", label: "งานนอกสถานที่" },
   { href: "/admin/reports/field", label: "รายงานนอกสถานที่" },
+  { href: "/admin/payroll-map", label: "จับคู่รหัสเงินเดือน" },
   { href: "/admin/setup", label: "ตั้งค่าข้อมูลหลัก" },
   { href: "/admin/settings", label: "ตั้งค่าองค์กร" },
   { href: "/admin/data", label: "ลบข้อมูล" },

@@ -34,7 +34,8 @@ export default function ReportTable({
         <thead>
           <tr>
             <th>วันที่</th>
-            {showEmployee && <th>รหัส</th>}
+            {showEmployee && <th>รหัสลงเวลา</th>}
+            {showEmployee && <th>รหัสเงินเดือน</th>}
             {showEmployee && <th>ชื่อ-สกุล</th>}
             {showEmployee && <th>สาขา</th>}
             <th>กะ</th>
@@ -60,6 +61,9 @@ export default function ReportTable({
               <tr key={`${row.employeeId}-${s.workDate}`} className="hover:bg-slate-50">
                 <td className="text-left">{formatThaiDate(s.workDate)}</td>
                 {showEmployee && <td>{row.empCode}</td>}
+                {showEmployee && (
+                  <td className={row.payrollCode ? "" : "text-slate-300"}>{row.payrollCode ?? "-"}</td>
+                )}
                 {showEmployee && <td className="text-left">{row.fullName}</td>}
                 {showEmployee && (
                   <td>

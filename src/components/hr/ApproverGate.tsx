@@ -15,7 +15,7 @@ export default function HrApproverGate({
   title,
 }: {
   fullName: string;
-  kind: "leave" | "advance";
+  kind: "leave" | "advance" | "manage";
   title: string;
 }) {
   const [state, action, pending] = useActionState(hrApproverLoginAction, initial);

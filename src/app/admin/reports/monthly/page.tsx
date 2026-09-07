@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
@@ -6,6 +7,7 @@ import ExportButtons from "@/components/ExportButtons";
 import { formatDuration, formatThaiMonth, workDateOf } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
 import { buildMonthlyReport } from "@/lib/reports";
+import { GROUP_LABEL, parseGroupBy } from "@/components/ReportGroups";
 import type { DayStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +23,13 @@ const CELL: Record<DayStatus, { text: string; cls: string }> = {
 export default async function MonthlyReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string; branch?: string; company?: string }>;
+  searchParams: Promise<{
+    year?: string;
+    month?: string;
+    branch?: string;
+    company?: string;
+    group?: string;
+  }>;
 }) {
   const params = await searchParams;
   const today = workDateOf();
@@ -35,6 +43,30 @@ export default async function MonthlyReportPage({
     buildMonthlyReport(year, month, branchId, scope.companyId),
   ]);
   const currentBranch = branches.find((b) => b.id === branchId);
+
+  // จัดกลุ่มตามบริษัท/สาขา แล้วแทรกแถวหัวข้อคั่น (ตารางเดียวกัน คอลัมน์วันที่จะได้ตรงกันทั้งหน้า)
+  const groupBy = parseGroupBy(params.group);
+  const keyOf = (row: (typeof employees)[number]) =>
+    groupBy === "company"
+      ? (row.companyName ?? "ไม่ระบุบริษัท")
+      : (row.employee.branch_name ?? "ไม่ระบุสาขา");
+
+  const ordered =
+    groupBy === "none"
+      ? employees
+      : [...employees].sort(
+          (a, b) =>
+            keyOf(a).localeCompare(keyOf(b), "th") ||
+            a.employee.emp_code.localeCompare(b.employee.emp_code),
+        );
+
+  let lastGroup = "";
+  const grouped = ordered.map((row) => {
+    const key = groupBy === "none" ? "" : keyOf(row);
+    const group = key && key !== lastGroup ? key : null;
+    lastGroup = key;
+    return { group, row };
+  });
 
   return (
     <main className="mx-auto max-w-full space-y-4 p-4">
@@ -69,6 +101,18 @@ export default async function MonthlyReportPage({
               <input id="year" name="year" type="number" defaultValue={year} className="input w-28" />
             </div>
             <BranchFilter branches={branches} value={branchId} />
+            <div>
+              <label className="label" htmlFor="group">
+                จัดกลุ่ม
+              </label>
+              <select id="group" name="group" defaultValue={groupBy} className="input">
+                {(["none", "branch", "company"] as const).map((g) => (
+                  <option key={g} value={g}>
+                    {GROUP_LABEL[g]}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button type="submit" className="btn-secondary">
               ดูข้อมูล
             </button>
@@ -98,14 +142,27 @@ export default async function MonthlyReportPage({
             </tr>
           </thead>
           <tbody>
-            {employees.map((row) => (
-              <tr key={row.employee.id}>
+            {grouped.map(({ group, row }) => (
+              <Fragment key={row.employee.id}>
+                {group && (
+                  <tr className="bg-slate-100">
+                    <td
+                      colSpan={dates.length + 7}
+                      className="sticky left-0 text-left font-semibold text-slate-700"
+                    >
+                      {group}
+                    </td>
+                  </tr>
+                )}
+              <tr>
                 <td className="sticky left-0 z-10 bg-white text-left">
                   <Link
                     href={`/admin/reports/employee?employeeId=${row.employee.id}&from=${dates[0]}&to=${dates[dates.length - 1]}`}
                     className="text-brand-600 hover:underline"
                   >
-                    {row.employee.emp_code} · {row.employee.full_name}
+                    {row.employee.emp_code}
+                    {row.employee.payroll_code ? ` / ${row.employee.payroll_code}` : ""} ·{" "}
+                    {row.employee.full_name}
                   </Link>
                 </td>
                 {dates.map((d) => {
@@ -126,6 +183,7 @@ export default async function MonthlyReportPage({
                   {row.totals.fieldMinutes > 0 ? formatDuration(row.totals.fieldMinutes) : "-"}
                 </td>
               </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>

@@ -1,6 +1,6 @@
 import "server-only";
 import { logAudit } from "./db";
-import type { LeaveDecisionInput, AdvanceDecisionInput } from "./leave";
+import type { LeaveAdminEdit, LeaveDecisionInput, AdvanceDecisionInput } from "./leave";
 import { resolveApprovedAmount } from "./leave";
 import type {
   AdvanceRequestRow,
@@ -287,6 +287,70 @@ export async function decideLeaveRequest(
     target_id: row.id,
     before: { status: row.status },
     after: { doc_no: row.doc_no, status: input.status, note: input.note || null },
+  });
+}
+
+export type LeaveAdminEditPatch = LeaveAdminEdit & {
+  note: string;
+  noticeDays: number;
+  serviceMonths: number | null;
+  countsAsAbsent: boolean;
+  isLateNotice: boolean;
+  penaltyMultiplier: number;
+  certDueDate: string | null;
+};
+
+/**
+ * ฝ่ายบุคคลแก้ไขใบแจ้งลาของพนักงานคนอื่น — กรณีพนักงานบันทึกเข้ามาผิดหรือแจ้งใช้สิทธิ์ผิดประเภท
+ * แก้ได้ทุกฟิลด์ ทุกสถานะ (ไม่ใช่แค่ใบที่ยังเปิดอยู่เหมือนหน้าอนุมัติปกติ) — ที่เดียวที่ฝ่ายบุคคล
+ * เขียนทับข้อมูลของพนักงานคนอื่นได้โดยตรง จึงเก็บ audit ทั้งค่าก่อน/หลังไว้เสมอ
+ */
+export async function adminUpdateLeaveRequest(
+  row: LeaveRequestRow,
+  edit: LeaveAdminEditPatch,
+  actor: Approver,
+): Promise<void> {
+  const isDecision = edit.status === "approved" || edit.status === "rejected" || edit.status === "need_docs";
+
+  const patch = {
+    type_id: edit.typeId,
+    detail: edit.detail || null,
+    start_date: edit.startDate,
+    end_date: edit.endDate,
+    total_days: edit.totalDays,
+    arrival_time: edit.arrivalTime,
+    status: edit.status,
+    notice_days: edit.noticeDays,
+    service_months: edit.serviceMonths,
+    counts_as_absent: edit.countsAsAbsent,
+    is_late_notice: edit.isLateNotice,
+    penalty_multiplier: edit.penaltyMultiplier,
+    cert_due_date: edit.certDueDate,
+    decided_at: isDecision ? new Date().toISOString() : null,
+    decided_by: isDecision ? actor.id : null,
+    decided_by_name: isDecision ? actor.name : null,
+    decision_note: edit.note || null,
+    reason_id: edit.status === "rejected" ? edit.reasonId : null,
+  };
+
+  const { error } = await getSupabase().from("hr_leave_requests").update(patch).eq("id", row.id);
+  if (error) throw new Error(`บันทึกการแก้ไขไม่สำเร็จ: ${error.message}`);
+
+  await logAudit({
+    actor_id: actor.id,
+    action: "hr_leave_admin_edit",
+    target_table: "hr_leave_requests",
+    target_id: row.id,
+    before: {
+      type_id: row.type_id,
+      detail: row.detail,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      total_days: row.total_days,
+      arrival_time: row.arrival_time,
+      status: row.status,
+    },
+    after: { doc_no: row.doc_no, ...patch },
   });
 }
 

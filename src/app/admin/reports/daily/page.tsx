@@ -2,7 +2,7 @@ import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
 import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
-import ReportTable from "@/components/ReportTable";
+import ReportGroups, { GROUP_LABEL, parseGroupBy } from "@/components/ReportGroups";
 import TotalsCards from "@/components/TotalsCards";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
@@ -13,11 +13,12 @@ export const dynamic = "force-dynamic";
 export default async function DailyReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; branch?: string; company?: string }>;
+  searchParams: Promise<{ date?: string; branch?: string; company?: string; group?: string }>;
 }) {
   const params = await searchParams;
   const date = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : workDateOf();
   const branchId = params.branch || undefined;
+  const groupBy = parseGroupBy(params.group);
 
   const scope = await getCompanyScope(params.company);
   const [branches, { rows, totals, settings }] = await Promise.all([
@@ -47,6 +48,18 @@ export default async function DailyReportPage({
               <input id="date" name="date" type="date" defaultValue={date} className="input" />
             </div>
             <BranchFilter branches={branches} value={branchId} />
+            <div>
+              <label className="label" htmlFor="group">
+                จัดกลุ่ม
+              </label>
+              <select id="group" name="group" defaultValue={groupBy} className="input">
+                {(["none", "branch", "company"] as const).map((g) => (
+                  <option key={g} value={g}>
+                    {GROUP_LABEL[g]}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button type="submit" className="btn-secondary">
               ดูข้อมูล
             </button>
@@ -59,9 +72,7 @@ export default async function DailyReportPage({
 
       <TotalsCards totals={totals} />
 
-      <section className="card">
-        <ReportTable rows={rows} showEmployee editBase="/admin/records" />
-      </section>
+      <ReportGroups rows={rows} groupBy={groupBy} editBase="/admin/records" />
     </main>
   );
 }

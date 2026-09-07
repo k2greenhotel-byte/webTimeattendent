@@ -11,7 +11,7 @@ export default async function HrHomePage() {
   const user = await requireProgram("HR");
   const today = workDateOf();
 
-  const [myLeave, myAdvance, canApproveLeave, canApproveAdvance, canSearch, canSeeDashboard] =
+  const [myLeave, myAdvance, canApproveLeave, canApproveAdvance, canSearch, canSeeDashboard, canManage] =
     await Promise.all([
       listLeaveRequests({ employeeId: user.id, limit: 100 }),
       listAdvanceRequests({ employeeId: user.id, limit: 100 }),
@@ -19,6 +19,7 @@ export default async function HrHomePage() {
       checkPermission("HR_ADV_APPROVE", "read"),
       checkPermission("HR_SEARCH_LEAVE", "read"),
       checkPermission("HR_DASHBOARD", "read"),
+      checkPermission("HR_LEAVE_MANAGE", "read"),
     ]);
 
   const pendingLeave = myLeave.filter((r) => r.status === "pending").length;
@@ -91,6 +92,13 @@ export default async function HrHomePage() {
       hint: "ภาพรวมการลาและขอเบิกเงินทั้งหมด แยกตามบริษัท/สาขา พร้อมอันดับพนักงาน",
       icon: "📊",
       show: canSeeDashboard,
+    },
+    {
+      href: "/hr/manage/leave",
+      title: "แก้ไขข้อมูลการลา (ฝ่ายบุคคล)",
+      hint: "แก้ประเภท/ช่วงวัน/สถานะใบแจ้งลาของพนักงานคนอื่น กรณีบันทึกผิดหรือใช้สิทธิ์ผิดประเภท",
+      icon: "🛠",
+      show: canManage,
     },
   ].filter((l) => l.show);
 

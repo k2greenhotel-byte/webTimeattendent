@@ -108,9 +108,15 @@ export type LeaveEvaluation = {
 };
 
 /** ตรวจความครบถ้วนของฟอร์ม — คืนข้อความไทยบอกวิธีแก้ หรือ null เมื่อผ่าน */
-export function validateLeaveInput(input: LeaveInput, type: LeaveType | null): string | null {
+export function validateLeaveInput(
+  input: LeaveInput,
+  type: LeaveType | null,
+  options: { skipActiveCheck?: boolean } = {},
+): string | null {
   if (!type) return "กรุณาเลือกประเภทการลา";
-  if (!type.is_active) return `ประเภท "${type.name}" ถูกปิดใช้งานอยู่ — เลือกประเภทอื่นหรือแจ้งผู้ดูแลระบบ`;
+  if (!options.skipActiveCheck && !type.is_active) {
+    return `ประเภท "${type.name}" ถูกปิดใช้งานอยู่ — เลือกประเภทอื่นหรือแจ้งผู้ดูแลระบบ`;
+  }
   if (!input.detail.trim()) return "กรุณากรอกรายละเอียดว่าลา/หยุด/สายเพราะอะไร";
   if (!input.startDate) return "กรุณาเลือกวันที่เริ่ม";
 
@@ -250,6 +256,29 @@ export function isCertOverdue(row: LeaveRequestRow, today: string): boolean {
 export function certDaysLeft(row: LeaveRequestRow, today: string): number | null {
   if (!row.cert_due_date || row.cert_received || row.cert_count > 0) return null;
   return daysBetween(today, row.cert_due_date);
+}
+
+// ---------- ฝ่ายบุคคลแก้ไขใบแจ้งลาของพนักงานคนอื่น ----------
+
+/**
+ * ต่างจาก validateLeaveDecision ตรงที่:
+ *   1. แก้ได้ทุกสถานะ ไม่ใช่แค่ใบที่ยังเปิดอยู่ (pending/need_docs) — ใช้แก้ใบที่ตัดสินไปแล้วด้วย
+ *   2. ตั้งสถานะได้ตรง ๆ ทั้ง 5 สถานะ รวมถึงเปิดกลับเป็น "รออนุมัติ" หรือ "ยกเลิก"
+ *   3. ไม่ตรวจ is_active ของประเภท (skipActiveCheck) — เป้าหมายคือแก้ไขข้อมูลเดิมที่บันทึกผิด
+ *      ไม่ใช่การใช้สิทธิ์ใหม่ ประเภทที่ปิดใช้งานไปแล้วก็ยังต้องแก้ไขใบเก่าที่ผูกอยู่ได้
+ *   4. ไม่ตรวจกฎสิทธิ์ (อายุงานขั้นต่ำ ฯลฯ) เพราะฝ่ายบุคคลมีอำนาจเต็มที่จะบันทึกสิ่งที่ถูกต้องแทน
+ */
+export type LeaveAdminEdit = LeaveInput & {
+  status: LeaveStatus;
+  reasonId: string | null;
+};
+
+export function validateLeaveAdminEdit(edit: LeaveAdminEdit, type: LeaveType | null): string | null {
+  const problem = validateLeaveInput(edit, type, { skipActiveCheck: true });
+  if (problem) return problem;
+  if (!LEAVE_STATUS_ORDER.includes(edit.status)) return "กรุณาเลือกสถานะ";
+  if (edit.status === "rejected" && !edit.reasonId) return "กรุณาเลือกเหตุผลที่ไม่อนุมัติ";
+  return null;
 }
 
 // ---------- ยื่นใบขอเบิกเงินเดือน ----------

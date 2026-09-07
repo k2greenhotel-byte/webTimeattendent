@@ -26,6 +26,7 @@ import {
   topN,
   validateAdvanceDecision,
   validateAdvanceInput,
+  validateLeaveAdminEdit,
   validateLeaveDecision,
   validateLeaveInput,
   type AdvanceDecisionInput,
@@ -423,6 +424,12 @@ describe("ตรวจฟอร์มใบแจ้งลา", () => {
     expect(validateLeaveInput(input(), type({ is_active: false }))).toContain("ปิดใช้งาน");
   });
 
+  it("skipActiveCheck ข้ามการตรวจปิดใช้งาน (ใช้ตอนฝ่ายบุคคลแก้ไขข้อมูลเดิม)", () => {
+    expect(
+      validateLeaveInput(input(), type({ is_active: false }), { skipActiveCheck: true }),
+    ).toBeNull();
+  });
+
   it("ลาครึ่งวันผ่าน", () => {
     expect(validateLeaveInput(input({ totalDays: 0.5 }), type())).toBeNull();
   });
@@ -479,6 +486,51 @@ describe("ตัดสินใบแจ้งลา", () => {
     expect(
       validateLeaveDecision(leaveRow(), { status: "cancelled", note: "", reasonId: null }),
     ).toContain("ผลการพิจารณา");
+  });
+});
+
+describe("ฝ่ายบุคคลแก้ไขใบแจ้งลาของพนักงานคนอื่น", () => {
+  const edit = (over: Partial<Parameters<typeof validateLeaveAdminEdit>[0]> = {}) => ({
+    typeId: "t1",
+    detail: "แก้ไขให้ตรงกับความจริง",
+    startDate: "2026-09-10",
+    endDate: "2026-09-10",
+    totalDays: 1,
+    arrivalTime: null,
+    status: "approved" as const,
+    reasonId: null,
+    ...over,
+  });
+
+  it("แก้ใบที่ตัดสินไปแล้วได้ (ต่างจากหน้าอนุมัติปกติ)", () => {
+    expect(validateLeaveAdminEdit(edit({ status: "pending" }), type())).toBeNull();
+    expect(validateLeaveAdminEdit(edit({ status: "cancelled" }), type())).toBeNull();
+  });
+
+  it("เลือกประเภทที่ปิดใช้งานอยู่ได้ (แก้ไขข้อมูลเดิม ไม่ใช่ใช้สิทธิ์ใหม่)", () => {
+    expect(validateLeaveAdminEdit(edit(), type({ is_active: false }))).toBeNull();
+  });
+
+  it("ยังต้องกรอกรายละเอียดและช่วงวันที่ให้ครบเหมือนฟอร์มปกติ", () => {
+    expect(validateLeaveAdminEdit(edit({ detail: "" }), type())).toContain("รายละเอียด");
+    expect(
+      validateLeaveAdminEdit(edit({ startDate: "2026-09-10", endDate: "2026-09-05" }), type()),
+    ).toContain("วันที่สิ้นสุด");
+  });
+
+  it("ตั้งสถานะไม่อนุมัติต้องเลือกเหตุผล", () => {
+    expect(validateLeaveAdminEdit(edit({ status: "rejected", reasonId: null }), type())).toContain(
+      "เหตุผล",
+    );
+    expect(
+      validateLeaveAdminEdit(edit({ status: "rejected", reasonId: "r1" }), type()),
+    ).toBeNull();
+  });
+
+  it("ไม่ต้องมีอายุงานถึงเกณฑ์ก็แก้ได้ (ฝ่ายบุคคลมีอำนาจแก้ไขข้อมูลตรงให้ได้เลย)", () => {
+    const vacation = type({ min_service_months: 12 });
+    // validateLeaveAdminEdit ไม่ตรวจอายุงานเลย ต่างจาก evaluateLeave().blocked ที่ใช้ตอนพนักงานยื่นเอง
+    expect(validateLeaveAdminEdit(edit(), vacation)).toBeNull();
   });
 });
 
