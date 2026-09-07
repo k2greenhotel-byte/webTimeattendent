@@ -8,7 +8,6 @@ import { getBooking, listBookingFiles, listUpdateFiles, listUpdates } from "@/li
 import { getCustomer } from "@/lib/customer-db";
 import { formatThaiDate } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
-import { listMaster } from "@/lib/moto-db";
 import { checkPermission, requirePermission } from "@/lib/session";
 import { deleteBookingForm, deleteUpdateForm, updateBookingForm } from "../../actions";
 
@@ -34,10 +33,6 @@ export default async function BookingDetailPage({
     updates,
     customer,
     branches,
-    brands,
-    models,
-    variants,
-    colors,
     canEdit,
     canDelete,
     canUpdate,
@@ -47,10 +42,6 @@ export default async function BookingDetailPage({
     listUpdates({ booking_id: id }),
     booking.customer_id ? getCustomer(booking.customer_id) : Promise.resolve(null),
     listBranches(true),
-    listMaster("brand"),
-    listMaster("model"),
-    listMaster("variant"),
-    listMaster("color"),
     checkPermission("BOOK_ENTRY", "edit"),
     checkPermission("BOOK_ENTRY", "delete"),
     checkPermission("BOOK_UPDATE", "write"),
@@ -104,10 +95,6 @@ export default async function BookingDetailPage({
           }
           files={files}
           branches={branches}
-          brands={brands}
-          models={models}
-          variants={variants}
-          colors={colors}
           defaultStaffName={user.full_name}
           action={updateBookingForm}
           submitLabel="บันทึกการแก้ไข"

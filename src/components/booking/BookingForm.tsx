@@ -1,7 +1,7 @@
 import Link from "next/link";
 import CustomerPicker, { type CustomerBrief } from "@/components/booking/CustomerPicker";
 import DraftRestorer from "@/components/booking/DraftRestorer";
-import VehiclePicker from "@/components/booking/VehiclePicker";
+import Db2VehiclePicker from "@/components/booking/Db2VehiclePicker";
 import FileUploader from "@/components/marketing/FileUploader";
 import { formatBaht } from "@/lib/booking";
 import {
@@ -24,10 +24,14 @@ import {
   type BookingFileKind,
   type BookingRow,
 } from "@/lib/booking-types";
-import type { MotoOption } from "@/lib/moto-types";
 import type { Branch } from "@/lib/types";
 
 const UPLOAD_ENDPOINT = "/api/booking/file";
+
+/** ค่าที่บันทึกไว้แล้วของช่องรถ — ไม่มีรหัสถือว่ายังไม่ได้เลือก */
+function pickedOf(code?: string | null, name?: string | null) {
+  return code ? { code, name: name || code } : null;
+}
 
 /** ไฟล์ของชนิดหนึ่ง ในรูปแบบที่ FileUploader ต้องการ */
 function filesOfKind(files: BookingFile[], kind: BookingFileKind) {
@@ -42,10 +46,6 @@ export default function BookingForm({
   customer,
   files = [],
   branches,
-  brands,
-  models,
-  variants,
-  colors,
   defaultBranchId,
   defaultStaffName,
   action,
@@ -55,10 +55,6 @@ export default function BookingForm({
   customer?: CustomerBrief | null;
   files?: BookingFile[];
   branches: Branch[];
-  brands: MotoOption[];
-  models: MotoOption[];
-  variants: MotoOption[];
-  colors: MotoOption[];
   defaultBranchId?: string | null;
   /** ชื่อพนักงานที่รับจอง — ดึงจากบัญชีที่ล็อกอินอยู่ ใช้เป็นค่าตั้งต้นของใบใหม่ */
   defaultStaffName?: string;
@@ -149,17 +145,13 @@ export default function BookingForm({
       {/* ---------- ลูกค้า ---------- */}
       <CustomerPicker defaultCustomer={customer ?? null} defaultPhone={booking?.customer_phone} />
 
-      {/* ---------- รถที่จอง ---------- */}
-      <VehiclePicker
-        brands={brands}
-        models={models}
-        variants={variants}
-        colors={colors}
+      {/* ---------- รถที่จอง (ข้อมูลหลักจากระบบขาย Db2) ---------- */}
+      <Db2VehiclePicker
         defaults={{
-          brand_id: booking?.brand_id ?? null,
-          model_id: booking?.model_id ?? null,
-          variant_id: booking?.variant_id ?? null,
-          color_id: booking?.color_id ?? null,
+          brand: pickedOf(booking?.db2_brand_code, booking?.db2_brand_name),
+          model: pickedOf(booking?.db2_model_code, booking?.db2_model_name),
+          variant: pickedOf(booking?.db2_variant_code, booking?.db2_variant_name),
+          color: pickedOf(booking?.db2_color_code, booking?.db2_color_name),
         }}
       />
 

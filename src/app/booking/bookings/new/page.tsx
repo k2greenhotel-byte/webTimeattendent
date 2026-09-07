@@ -1,6 +1,5 @@
 import BookingForm from "@/components/booking/BookingForm";
 import { listBranches } from "@/lib/db";
-import { listMaster } from "@/lib/moto-db";
 import { requirePermission } from "@/lib/session";
 import { createBookingForm } from "../../actions";
 
@@ -15,20 +14,14 @@ export default async function NewBookingPage({
   const user = await requirePermission("BOOK_ENTRY", "write");
   const params = await searchParams;
 
-  const [branches, brands, models, variants, colors] = await Promise.all([
-    listBranches(true),
-    listMaster("brand"),
-    listMaster("model"),
-    listMaster("variant"),
-    listMaster("color"),
-  ]);
+  const branches = await listBranches(true);
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
       <div>
         <h1 className="text-xl font-bold text-slate-800">รับจองรถ</h1>
         <p className="text-sm text-slate-500">
-          เลขที่ใบจองระบบออกให้ตอนกดบันทึก · ลูกค้าและรถเลือกจากข้อมูลที่มีอยู่แล้ว ไม่ต้องพิมพ์ซ้ำ
+          เลขที่ใบจองระบบออกให้ตอนกดบันทึก · ลูกค้าดึงจากทะเบียนลูกค้า · ยี่ห้อ/รุ่น/แบบ/สี ค้นจากระบบขาย (Db2)
         </p>
       </div>
 
@@ -38,10 +31,6 @@ export default async function NewBookingPage({
 
       <BookingForm
         branches={branches}
-        brands={brands}
-        models={models}
-        variants={variants}
-        colors={colors}
         defaultBranchId={user.branch_id ?? null}
         defaultStaffName={user.full_name}
         action={createBookingForm}

@@ -203,3 +203,116 @@ export function fmtDate(iso: string | null | undefined): string {
 export function todayTH(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
+
+/* -------------------------------------------------------------------------- */
+/* ข้อมูลหลักรถ + รายการสต็อกรายคัน (ใช้โดยระบบจองรถ)                            */
+/* -------------------------------------------------------------------------- */
+
+/** ชนิดข้อมูลหลักที่ระบบจองรถเลือกได้ — ตรงกับ MASTER_KINDS ฝั่งแอป Db2 */
+export type Db2MasterKind = "brand" | "model" | "variant" | "color" | "group";
+
+export const DB2_MASTER_TITLE: Record<Db2MasterKind, string> = {
+  brand: "ยี่ห้อรถ",
+  model: "รุ่นรถ",
+  variant: "แบบรถ",
+  color: "สีรถ",
+  group: "ประเภทรถ",
+};
+
+export type Db2MasterItem = {
+  code: string;
+  name: string;
+  /** ยี่ห้อของรุ่นรถ (เฉพาะ kind = model) */
+  parent: string | null;
+};
+
+export type Db2MasterResult = {
+  kind: Db2MasterKind;
+  title: string;
+  /** จำนวนที่ตรงเงื่อนไขทั้งหมด (ก่อนตัดตาม limit) */
+  matched: number;
+  truncated: boolean;
+  count: number;
+  items: Db2MasterItem[];
+};
+
+/**
+ * ค้นข้อมูลหลักรถจากระบบขาย — ออกแบบให้ "พิมพ์ค้นทีละน้อย" ไม่ใช่ดึงทั้งตาราง
+ * (SETMODEL ~500 แถว · SETBAAB มากกว่านั้น — ทำ dropdown ไม่ไหว)
+ *   q     คำค้น เทียบทั้งรหัสและชื่อ
+ *   brand กรองรุ่นตามยี่ห้อ (เฉพาะ kind = model)
+ *   codes ดึงเฉพาะรหัสที่ระบุ — ใช้แสดงชื่อของค่าที่บันทึกไว้แล้ว
+ */
+export function db2Masters(f: {
+  kind: Db2MasterKind;
+  q?: string;
+  brand?: string;
+  codes?: string[];
+  limit?: number;
+}) {
+  const params: Record<string, string | undefined> = {
+    kind: f.kind,
+    q: f.q,
+    brand: f.brand,
+    limit: f.limit ? String(f.limit) : undefined,
+  };
+  const search = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) search.set(k, v);
+  for (const code of f.codes ?? []) search.append("code", code);
+
+  return call<Db2MasterResult>(`/api/masters?${search.toString()}`);
+}
+
+/** รถหนึ่งคันในสต็อก — ไม่มีราคาทุนโดยตั้งใจ (หน้านี้พนักงานขายทุกคนเปิดดูได้) */
+export type Db2StockUnit = {
+  strno: string;
+  engno: string;
+  group: string;
+  groupName: string;
+  brand: string;
+  model: string;
+  modelName: string;
+  variant: string;
+  variantName: string;
+  color: string;
+  locat: string;
+  stat: string;
+  receivedDate: string | null;
+  ageDays: number | null;
+};
+
+export type Db2StockCombo = { model: string; variant: string; color: string; units: number };
+
+export type Db2StockList = {
+  total: number;
+  count: number;
+  truncated: boolean;
+  units: Db2StockUnit[];
+  combos: Db2StockCombo[];
+  dims: Record<string, { title: string; values: { key: string; label: string; units: number }[] }>;
+};
+
+export type Db2StockFilter = {
+  brand?: string;
+  model?: string;
+  variant?: string;
+  color?: string;
+  branch?: string;
+  condition?: string;
+  q?: string;
+  limit?: number;
+};
+
+/** รายการรถคงเหลือรายคัน กรองตามยี่ห้อ/รุ่น/แบบ/สี/สาขาที่เก็บ */
+export function db2StockList(f: Db2StockFilter = {}) {
+  return call<Db2StockList>("/api/stock/list", {
+    brand: f.brand,
+    model: f.model,
+    variant: f.variant,
+    color: f.color,
+    branch: f.branch,
+    condition: f.condition,
+    q: f.q,
+    limit: f.limit ? String(f.limit) : undefined,
+  });
+}

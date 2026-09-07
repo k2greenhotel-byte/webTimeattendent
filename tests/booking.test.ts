@@ -58,6 +58,14 @@ function booking(over: Partial<BookingRow> = {}): BookingRow {
     sale_contract_no: null,
     sale_date: null,
     refunded: false,
+    db2_brand_code: "HONDA",
+    db2_brand_name: "HONDA",
+    db2_model_code: "WAVE 125-I",
+    db2_model_name: "WAVE 125-I",
+    db2_variant_code: null,
+    db2_variant_name: null,
+    db2_color_code: null,
+    db2_color_name: null,
     taken_by: "e1",
     taken_by_name: "พนักงานขาย A",
     taken_by_full_name: "พนักงานขาย A",
@@ -217,8 +225,8 @@ describe("ตรวจใบจองก่อนบันทึก", () => {
   const base = {
     booking_date: "2026-09-01",
     customer_id: "c1",
-    brand_id: "br1",
-    model_id: "md1",
+    db2_brand_code: "HONDA",
+    db2_model_code: "WAVE 125-I",
     pickup_date: "2026-09-10",
     deposit_amount: 3000,
     booking_status: "wait_contract" as const,
@@ -238,8 +246,8 @@ describe("ตรวจใบจองก่อนบันทึก", () => {
 
   it("ต้องมีลูกค้า ยี่ห้อ และรุ่นรถ", () => {
     expect(validateBooking({ ...base, customer_id: null })).toContain("เลือกลูกค้า");
-    expect(validateBooking({ ...base, brand_id: null })).toContain("ยี่ห้อรถ");
-    expect(validateBooking({ ...base, model_id: null })).toContain("รุ่นรถ");
+    expect(validateBooking({ ...base, db2_brand_code: null })).toContain("ยี่ห้อรถ");
+    expect(validateBooking({ ...base, db2_model_code: null })).toContain("รุ่นรถ");
   });
 
   it("วันที่นัดรับรถห้ามก่อนวันที่จอง", () => {

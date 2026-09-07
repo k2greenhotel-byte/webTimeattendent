@@ -159,6 +159,15 @@ export type Booking = {
   sale_contract_no: string | null;
   sale_date: string | null;
   refunded: boolean;
+  /** รถที่จอง — อ้างข้อมูลหลักของระบบขาย (Db2) เก็บทั้งรหัสและชื่อ ณ ตอนบันทึก */
+  db2_brand_code: string | null;
+  db2_brand_name: string | null;
+  db2_model_code: string | null;
+  db2_model_name: string | null;
+  db2_variant_code: string | null;
+  db2_variant_name: string | null;
+  db2_color_code: string | null;
+  db2_color_name: string | null;
   /** บัญชีผู้ใช้ที่รับจอง (มาจากคนที่ล็อกอินอยู่ตอนเปิดใบ) */
   taken_by: string | null;
   /** ชื่อพนักงานที่รับจองตามที่แสดงบนใบ — แก้ได้เผื่อคีย์แทนกัน */

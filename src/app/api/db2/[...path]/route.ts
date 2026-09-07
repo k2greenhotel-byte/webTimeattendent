@@ -14,6 +14,8 @@ export const dynamic = "force-dynamic";
 const ALLOWED: Record<string, string> = {
   wall: "DB2_WALL",
   "stock/pivot": "DB2_PIVOT",
+  "stock/list": "BOOK_STOCK",
+  masters: "BOOK_ENTRY",
   dashboard: "DB2_DASH",
   stock: "DB2_STOCK",
 };

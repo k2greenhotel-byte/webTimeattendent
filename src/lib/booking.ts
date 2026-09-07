@@ -148,8 +148,9 @@ export function applyUpdate(
 export function validateBooking(input: {
   booking_date: string;
   customer_id: string | null;
-  brand_id: string | null;
-  model_id: string | null;
+  /** รหัสยี่ห้อ/รุ่นจากระบบขาย (Db2) — ต้องเลือกทั้งคู่ก่อนบันทึกใบจอง */
+  db2_brand_code?: string | null;
+  db2_model_code?: string | null;
   pickup_date: string | null;
   deposit_amount: number;
   booking_status: BookingStatus;
@@ -161,8 +162,8 @@ export function validateBooking(input: {
   if (!input.booking_date) return "กรุณาระบุวันที่รับจอง";
   if (!(input.taken_by_name ?? "").trim()) return "กรุณาระบุชื่อพนักงานที่รับจอง";
   if (!input.customer_id) return "กรุณาเลือกลูกค้า — ถ้ายังไม่มีในระบบให้เพิ่มที่เมนูประวัติลูกค้าก่อน";
-  if (!input.brand_id) return "กรุณาเลือกยี่ห้อรถ";
-  if (!input.model_id) return "กรุณาเลือกรุ่นรถ";
+  if (!(input.db2_brand_code ?? "").trim()) return "กรุณาเลือกยี่ห้อรถ";
+  if (!(input.db2_model_code ?? "").trim()) return "กรุณาเลือกรุ่นรถ";
   if (input.deposit_amount < 0) return "จำนวนเงินมัดจำติดลบไม่ได้";
 
   if (input.pickup_date && input.pickup_date < input.booking_date) {
