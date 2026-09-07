@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
  */
 const ALLOWED: Record<string, string> = {
   wall: "DB2_WALL",
+  receivables: "DB2_WALL", // ลูกหนี้ไฟแนนซ์/ขายเครดิต — ส่วนล่างของจอ war room
   "stock/pivot": "DB2_PIVOT",
   "stock/list": "BOOK_STOCK",
   masters: "BOOK_ENTRY",

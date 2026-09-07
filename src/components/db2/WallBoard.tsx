@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReceivablesPanel from "./ReceivablesPanel";
 
 /**
  * จอ War Room ยอดขาย — เปิดค้างบนจอมอนิเตอร์/ทีวี พื้นมืด ตัวเลขใหญ่ รีเฟรชเองทุก 60 วินาที
@@ -268,7 +269,7 @@ export default function WallBoard() {
           </div>
 
           {/* รายวัน + รายเดือน */}
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="mb-4 grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl bg-slate-900 p-4">
               <h2 className="mb-2 font-semibold text-slate-200">รายวันในช่วงที่เลือก ({METRICS.find((m) => m.key === metric)?.label})</h2>
               <Bars rows={data.daily.map((d) => ({ label: String(Number(d.date.slice(8, 10))), value: metricValue(d, metric), hint: d.date }))} metric={metric} />
@@ -284,6 +285,11 @@ export default function WallBoard() {
           </div>
         </>
       )}
+
+      {/* ลูกหนี้ — ยอด ณ ตอนนี้ (ไม่ขึ้นกับช่วงเวลา) กรองตามสาขาเดียวกับด้านบน */}
+      <div className="mt-6">
+        <ReceivablesPanel locat={locat} />
+      </div>
     </div>
   );
 }
