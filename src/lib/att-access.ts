@@ -45,6 +45,27 @@ export async function requireMenuAccess(menuCode: string, action: PermAction = "
   return { user, viaAdmin: false, rights, branchIds };
 }
 
+/**
+ * พนักงานคนนี้อยู่ในขอบเขตสาขาของผู้ใช้หรือไม่
+ * ใช้กันไม่ให้คนที่ดูแลบางสาขา เปิดดู/แก้ข้อมูลของสาขาอื่นด้วยการเดา URL
+ */
+export function inBranchScope(access: MenuAccess, branchId: string | null): boolean {
+  if (!access.branchIds) return true; // ดูได้ทุกสาขา
+  return branchId !== null && access.branchIds.has(branchId);
+}
+
+/**
+ * ขอบเขตสาขาของผู้ใช้ที่ล็อกอินอยู่ (null = เห็นได้ทุกสาขา)
+ * ใช้ใน API route ที่ redirect ไม่ได้ ต้องตอบเป็น 403 แทน
+ */
+export async function currentBranchScope(): Promise<Set<string> | null> {
+  if (await isAdminAuthed()) return null;
+  const user = await getSessionUser();
+  if (!user) return new Set();
+  const context = await getSelectableContext(user.id);
+  return context.scope.all_branches ? null : new Set(context.branches.map((b) => b.id));
+}
+
 /** สิทธิ์อ่านของเมนูอื่น ๆ ในกลุ่มเดียวกัน — ใช้สร้างแถบเมนูให้ผู้ใช้ทั่วไป */
 export async function readableMenuCodes(codes: string[]): Promise<Set<string>> {
   if (await isAdminAuthed()) return new Set(codes);

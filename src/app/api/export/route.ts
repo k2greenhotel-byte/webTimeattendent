@@ -7,6 +7,8 @@ import {
   buildFieldReport,
   buildMonthlyReport,
 } from "@/lib/reports";
+import { currentBranchScope } from "@/lib/att-access";
+import { getEmployeeById } from "@/lib/db";
 import { checkPermission, getSessionUser, isAdminAuthed } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -19,7 +21,15 @@ export const dynamic = "force-dynamic";
  * /api/export?kind=monthly&year=2026&month=8&format=xlsx
  */
 export async function GET(req: Request) {
-  const [user, isAdmin] = await Promise.all([getSessionUser(), isAdminAuthed()]);
+  const [user, isAdmin, branchScope] = await Promise.all([
+    getSessionUser(),
+    isAdminAuthed(),
+    currentBranchScope(),
+  ]);
+
+  // เห็นได้เฉพาะสาขาในขอบเขตของตัวเอง (null = ทุกสาขา) — ต้องกรองเหมือนที่หน้าจอกรอง
+  const inScope = (branchId: string | null) =>
+    branchScope === null || (branchId !== null && branchScope.has(branchId));
   if (!user && !isAdmin) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
 
   const sp = new URL(req.url).searchParams;
@@ -34,8 +44,14 @@ export async function GET(req: Request) {
     if (kind === "employee") {
       const employeeId = sp.get("employeeId") ?? user?.id;
       if (!employeeId) return NextResponse.json({ error: "ไม่พบพนักงาน" }, { status: 400 });
+
       if (!isAdmin && employeeId !== user?.id) {
-        return NextResponse.json({ error: "ไม่มีสิทธิ์ดูข้อมูลผู้อื่น" }, { status: 403 });
+        // คนอื่น: ต้องมีสิทธิ์อ่านรายงานรายบุคคล และคนนั้นต้องอยู่ในสาขาที่ตัวเองดูแล
+        const target = await getEmployeeById(employeeId);
+        const allowed = (await checkPermission("ATT_REP_EMP", "read")) && inScope(target?.branch_id ?? null);
+        if (!allowed) {
+          return NextResponse.json({ error: "ไม่มีสิทธิ์ดูข้อมูลผู้อื่น" }, { status: 403 });
+        }
       }
       const today = workDateOf();
       const from = sp.get("from") ?? `${today.slice(0, 7)}-01`;
@@ -73,23 +89,25 @@ export async function GET(req: Request) {
       );
       filename = `field-work-${from}_${to}`;
     } else if (kind === "monthly") {
-      if (!isAdmin) {
-        return NextResponse.json({ error: "เฉพาะผู้ดูแลระบบ" }, { status: 403 });
+      if (!isAdmin && !(await checkPermission("ATT_REP_MONTHLY", "read"))) {
+        return NextResponse.json({ error: "ไม่มีสิทธิ์ดูรายงานนี้" }, { status: 403 });
       }
       const today = workDateOf();
       const year = Number(sp.get("year")) || Number(today.slice(0, 4));
       const month = Number(sp.get("month")) || Number(today.slice(5, 7));
-      const report = await buildMonthlyReport(year, month, branchId);
+      const full = await buildMonthlyReport(year, month, branchId);
+      const report = { ...full, employees: full.employees.filter((e) => inScope(e.employee.branch_id)) };
       table = monthlyToTable(`สรุปการลงเวลารายเดือน: ${formatThaiMonth(year, month)}`, report.employees);
       const { from } = monthBounds(year, month);
       filename = `attendance-monthly-${from.slice(0, 7)}`;
     } else {
-      if (!isAdmin) {
-        return NextResponse.json({ error: "เฉพาะผู้ดูแลระบบ" }, { status: 403 });
+      if (!isAdmin && !(await checkPermission("ATT_REP_DAILY", "read"))) {
+        return NextResponse.json({ error: "ไม่มีสิทธิ์ดูรายงานนี้" }, { status: 403 });
       }
       const date = sp.get("date") ?? workDateOf();
       const report = await buildDailyReport(date, branchId);
-      table = reportRowsToTable(`รายงานการลงเวลารายวัน: ${formatThaiDate(date)}`, report.rows);
+      const rows = report.rows.filter((r) => inScope(r.branchId));
+      table = reportRowsToTable(`รายงานการลงเวลารายวัน: ${formatThaiDate(date)}`, rows);
       filename = `attendance-daily-${date}`;
     }
   } catch (err) {

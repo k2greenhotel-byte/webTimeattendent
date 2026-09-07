@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AttStaffNav from "@/components/AttStaffNav";
-import { requireMenuAccess } from "@/lib/att-access";
+import { inBranchScope, requireMenuAccess } from "@/lib/att-access";
 import { computeDaySummary } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime } from "@/lib/datetime";
 import {
@@ -45,6 +45,8 @@ export default async function EditRecordPage({
   ]);
 
   if (!employee) notFound();
+  // คนที่ดูแลบางสาขา เปิดของสาขาอื่นด้วยการเดา URL ไม่ได้
+  if (!inBranchScope(access, employee.branch_id)) notFound();
 
   const branch = await getBranchById(employee.branch_id);
   const settings = await getResolvedSettings(branch?.id ?? null);

@@ -3,7 +3,7 @@ import Link from "next/link";
 import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
-import { requireMenuAccess } from "@/lib/att-access";
+import { inBranchScope, requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
 import { formatDuration, formatThaiMonth, workDateOf } from "@/lib/datetime";
@@ -41,10 +41,14 @@ export default async function MonthlyReportPage({
   const branchId = params.branch || undefined;
 
   const scope = await getCompanyScope(params.company);
-  const [branches, { dates, employees, settings }] = await Promise.all([
+  const [allBranches, { dates, employees: allEmployees, settings }] = await Promise.all([
     listBranches(false, scope.companyId),
     buildMonthlyReport(year, month, branchId, scope.companyId),
   ]);
+
+  // ผู้ที่เข้าด้วยสิทธิ์รายเมนู เห็นเฉพาะสาขาในขอบเขตของตัวเอง
+  const branches = allBranches.filter((b) => inBranchScope(access, b.id));
+  const employees = allEmployees.filter((row) => inBranchScope(access, row.employee.branch_id));
   const currentBranch = branches.find((b) => b.id === branchId);
 
   // จัดกลุ่มตามบริษัท/สาขา แล้วแทรกแถวหัวข้อคั่น (ตารางเดียวกัน คอลัมน์วันที่จะได้ตรงกันทั้งหน้า)

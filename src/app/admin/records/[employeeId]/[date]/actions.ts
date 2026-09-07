@@ -13,12 +13,24 @@ import {
   updateErrandPunchTime,
   updatePunchTime,
 } from "@/lib/db";
-import { requireMenuAccess } from "@/lib/att-access";
+import { inBranchScope, requireMenuAccess, type MenuAccess } from "@/lib/att-access";
 import { PUNCH_ORDER, type PunchType } from "@/lib/types";
 
 /** "2026-08-31" + "08:15" (เวลาไทย) -> ISO UTC */
 function toIso(date: string, time: string): string {
   return new Date(`${date}T${time}:00+07:00`).toISOString();
+}
+
+/**
+ * กันคนที่ดูแลบางสาขา ยิง action ตรง ๆ ไปแก้ข้อมูลของสาขาอื่น
+ * ซ่อนปุ่มบนหน้าจออย่างเดียวไม่พอ ต้องตรวจฝั่ง server ทุกครั้ง
+ */
+async function assertInScope(access: MenuAccess, employeeId: string, date: string): Promise<void> {
+  if (!access.branchIds) return;
+  const employee = await getEmployeeById(employeeId);
+  if (!employee || !inBranchScope(access, employee.branch_id)) {
+    back(employeeId, date, "ไม่มีสิทธิ์แก้ข้อมูลของพนักงานสาขานี้", true);
+  }
 }
 
 function back(employeeId: string, date: string, message: string, isError = false): never {
@@ -33,6 +45,7 @@ export async function savePunchForm(form: FormData): Promise<void> {
 
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
+  await assertInScope(access, employeeId, date);
   const type = String(form.get("punch_type") ?? "") as PunchType;
   const time = String(form.get("time") ?? "").trim();
   const note = String(form.get("note") ?? "").trim() || null;
@@ -95,6 +108,7 @@ export async function deletePunchForm(form: FormData): Promise<void> {
   const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
+  await assertInScope(access, employeeId, date);
   const recordId = String(form.get("record_id") ?? "");
 
   try {
@@ -121,6 +135,7 @@ export async function deleteDayForm(form: FormData): Promise<void> {
   const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
+  await assertInScope(access, employeeId, date);
 
   if (form.get("confirm") !== "on") {
     back(employeeId, date, "กรุณาติ๊กยืนยันก่อนลบทั้งวัน", true);
@@ -159,6 +174,7 @@ export async function saveErrandTimeForm(form: FormData): Promise<void> {
   const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
+  await assertInScope(access, employeeId, date);
   const punchId = String(form.get("punch_id") ?? "");
   const time = String(form.get("time") ?? "").trim();
   const note = String(form.get("note") ?? "").trim() || null;
@@ -189,6 +205,7 @@ export async function deleteErrandRoundForm(form: FormData): Promise<void> {
   const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
+  await assertInScope(access, employeeId, date);
   const round = Number(String(form.get("round") ?? ""));
 
   if (!Number.isInteger(round) || round <= 0) back(employeeId, date, "ไม่พบรอบที่จะลบ", true);

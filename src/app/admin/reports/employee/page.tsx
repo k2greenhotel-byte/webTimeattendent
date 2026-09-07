@@ -1,7 +1,7 @@
 import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
-import { requireMenuAccess } from "@/lib/att-access";
+import { inBranchScope, requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
 import FieldReportTable from "@/components/FieldReportTable";
@@ -28,16 +28,23 @@ export default async function EmployeeReportPage({
   const access = await requireMenuAccess("ATT_REP_EMP", "read");
   const branchId = params.branch || undefined;
   const scope = await getCompanyScope(params.company);
-  const [employees, branches] = await Promise.all([
+  const [allEmployees, allBranches] = await Promise.all([
     listEmployees({ branchId, companyId: scope.companyId }),
     listBranches(false, scope.companyId),
   ]);
+
+  // ผู้ที่เข้าด้วยสิทธิ์รายเมนู เลือกได้เฉพาะคนในสาขาที่ตัวเองดูแล
+  const branches = allBranches.filter((b) => inBranchScope(access, b.id));
+  const employees = allEmployees.filter((e) => inBranchScope(access, e.branch_id));
 
   const today = workDateOf();
   const bounds = monthBounds(Number(today.slice(0, 4)), Number(today.slice(5, 7)));
   const from = params.from ?? bounds.from;
   const to = params.to ?? bounds.to;
-  const employeeId = params.employeeId ?? employees[0]?.id;
+  // เดา URL เป็นคนนอกขอบเขตไม่ได้ — ตกกลับไปคนแรกที่ดูได้
+  const requested = params.employeeId;
+  const allowed = requested && employees.some((e) => e.id === requested);
+  const employeeId = allowed ? requested : employees[0]?.id;
 
   const report = employeeId
     ? await buildEmployeeReport({ employeeId, from, to, companyId: scope.companyId })
