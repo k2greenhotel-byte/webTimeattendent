@@ -8,51 +8,48 @@ import {
   type BookingForMatch,
   type StockLocation,
 } from "@/lib/booking-stock";
-import { Db2ApiError, db2StockList, fmtDate, fmtInt, STAT_LABEL } from "@/lib/db2-api";
+import Db2MasterField from "@/components/booking/Db2MasterField";
+import {
+  Db2ApiError,
+  db2Masters,
+  db2StockList,
+  fmtDate,
+  fmtInt,
+  STAT_LABEL,
+} from "@/lib/db2-api";
 import { requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
+/** ช่องกรองที่เลือกจากค่าที่มีอยู่จริงในสต็อก (พร้อมจำนวนคัน) */
 const FILTER_FIELDS = [
   { key: "brand", label: "ยี่ห้อ" },
   { key: "model", label: "รุ่น" },
-  { key: "variant", label: "แบบ" },
   { key: "color", label: "สี" },
   { key: "branch", label: "สถานที่เก็บ" },
 ] as const;
 
-/**
- * กางดูว่ารถของกลุ่มนี้เก็บอยู่สาขาไหนบ้าง
- * ใช้ <details> ล้วน ๆ ไม่ต้องพึ่ง JavaScript — กดได้ทั้งบนมือถือและ PC และพิมพ์ออกมาก็ยังอ่านได้
- */
-function LocationBreakdown({
-  locations,
-  compact = false,
-}: {
-  locations: StockLocation[];
-  compact?: boolean;
-}) {
+/** สภาพรถใน INVTRAN.STAT */
+const CONDITIONS = [
+  { value: "N", label: "รถใหม่" },
+  { value: "O", label: "รถเก่า" },
+] as const;
+
+/** รถของกลุ่มนี้เก็บอยู่สาขาไหนบ้าง — แสดงออกมาเลย ไม่ต้องกดเปิด */
+function LocationBreakdown({ locations }: { locations: StockLocation[] }) {
   if (locations.length === 0) {
     return <span className="text-xs text-slate-300">— ไม่มีรถในสต็อก —</span>;
   }
 
   return (
-    <details className="group">
-      <summary className="cursor-pointer list-none text-xs text-brand-600 hover:underline">
-        <span className="group-open:hidden">
-          ▸ ดูที่เก็บ ({locations.length} สาขา)
-        </span>
-        <span className="hidden group-open:inline">▾ ซ่อนที่เก็บ</span>
-      </summary>
-      <ul className={`mt-1 space-y-0.5 ${compact ? "" : "ml-3"}`}>
-        {locations.map((l) => (
-          <li key={l.locat} className="flex items-center justify-between gap-3 text-xs">
-            <span className="text-slate-600">{l.locat}</span>
-            <span className="font-medium text-slate-800">{l.units} คัน</span>
-          </li>
-        ))}
-      </ul>
-    </details>
+    <ul className="space-y-0.5">
+      {locations.map((l) => (
+        <li key={l.locat} className="flex items-center justify-between gap-3 text-xs">
+          <span className="text-slate-600">{l.locat}</span>
+          <span className="whitespace-nowrap font-medium text-slate-800">{l.units} คัน</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -87,19 +84,32 @@ export default async function BookingStockPage({
     variant: params.variant ?? "",
     color: params.color ?? "",
     branch: params.branch ?? "",
+    group: params.group ?? "",
+    condition: params.condition === "N" || params.condition === "O" ? params.condition : "",
     q: (params.q ?? "").trim(),
   };
 
   let stock: Awaited<ReturnType<typeof db2StockList>> | null = null;
+  let groups: { code: string; name: string }[] = [];
   let error: string | null = null;
   try {
-    stock = await db2StockList({ ...filter, limit: 500 });
+    // ประเภทรถอ่านจากตาราง SETGROUP ตรง ๆ (14 แถว จึงทำเป็น dropdown ได้)
+    const [list, groupMaster] = await Promise.all([
+      db2StockList({ ...filter, limit: 500 }),
+      db2Masters({ kind: "group", limit: 100 }),
+    ]);
+    stock = list;
+    groups = groupMaster.items.map((g) => ({ code: g.code, name: g.name }));
   } catch (err) {
     error = err instanceof Db2ApiError ? err.message : "อ่านข้อมูลสต็อกไม่สำเร็จ";
   }
 
   // ใบจองที่ยังรออยู่เท่านั้น (ปิดงาน/ยกเลิกแล้วไม่กันรถ)
   const bookings = (await listBookings({ doc_status: "active", limit: 1000 })) as BookingForMatch[];
+
+  // ชื่อของ "แบบ" ที่เลือกไว้ (เอามาโชว์บนปุ่มแทนรหัสเปล่า ๆ)
+  const variantLabel =
+    stock?.combos.find((c) => c.variant === filter.variant)?.variantName ?? filter.variant;
 
   const matches = stock ? matchStockWithBookings(stock.combos, bookings) : [];
   const totals = summarizeMatches(matches);
@@ -141,6 +151,43 @@ export default async function BookingStockPage({
               </div>
             );
           })}
+          <div>
+            <label className="label" htmlFor="group">
+              ประเภทรถ
+            </label>
+            <select id="group" name="group" defaultValue={filter.group} className="input">
+              <option value="">ทั้งหมด</option>
+              {groups.map((g) => (
+                <option key={g.code} value={g.code}>
+                  {g.code} · {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Db2MasterField
+            name="variant"
+            kind="variant"
+            label="แบบ"
+            value={filter.variant}
+            valueLabel={variantLabel}
+            hint="ค้นจากตาราง SETBAAB ทั้งตาราง"
+          />
+
+          <div>
+            <label className="label" htmlFor="condition">
+              สภาพรถ
+            </label>
+            <select id="condition" name="condition" defaultValue={filter.condition} className="input">
+              <option value="">ทั้งหมด</option>
+              {CONDITIONS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label} ({c.value})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="label" htmlFor="q">
               คำค้น
@@ -221,7 +268,7 @@ export default async function BookingStockPage({
                     </p>
                   )}
                   <div className="mt-2 border-t border-slate-100 pt-2">
-                    <LocationBreakdown locations={m.locations} compact />
+                    <LocationBreakdown locations={m.locations} />
                   </div>
                 </li>
               ))}
