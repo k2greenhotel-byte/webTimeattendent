@@ -1,7 +1,9 @@
 import { Fragment } from "react";
 import Link from "next/link";
+import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
+import { requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
 import { formatDuration, formatThaiMonth, workDateOf } from "@/lib/datetime";
@@ -32,6 +34,7 @@ export default async function MonthlyReportPage({
   }>;
 }) {
   const params = await searchParams;
+  const access = await requireMenuAccess("ATT_REP_MONTHLY", "read");
   const today = workDateOf();
   const year = Number(params.year) || Number(today.slice(0, 4));
   const month = Number(params.month) || Number(today.slice(5, 7));
@@ -69,6 +72,8 @@ export default async function MonthlyReportPage({
   });
 
   return (
+    <>
+    {!access.viaAdmin && access.user && <AttStaffNav user={access.user} />}
     <main className="mx-auto max-w-full space-y-4 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -194,5 +199,6 @@ export default async function MonthlyReportPage({
         </p>
       </section>
     </main>
+    </>
   );
 }

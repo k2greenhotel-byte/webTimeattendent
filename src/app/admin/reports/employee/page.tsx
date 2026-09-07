@@ -1,5 +1,7 @@
+import AttStaffNav from "@/components/AttStaffNav";
 import BranchFilter from "@/components/BranchFilter";
 import CompanyFilter from "@/components/CompanyFilter";
+import { requireMenuAccess } from "@/lib/att-access";
 import { getCompanyScope } from "@/lib/att-scope";
 import ExportButtons from "@/components/ExportButtons";
 import FieldReportTable from "@/components/FieldReportTable";
@@ -23,6 +25,7 @@ export default async function EmployeeReportPage({
   }>;
 }) {
   const params = await searchParams;
+  const access = await requireMenuAccess("ATT_REP_EMP", "read");
   const branchId = params.branch || undefined;
   const scope = await getCompanyScope(params.company);
   const [employees, branches] = await Promise.all([
@@ -41,6 +44,8 @@ export default async function EmployeeReportPage({
     : null;
 
   return (
+    <>
+    {!access.viaAdmin && access.user && <AttStaffNav user={access.user} />}
     <main className="mx-auto max-w-6xl space-y-4 p-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -111,5 +116,6 @@ export default async function EmployeeReportPage({
         </>
       )}
     </main>
+    </>
   );
 }

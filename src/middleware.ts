@@ -5,7 +5,8 @@ import { ADMIN_COOKIE, SESSION_COOKIE, verifyAdminToken, verifySessionToken } fr
 const SHARED_ADMIN_PATHS = [
   "/admin/roster",
   "/admin/field",
-  "/admin/reports/field",
+  "/admin/reports",
+  "/admin/records",
   "/admin/payroll-map",
 ];
 

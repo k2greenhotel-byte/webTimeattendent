@@ -28,6 +28,7 @@ export type ReportRow = {
   fullName: string;
   companyName: string | null;
   department: string | null;
+  branchId: string | null;
   branchName: string | null;
   /** ชื่อกะที่ใช้คำนวณวันนั้น (จากตารางเวร หรือกะสาขา) */
   scheduleName: string;
@@ -91,6 +92,7 @@ function toReportRow(
     fullName: row.full_name,
     companyName: meta.companyName,
     department: row.department,
+    branchId: row.branch_id,
     branchName: row.branch_name,
     scheduleName: isDayOff ? "หยุดเวร" : settings.schedule_name,
     siteName,

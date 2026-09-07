@@ -13,7 +13,7 @@ import {
   updateErrandPunchTime,
   updatePunchTime,
 } from "@/lib/db";
-import { requireAdmin } from "@/lib/session";
+import { requireMenuAccess } from "@/lib/att-access";
 import { PUNCH_ORDER, type PunchType } from "@/lib/types";
 
 /** "2026-08-31" + "08:15" (เวลาไทย) -> ISO UTC */
@@ -28,7 +28,8 @@ function back(employeeId: string, date: string, message: string, isError = false
 
 /** บันทึก/แก้ไขเวลาย้อนหลัง (บันทึก audit log เสมอ) */
 export async function savePunchForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_RECORDS", "edit");
+  const actorId = access.user?.id ?? null;
 
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
@@ -49,7 +50,7 @@ export async function savePunchForm(form: FormData): Promise<void> {
       const before = await getRecordById(recordId);
       await updatePunchTime(recordId, toIso(date, time), note, null);
       await logAudit({
-        actor_id: null,
+        actor_id: actorId,
         action: "update_punch",
         target_table: "attendance_records",
         target_id: recordId,
@@ -74,7 +75,7 @@ export async function savePunchForm(form: FormData): Promise<void> {
         edited_by: null,
       });
       await logAudit({
-        actor_id: null,
+        actor_id: actorId,
         action: "create_punch_manual",
         target_table: "attendance_records",
         target_id: created.id,
@@ -90,7 +91,8 @@ export async function savePunchForm(form: FormData): Promise<void> {
 }
 
 export async function deletePunchForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_RECORDS", "delete");
+  const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
   const recordId = String(form.get("record_id") ?? "");
@@ -99,7 +101,7 @@ export async function deletePunchForm(form: FormData): Promise<void> {
     const before = await getRecordById(recordId);
     await deletePunch(recordId);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "delete_punch",
       target_table: "attendance_records",
       target_id: recordId,
@@ -115,7 +117,8 @@ export async function deletePunchForm(form: FormData): Promise<void> {
 
 /** ลบการลงเวลาทั้งวันของพนักงานคนนี้ (พร้อมรูปทั้งหมดของวันนั้น) */
 export async function deleteDayForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_RECORDS", "delete");
+  const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
 
@@ -127,7 +130,7 @@ export async function deleteDayForm(form: FormData): Promise<void> {
   try {
     result = await deleteDayPunches(employeeId, date);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "delete_attendance_day",
       target_table: "attendance_records",
       target_id: `${employeeId}/${date}`,
@@ -152,7 +155,8 @@ export async function deleteDayForm(form: FormData): Promise<void> {
 
 /** แอดมินแก้เวลาออก/กลับของธุระ (กรณีพนักงานลืมกด) */
 export async function saveErrandTimeForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_RECORDS", "edit");
+  const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
   const punchId = String(form.get("punch_id") ?? "");
@@ -165,7 +169,7 @@ export async function saveErrandTimeForm(form: FormData): Promise<void> {
   try {
     await updateErrandPunchTime(punchId, toIso(date, time), note, null);
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "update_errand_punch",
       target_table: "errand_punches",
       target_id: punchId,
@@ -181,7 +185,8 @@ export async function saveErrandTimeForm(form: FormData): Promise<void> {
 
 /** ลบธุระทั้งรอบ (ทั้งขาออกและขากลับ พร้อมรูป) */
 export async function deleteErrandRoundForm(form: FormData): Promise<void> {
-  await requireAdmin();
+  const access = await requireMenuAccess("ATT_RECORDS", "delete");
+  const actorId = access.user?.id ?? null;
   const employeeId = String(form.get("employee_id") ?? "");
   const date = String(form.get("work_date") ?? "");
   const round = Number(String(form.get("round") ?? ""));
@@ -192,7 +197,7 @@ export async function deleteErrandRoundForm(form: FormData): Promise<void> {
   try {
     ({ photosDeleted: photos } = await deleteErrandRound(employeeId, date, round));
     await logAudit({
-      actor_id: null,
+      actor_id: actorId,
       action: "delete_errand_round",
       target_table: "errand_punches",
       target_id: `${employeeId}/${date}/${round}`,

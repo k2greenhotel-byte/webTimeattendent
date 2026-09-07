@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import AttStaffNav from "@/components/AttStaffNav";
+import { requireMenuAccess } from "@/lib/att-access";
 import { computeDaySummary } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime } from "@/lib/datetime";
 import {
@@ -32,6 +34,10 @@ export default async function EditRecordPage({
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
 
+  const access = await requireMenuAccess("ATT_RECORDS", "read");
+  const canEdit = access.rights.can_edit;
+  const canDelete = access.rights.can_delete;
+
   const [employee, punches, errandRounds] = await Promise.all([
     getEmployeeById(employeeId),
     getPunchesOfDay(employeeId, date),
@@ -58,6 +64,8 @@ export default async function EditRecordPage({
   );
 
   return (
+    <>
+    {!access.viaAdmin && access.user && <AttStaffNav user={access.user} />}
     <main className="mx-auto max-w-3xl space-y-4 p-4">
       <div>
         <h1 className="text-xl font-bold text-slate-800">แก้ไขเวลาย้อนหลัง</h1>
@@ -70,6 +78,13 @@ export default async function EditRecordPage({
           {summary.overBreakMinutes > 0 ? ` · พักเกิน ${summary.overBreakMinutes} นาที` : ""}
         </p>
       </div>
+
+      {!canEdit && (
+        <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+          คุณมีสิทธิ์ดูอย่างเดียว — ถ้าต้องแก้เวลาให้พนักงาน ติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์แก้ไขเมนู
+          &quot;แก้ไขเวลาย้อนหลัง&quot;
+        </p>
+      )}
 
       {query.msg && (
         <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{query.msg}</p>
@@ -102,6 +117,7 @@ export default async function EditRecordPage({
               )}
             </div>
 
+            {canEdit && (
             <form action={savePunchForm} className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="employee_id" value={employeeId} />
               <input type="hidden" name="work_date" value={date} />
@@ -132,7 +148,9 @@ export default async function EditRecordPage({
               </button>
             </form>
 
-            {record && (
+            )}
+
+            {canDelete && record && (
               <form action={deletePunchForm}>
                 <input type="hidden" name="employee_id" value={employeeId} />
                 <input type="hidden" name="work_date" value={date} />
@@ -168,7 +186,7 @@ export default async function EditRecordPage({
               <div className="flex flex-wrap gap-3">
                 {([r.out, r.in] as const).map((p, i) =>
                   p ? (
-                    <form key={p.id} action={saveErrandTimeForm} className="flex flex-wrap items-end gap-2">
+                    <form key={p.id} action={saveErrandTimeForm} className={`flex flex-wrap items-end gap-2 ${canEdit ? "" : "pointer-events-none opacity-60"}`}>
                       <input type="hidden" name="employee_id" value={employeeId} />
                       <input type="hidden" name="work_date" value={date} />
                       <input type="hidden" name="punch_id" value={p.id} />
@@ -198,6 +216,7 @@ export default async function EditRecordPage({
                 )}
               </div>
 
+              {canDelete && (
               <form action={deleteErrandRoundForm}>
                 <input type="hidden" name="employee_id" value={employeeId} />
                 <input type="hidden" name="work_date" value={date} />
@@ -206,12 +225,13 @@ export default async function EditRecordPage({
                   ลบธุระรอบนี้
                 </button>
               </form>
+              )}
             </div>
           ))}
         </section>
       )}
 
-      {punches.length > 0 && (
+      {canDelete && punches.length > 0 && (
         <form action={deleteDayForm} className="card space-y-3 border-rose-200">
           <div>
             <h2 className="font-semibold text-rose-700">ลบการลงเวลาทั้งวันนี้</h2>
@@ -231,9 +251,10 @@ export default async function EditRecordPage({
         </form>
       )}
 
-      <Link href="/admin" className="btn-secondary">
-        ← กลับหน้าภาพรวม
+      <Link href="/admin/reports/daily" className="btn-secondary">
+        ← กลับหน้ารายงานรายวัน
       </Link>
     </main>
+    </>
   );
 }

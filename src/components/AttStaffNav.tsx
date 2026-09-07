@@ -3,6 +3,9 @@ import { readableMenuCodes } from "@/lib/att-access";
 import type { SessionUser } from "@/lib/types";
 
 const MENU_LINKS: { code: string; href: string; label: string }[] = [
+  { code: "ATT_REP_DAILY", href: "/admin/reports/daily", label: "รายงานรายวัน" },
+  { code: "ATT_REP_MONTHLY", href: "/admin/reports/monthly", label: "รายงานรายเดือน" },
+  { code: "ATT_REP_EMP", href: "/admin/reports/employee", label: "รายงานรายบุคคล" },
   { code: "ATT_ROSTER", href: "/admin/roster", label: "ตารางเวร" },
   { code: "ATT_FIELD_ROSTER", href: "/admin/field/roster", label: "ตารางบูธ" },
   { code: "ATT_FIELD", href: "/admin/field", label: "งานนอกสถานที่" },
