@@ -17,6 +17,8 @@ const ALLOWED: Record<string, string> = {
   "stock/pivot": "DB2_PIVOT",
   "stock/list": "BOOK_STOCK",
   masters: "BOOK_ENTRY",
+  // ค้นรถของลูกค้าจากเลขตัวถัง (INVTRAN + SALEALL + CUSTMAST) — popup ของใบขอเคลม
+  vehicles: "CLM_CLAIM",
   customers: "BOOK_ENTRY",
   dashboard: "DB2_DASH",
   stock: "DB2_STOCK",

@@ -87,5 +87,8 @@ export const config = {
     "/salework",
     "/salework/:path*",
     "/api/salework/:path*",
+    "/claim",
+    "/claim/:path*",
+    "/api/claim/:path*",
   ],
 };
