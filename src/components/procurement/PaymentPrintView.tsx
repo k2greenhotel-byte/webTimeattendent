@@ -95,7 +95,16 @@ function Signature({
  *   แบบที่ 1 — รายการทั่วไป: ไม่มีส่วนอนุมัติ ใช้กับค่าใช้จ่ายย่อยที่ไม่ต้องขออนุมัติ
  *   แบบที่ 2 — มีรายการอนุมัติ: เพิ่มแถบเลขที่/วันที่/ชื่อผู้อนุมัติ และตารางเอกสารที่อ้างถึง
  */
-export default async function PaymentPrintView({ source, id }: { source: PaySource; id: string }) {
+export default async function PaymentPrintView({
+  source,
+  id,
+  auto = false,
+}: {
+  source: PaySource;
+  id: string;
+  /** เปิดหน้าต่างพิมพ์ให้ทันทีที่เข้าหน้า */
+  auto?: boolean;
+}) {
   const spec = PAY_SOURCES[source];
   await requirePermission(spec.menuCode, "read");
 
@@ -115,9 +124,7 @@ export default async function PaymentPrintView({ source, id }: { source: PaySour
       {/* เอกสารการเงินพิมพ์แนวตั้ง ต่างจากค่าเริ่มต้นของระบบที่เป็น A4 แนวนอน */}
       <style>{"@media print { @page { size: A4 portrait; margin: 12mm; } }"}</style>
 
-      <div className="no-print flex justify-end">
-        <PrintButton />
-      </div>
+      <PrintButton auto={auto} label={`🖨 พิมพ์${spec.docLabel}`} />
 
       {/* ---------- หัวเอกสาร ---------- */}
       <header className="border-b-2 border-slate-800 pb-3 text-center">

@@ -22,6 +22,7 @@ import {
   type PrAccountRow,
   type PrDocStatus,
   type PrTypeInput,
+  type PrVendorInput,
   type PurchaseInput,
   type RejectReason,
   type RepairInput,
@@ -606,4 +607,14 @@ export function summarizeByTag(
     totalPayments: allPayments.size,
     totalAmount: round2([...allPayments.values()].reduce((sum, v) => sum + v, 0)),
   };
+}
+
+/** ตรวจค่าของเจ้าหนี้/ผู้ขายก่อนบันทึก */
+export function validateVendor(input: PrVendorInput): string | null {
+  if (!input.code.trim()) return "กรุณากรอกรหัสเจ้าหนี้";
+  if (input.code.length > 20) return "รหัสเจ้าหนี้ยาวเกินไป (ไม่เกิน 20 ตัวอักษร)";
+  if (!input.name.trim()) return "กรุณากรอกชื่อเจ้าหนี้หรือผู้ขาย";
+  if (input.name.length > 200) return "ชื่อเจ้าหนี้ยาวเกินไป (ไม่เกิน 200 ตัวอักษร)";
+  if ((input.address ?? "").length > 500) return "ที่อยู่ยาวเกินไป (ไม่เกิน 500 ตัวอักษร)";
+  return null;
 }

@@ -349,6 +349,8 @@ export type Payment = {
   expense_detail: string | null;
   /** ประเภทค่าใช้จ่าย = บัญชีในผังบัญชี */
   account_id: string | null;
+  /** เจ้าหนี้ในทะเบียน (null = ผู้ขายไม่ประจำ พิมพ์ชื่อเอง) */
+  vendor_id: string | null;
   /** ผู้ทำจ่าย = คนที่จ่ายเงินสดย่อยออกไป */
   payer_name: string | null;
   /** ชื่อผู้อนุมัติ — ดึงมาจากใบอนุมัติของเอกสารที่อ้างถึง ไม่มีลายเซ็นเพราะเซ็นไว้ที่ใบอนุมัติแล้ว */
@@ -374,6 +376,8 @@ export type PaymentRow = Payment & {
   account_code: string | null;
   account_name: string | null;
   account_category: AccountCategory | null;
+  vendor_code: string | null;
+  vendor_name: string | null;
   created_by_full_name: string | null;
   item_count: number;
   file_count: number;
@@ -633,3 +637,33 @@ export type TagReportQuery = {
 
 /** จำนวนป้ายสูงสุดต่อหนึ่งใบเบิก — กันติดรัวจนรายงานอ่านไม่รู้เรื่อง */
 export const MAX_TAGS_PER_PAYMENT = 10;
+
+// ---------- ทะเบียนเจ้าหนี้ / ผู้ขาย ----------
+
+/** เจ้าหนี้หรือผู้ขายที่จ่ายเป็นประจำ — เลือกจากทะเบียนแทนการพิมพ์ซ้ำทุกครั้ง */
+export type PrVendor = {
+  id: string;
+  code: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  note: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type PrVendorRow = PrVendor & {
+  /** จำนวนใบเบิกที่จ่ายให้เจ้าหนี้รายนี้ และยอดรวม */
+  payment_count: number;
+  paid_total: number;
+};
+
+export type PrVendorInput = {
+  code: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  note: string | null;
+  sort_order: number;
+  is_active: boolean;
+};

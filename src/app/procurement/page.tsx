@@ -13,6 +13,7 @@ const CARDS: { href: string; menuCode: string; title: string; desc: string }[] =
   { href: "/procurement/tag-report", menuCode: "PR_TAG_REPORT", title: "4.3 รายงานสรุปตามป้ายกำกับ", desc: "สรุปยอดจ่ายแยกตามป้ายที่ติดไว้ ทั้งเงินสดย่อยและส่วนกลาง" },
   { href: "/procurement/search", menuCode: "PR_SEARCH", title: "5. สอบถามงานซ่อม/งานขอซื้อ", desc: "ค้นหาและติดตามเอกสารทุกสถานะ" },
   { href: "/procurement/dashboard", menuCode: "PR_DASH", title: "6. Dashboard ติดตามงานซ่อม", desc: "ภาพรวมสถานะงาน ยอดเงิน และงานเกินกำหนด" },
+  { href: "/procurement/setup/vendors", menuCode: "PR_VENDOR", title: "ตั้งค่า เจ้าหนี้/ผู้ขาย", desc: "ทะเบียนเจ้าหนี้ที่จ่ายประจำ เลือกในใบเบิกได้เลยไม่ต้องพิมพ์ซ้ำ" },
   { href: "/procurement/setup/accounts", menuCode: "PR_ACCOUNT", title: "ตั้งค่า ผังบัญชี", desc: "กำหนดหมวดบัญชี บัญชีคุม และบัญชีย่อย ใช้เป็นประเภทค่าใช้จ่าย" },
   { href: "/procurement/setup/asset-types", menuCode: "PR_ASSET_TYPE", title: "ตั้งค่า ประเภททรัพย์สิน", desc: "ประเภททรัพย์สินที่ใช้ในใบขอซ่อม" },
   { href: "/procurement/setup/material-types", menuCode: "PR_MATERIAL_TYPE", title: "ตั้งค่า ประเภทวัสดุ", desc: "ประเภทวัสดุที่ใช้ในใบขอจัดซื้อ" },

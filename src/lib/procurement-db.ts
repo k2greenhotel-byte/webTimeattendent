@@ -13,6 +13,8 @@ import type {
   PaySource,
   PrTag,
   PrTagRow,
+  PrVendorInput,
+  PrVendorRow,
   TagReportQuery,
   PaymentRow,
   PrAccountInput,
@@ -1206,4 +1208,59 @@ export async function updateTag(
 export async function deleteTag(id: string): Promise<void> {
   const { error } = await getSupabase().from("pr_tags").delete().eq("id", id);
   if (error) throw new Error(`ลบป้ายกำกับไม่สำเร็จ: ${error.message}`);
+}
+
+// ---------- ทะเบียนเจ้าหนี้ / ผู้ขาย ----------
+
+export async function listVendors(options: { includeInactive?: boolean } = {}): Promise<PrVendorRow[]> {
+  let q = getSupabase().from("v_pr_vendors").select("*");
+  if (!options.includeInactive) q = q.eq("is_active", true);
+
+  const { data, error } = await q.order("sort_order").order("code");
+  if (error) throw new Error(`อ่านทะเบียนเจ้าหนี้ไม่สำเร็จ: ${error.message}`);
+
+  return (data ?? []).map((r) => ({
+    ...(r as unknown as PrVendorRow),
+    sort_order: num((r as Record<string, unknown>).sort_order),
+    payment_count: num((r as Record<string, unknown>).payment_count),
+    paid_total: num((r as Record<string, unknown>).paid_total),
+  }));
+}
+
+export async function getVendor(id: string): Promise<PrVendorRow | null> {
+  const { data, error } = await getSupabase()
+    .from("v_pr_vendors")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`อ่านข้อมูลเจ้าหนี้ไม่สำเร็จ: ${error.message}`);
+  return data ? (data as unknown as PrVendorRow) : null;
+}
+
+export async function insertVendor(input: PrVendorInput): Promise<void> {
+  const { error } = await getSupabase().from("pr_vendors").insert(input);
+  if (error) {
+    throw new Error(
+      error.code === "23505"
+        ? `รหัสเจ้าหนี้ ${input.code} มีอยู่แล้ว กรุณาใช้รหัสอื่น`
+        : `บันทึกเจ้าหนี้ไม่สำเร็จ: ${error.message}`,
+    );
+  }
+}
+
+export async function updateVendor(id: string, patch: Partial<PrVendorInput>): Promise<void> {
+  const { error } = await getSupabase().from("pr_vendors").update(patch).eq("id", id);
+  if (error) {
+    throw new Error(
+      error.code === "23505"
+        ? `รหัสเจ้าหนี้ ${patch.code} มีอยู่แล้ว กรุณาใช้รหัสอื่น`
+        : `บันทึกเจ้าหนี้ไม่สำเร็จ: ${error.message}`,
+    );
+  }
+}
+
+/** ลบเจ้าหนี้ — ใบเบิกเก่ายังอยู่ครบ เพราะเก็บชื่อ/ที่อยู่ ณ วันที่จ่ายไว้บนใบแล้ว */
+export async function deleteVendor(id: string): Promise<void> {
+  const { error } = await getSupabase().from("pr_vendors").delete().eq("id", id);
+  if (error) throw new Error(`ลบเจ้าหนี้ไม่สำเร็จ: ${error.message}`);
 }

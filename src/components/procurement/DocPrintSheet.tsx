@@ -92,9 +92,7 @@ export default function DocPrintSheet({
       {/* เอกสารนี้พิมพ์แนวตั้ง ต่างจากค่าเริ่มต้นของระบบที่เป็น A4 แนวนอน */}
       <style>{"@media print { @page { size: A4 portrait; margin: 12mm; } }"}</style>
 
-      <div className="no-print flex justify-end">
-        <PrintButton />
-      </div>
+      <PrintButton label={`🖨 พิมพ์${DOC_KIND_LABEL[kind]}`} />
 
       <header className="space-y-1 border-b border-slate-300 pb-3 text-center">
         <h1 className="text-lg font-bold text-slate-800">

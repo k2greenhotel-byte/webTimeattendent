@@ -56,6 +56,9 @@ export default async function PrTypeSetup({
           <Link href="/procurement/setup/accounts" className="btn-secondary flex-1 sm:flex-none">
             ผังบัญชี
           </Link>
+          <Link href="/procurement/setup/vendors" className="btn-secondary flex-1 sm:flex-none">
+            เจ้าหนี้/ผู้ขาย
+          </Link>
           <Link href="/procurement" className="btn-secondary flex-1 sm:flex-none">
             ← กลับหน้าแรก
           </Link>

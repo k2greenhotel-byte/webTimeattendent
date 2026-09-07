@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import FileUploader, { type UploadedFile } from "@/components/marketing/FileUploader";
 import PhotoUploader from "@/components/marketing/PhotoUploader";
+import ApprovalPicker from "@/components/procurement/ApprovalPicker";
 import SignaturePad from "@/components/procurement/SignaturePad";
 import TagInput from "@/components/procurement/TagInput";
 import type { Company } from "@/lib/core-types";
@@ -20,6 +21,7 @@ import {
   type PrAccountRow,
   type PrTag,
   type PrTagRow,
+  type PrVendorRow,
   type PaySource,
   type PrDocRow,
 } from "@/lib/procurement-types";
@@ -43,6 +45,7 @@ export default function PaymentForm({
   payment,
   docs,
   accounts,
+  vendors = [],
   tags = [],
   tagSuggestions = [],
   companies,
@@ -62,6 +65,8 @@ export default function PaymentForm({
   /** ใบขอซ่อม/ใบขอซื้อที่ยังเบิกได้ (รวมใบที่ใบนี้เลือกไว้อยู่แล้วตอนแก้ไข) */
   docs: PrDocRow[];
   accounts: PrAccountRow[];
+  /** ทะเบียนเจ้าหนี้/ผู้ขายที่จ่ายเป็นประจำ */
+  vendors?: PrVendorRow[];
   /** ป้ายที่ติดอยู่บนใบนี้ (ตอนแก้ไข) */
   tags?: PrTag[];
   /** ป้ายที่เคยใช้ในระบบ ไว้ให้กดเลือก */
@@ -90,12 +95,30 @@ export default function PaymentForm({
   const [paidAmount, setPaidAmount] = useState(payment ? String(payment.paid_amount) : "");
   const [refNo, setRefNo] = useState(payment?.ref_no ?? "");
   const [expenseDetail, setExpenseDetail] = useState(payment?.expense_detail ?? "");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [vendorId, setVendorId] = useState(payment?.vendor_id ?? "");
+  const [payee, setPayee] = useState({
+    name: payment?.payee_name ?? "",
+    phone: payment?.payee_phone ?? "",
+    address: payment?.payee_address ?? "",
+  });
   const [approverName, setApproverName] = useState(payment?.approver_name ?? "");
 
   const pickedDocs = docs.filter((d) => selected[d.id]);
   const itemTotal = round2(
     pickedDocs.reduce((sum, d) => sum + (Number(amounts[d.id]) || 0), 0),
   );
+
+  /**
+   * เลือกเจ้าหนี้จากทะเบียน = เติมชื่อ ที่อยู่ เบอร์โทรให้ทันที
+   * เลือก "ผู้ขายไม่ประจำ" = ล้างการอ้างทะเบียน แล้วพิมพ์เองได้
+   * (ค่าที่เติมยังแก้เองได้ เพราะบางครั้งจ่ายให้สาขาย่อยของเจ้าหนี้รายเดียวกัน)
+   */
+  const chooseVendor = (id: string) => {
+    setVendorId(id);
+    const v = vendors.find((x) => x.id === id);
+    if (v) setPayee({ name: v.name, phone: v.phone ?? "", address: v.address ?? "" });
+  };
 
   /** สาขาที่เลือกได้ต้องอยู่ในบริษัทที่เลือกไว้ (สาขาที่ยังไม่ระบุบริษัทให้เลือกได้เสมอ) */
   const branchOptions = branches.filter((b) => !companyId || !b.company_id || b.company_id === companyId);
@@ -194,95 +217,88 @@ export default function PaymentForm({
 
       {/* ---------- เอกสารที่อ้างถึง (ไม่บังคับ) ---------- */}
       <section className="space-y-2">
-        <h2 className="font-semibold text-slate-800">
-          ใบขอซ่อม / ใบขอจัดซื้อที่อ้างถึง{" "}
-          <span className="text-sm font-normal text-slate-400">(ไม่มีก็จ่ายได้)</span>
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="mr-auto font-semibold text-slate-800">
+            ใบขอซ่อม / ใบขอจัดซื้อที่อ้างถึง{" "}
+            <span className="text-sm font-normal text-slate-400">(ไม่มีก็จ่ายได้)</span>
+          </h2>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="btn-secondary w-full sm:w-auto"
+          >
+            🔍 เลือกเลขที่อนุมัติ
+          </button>
+        </div>
 
-        {docs.length === 0 ? (
+        {pickedDocs.length === 0 ? (
           <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            ยังไม่มีใบขอซ่อมหรือใบขอซื้อที่รอเบิกจ่าย — จ่ายเป็นรายการทั่วไปได้เลยโดยกรอกช่องด้านล่าง
+            ยังไม่ได้เลือกเอกสาร — กด “เลือกเลขที่อนุมัติ” เพื่อดึงใบที่อนุมัติแล้วมาอ้าง
+            หรือจ่ายเป็นรายการทั่วไปได้เลยโดยกรอกช่องด้านล่าง
           </p>
         ) : (
           <ul className="space-y-2">
-            {docs.map((doc) => {
-              const on = Boolean(selected[doc.id]);
-              const remaining = remainingToPay(doc);
+            {pickedDocs.map((doc) => (
+              <li key={doc.id} className="rounded-xl border border-brand-400 bg-brand-50/40 p-3">
+                <input type="hidden" name="pick" value={`${doc.kind}:${doc.id}`} />
 
-              return (
-                <li
-                  key={doc.id}
-                  className={`rounded-xl border p-3 ${
-                    on ? "border-brand-400 bg-brand-50/40" : "border-slate-200"
-                  }`}
-                >
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-5 w-5 shrink-0"
-                      checked={on}
-                      onChange={(e) => toggle(doc, e.target.checked)}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-slate-800">
-                        {doc.doc_no}
-                        <span className="ml-2 text-xs font-normal text-slate-500">
-                          {DOC_KIND_LABEL[doc.kind]}
-                        </span>
-                        {doc.approval_no && (
-                          <span className="ml-2 badge bg-emerald-100 text-emerald-700">
-                            อนุมัติ {doc.approval_no}
-                          </span>
-                        )}
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-800">
+                      {doc.approval_no ?? doc.doc_no}
+                      <span className="ml-2 text-xs font-normal text-slate-500">
+                        {DOC_KIND_LABEL[doc.kind]} {doc.doc_no}
                       </span>
-                      <span className="block truncate text-sm text-slate-600">{doc.item_name}</span>
-                      <span className="block text-xs text-slate-500">
-                        {formatThaiDate(doc.doc_date)}
-                        {doc.branch_name ? ` · ${doc.branch_name}` : ""} · อนุมัติ{" "}
-                        {formatBaht(doc.approved_amount)} · เบิกได้อีก {formatBaht(remaining)}
-                      </span>
-                      {doc.approved_by && (
-                        <span className="block text-xs text-slate-500">
-                          ผู้อนุมัติ {doc.approved_by}
-                          {doc.approved_date ? ` · ${formatThaiDate(doc.approved_date)}` : ""}
-                        </span>
-                      )}
-                    </span>
+                    </p>
+                    <p className="truncate text-sm text-slate-600">{doc.item_name}</p>
+                    <p className="text-xs text-slate-500">
+                      {formatThaiDate(doc.doc_date)}
+                      {doc.branch_name ? ` · ${doc.branch_name}` : ""} · อนุมัติ{" "}
+                      {formatBaht(doc.approved_amount)} · เบิกได้อีก {formatBaht(remainingToPay(doc))}
+                    </p>
+                    {doc.approved_by && (
+                      <p className="text-xs text-slate-500">
+                        ผู้อนุมัติ {doc.approved_by}
+                        {doc.approved_date ? ` · ${formatThaiDate(doc.approved_date)}` : ""}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggle(doc, false)}
+                    className="rounded-lg px-2 py-1 text-sm text-rose-600 hover:bg-rose-50"
+                  >
+                    เอาออก
+                  </button>
+                </div>
+
+                <div className="mt-2 w-full sm:w-48">
+                  <label className="label" htmlFor={`amount_${doc.id}`}>
+                    ยอดที่เบิกใบนี้
                   </label>
-
-                  {on && (
-                    <div className="mt-2 flex flex-wrap items-end gap-2 pl-8">
-                      <input type="hidden" name="pick" value={`${doc.kind}:${doc.id}`} />
-                      <div className="w-full sm:w-48">
-                        <label className="label" htmlFor={`amount_${doc.id}`}>
-                          ยอดที่เบิกใบนี้
-                        </label>
-                        <input
-                          id={`amount_${doc.id}`}
-                          name={`amount_${doc.id}`}
-                          value={amounts[doc.id] ?? ""}
-                          onChange={(e) => {
-                            const next = { ...amounts, [doc.id]: e.target.value };
-                            setAmounts(next);
-                            setPaidAmount(
-                              String(
-                                round2(
-                                  docs
-                                    .filter((d) => selected[d.id])
-                                    .reduce((s, d) => s + (Number(next[d.id]) || 0), 0),
-                                ),
-                              ),
-                            );
-                          }}
-                          className="input"
-                          inputMode="decimal"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+                  <input
+                    id={`amount_${doc.id}`}
+                    name={`amount_${doc.id}`}
+                    value={amounts[doc.id] ?? ""}
+                    onChange={(e) => {
+                      const next = { ...amounts, [doc.id]: e.target.value };
+                      setAmounts(next);
+                      setPaidAmount(
+                        String(
+                          round2(
+                            docs
+                              .filter((d) => selected[d.id])
+                              .reduce((sum, d) => sum + (Number(next[d.id]) || 0), 0),
+                          ),
+                        ),
+                      );
+                    }}
+                    className="input"
+                    inputMode="decimal"
+                  />
+                </div>
+              </li>
+            ))}
           </ul>
         )}
 
@@ -292,6 +308,15 @@ export default function PaymentForm({
           </p>
         )}
       </section>
+
+      {pickerOpen && (
+        <ApprovalPicker
+          docs={docs}
+          selectedIds={new Set(pickedDocs.map((d) => d.id))}
+          onToggle={toggle}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
 
       {/* ---------- ผู้รับเงินและจำนวนเงิน ---------- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -324,13 +349,37 @@ export default function PaymentForm({
         </div>
 
         <div className="sm:col-span-2">
+          <label className="label" htmlFor="vendor_id">
+            เจ้าหนี้ / ผู้ขายประจำ
+          </label>
+          <select
+            id="vendor_id"
+            name="vendor_id"
+            value={vendorId}
+            onChange={(e) => chooseVendor(e.target.value)}
+            className="input"
+          >
+            <option value="">— ผู้ขายไม่ประจำ (พิมพ์เอง) —</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.code} · {v.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-400">
+            เลือกแล้วระบบเติมชื่อ ที่อยู่ เบอร์โทรให้ · แก้เองได้ถ้าจ่ายให้สาขาย่อย
+          </p>
+        </div>
+
+        <div className="sm:col-span-2">
           <label className="label" htmlFor="payee_name">
             ชื่อผู้ขายหรือผู้รับเงิน *
           </label>
           <input
             id="payee_name"
             name="payee_name"
-            defaultValue={payment?.payee_name ?? ""}
+            value={payee.name}
+            onChange={(e) => setPayee((prev) => ({ ...prev, name: e.target.value }))}
             className="input"
             placeholder="ชื่อร้าน ช่าง หรือพนักงานที่รับเงินไป"
             required
@@ -343,7 +392,8 @@ export default function PaymentForm({
           <input
             id="payee_phone"
             name="payee_phone"
-            defaultValue={payment?.payee_phone ?? ""}
+            value={payee.phone}
+            onChange={(e) => setPayee((prev) => ({ ...prev, phone: e.target.value }))}
             className="input"
             inputMode="tel"
             placeholder="0812345678"
@@ -357,7 +407,8 @@ export default function PaymentForm({
           <textarea
             id="payee_address"
             name="payee_address"
-            defaultValue={payment?.payee_address ?? ""}
+            value={payee.address}
+            onChange={(e) => setPayee((prev) => ({ ...prev, address: e.target.value }))}
             className="input min-h-20"
             rows={2}
           />

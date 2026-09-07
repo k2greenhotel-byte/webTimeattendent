@@ -26,7 +26,8 @@ export default function ProcurementHeader({
   const canSetup =
     readableMenuCodes.includes("PR_ASSET_TYPE") ||
     readableMenuCodes.includes("PR_MATERIAL_TYPE") ||
-    readableMenuCodes.includes("PR_ACCOUNT");
+    readableMenuCodes.includes("PR_ACCOUNT") ||
+    readableMenuCodes.includes("PR_VENDOR");
 
   return (
     <header className="no-print border-b border-slate-200 bg-white">

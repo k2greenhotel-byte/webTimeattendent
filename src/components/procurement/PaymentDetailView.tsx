@@ -12,6 +12,7 @@ import {
   listPaymentItems,
   listPaymentTags,
   listTags,
+  listVendors,
 } from "@/lib/procurement-db";
 import { checkPermission, requirePermission } from "@/lib/session";
 import { PAY_SOURCES, type PaySource } from "@/lib/procurement-types";
@@ -35,13 +36,14 @@ export default async function PaymentDetailView({
   const payment = await getPayment(id);
   if (!payment) notFound();
 
-  const [items, files, approved, accounts, tags, tagSuggestions, context, canEdit, canDelete] = await Promise.all([
+  const [items, files, approved, accounts, tags, tagSuggestions, vendors, context, canEdit, canDelete] = await Promise.all([
     listPaymentItems(id),
     listPaymentFiles(id),
     listDocs({ doc_status: "active" }),
     listAccounts(),
     listPaymentTags(id),
     listTags(),
+    listVendors(),
     getSelectableContext(user.id),
     checkPermission(spec.menuCode, "edit"),
     checkPermission(spec.menuCode, "delete"),
@@ -65,7 +67,10 @@ export default async function PaymentDetailView({
     }
   }
 
-  const docs = [...docsById.values()].filter((d) => remainingToPay(d) > 0 || pickedAmountOf.has(d.id));
+  // ใบที่อนุมัติแล้วทั้งหมด (รวมที่จ่ายครบ) เพื่อให้หน้าต่างเลือกแสดงป้าย "จ่ายเงินแล้ว" ได้
+  const docs = [...docsById.values()].filter(
+    (d) => d.approve_status === "approved" || pickedAmountOf.has(d.id),
+  );
   const picked: PickedItem[] = items
     .map((i) => ({ docId: i.repair_id ?? i.purchase_id ?? "", amount: i.amount }))
     .filter((p) => p.docId);
@@ -109,6 +114,7 @@ export default async function PaymentDetailView({
           accounts={accounts}
           tags={tags}
           tagSuggestions={tagSuggestions}
+          vendors={vendors}
           companies={context.companies}
           branches={context.branches}
           picked={picked}

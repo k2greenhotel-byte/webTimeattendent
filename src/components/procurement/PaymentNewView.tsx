@@ -1,7 +1,7 @@
 import PaymentForm from "@/components/procurement/PaymentForm";
 import { getSelectableContext } from "@/lib/core-db";
 import { remainingToPay } from "@/lib/procurement";
-import { listAccounts, listDocs, listTags } from "@/lib/procurement-db";
+import { listAccounts, listDocs, listTags, listVendors } from "@/lib/procurement-db";
 import { requirePermission } from "@/lib/session";
 import { PAY_SOURCES, type PaySource } from "@/lib/procurement-types";
 import { createPaymentForm } from "@/app/procurement/payments/actions";
@@ -22,17 +22,20 @@ export default async function PaymentNewView({
   const spec = PAY_SOURCES[source];
   const user = await requirePermission(spec.menuCode, "write");
 
-  const [all, accounts, tagSuggestions, context] = await Promise.all([
+  const [all, accounts, tagSuggestions, vendors, context] = await Promise.all([
     listDocs({ doc_status: "active" }),
     listAccounts(),
     listTags(),
+    listVendors(),
     getSelectableContext(user.id),
   ]);
 
-  // แสดงเฉพาะใบที่ยังมียอดค้างจ่าย — ใบที่อนุมัติแล้วขึ้นก่อนเพื่อให้หยิบง่าย
+  // ส่งใบที่อนุมัติแล้วไปทั้งหมด รวมใบที่จ่ายครบแล้วด้วย
+  // เพราะหน้าต่างเลือกเลขที่อนุมัติต้องแสดงใบที่จ่ายแล้วพร้อมป้าย "จ่ายเงินแล้ว" (กดเลือกไม่ได้)
+  // ผู้ใช้จะได้รู้ว่าใบนั้นมีอยู่และถูกจ่ายไปแล้ว ไม่ใช่หายไปเฉย ๆ
   const docs = all
-    .filter((d) => remainingToPay(d) > 0 || (d.approve_status !== "approved" && d.actual_amount === 0))
-    .sort((a, b) => Number(b.approve_status === "approved") - Number(a.approve_status === "approved"));
+    .filter((d) => d.approve_status === "approved")
+    .sort((a, b) => Number(remainingToPay(b) > 0) - Number(remainingToPay(a) > 0));
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
@@ -52,6 +55,7 @@ export default async function PaymentNewView({
         docs={docs}
         accounts={accounts}
         tagSuggestions={tagSuggestions}
+        vendors={vendors}
         companies={context.companies}
         branches={context.branches}
         defaultCompanyId={user.company_id ?? null}

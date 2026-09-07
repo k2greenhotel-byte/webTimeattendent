@@ -144,6 +144,7 @@ function readPaymentFields(form: FormData) {
     payee_address: str(form, "payee_address") || null,
     payee_phone: normalizePhone(str(form, "payee_phone")) || str(form, "payee_phone") || null,
     expense_detail: str(form, "expense_detail") || null,
+    vendor_id: str(form, "vendor_id") || null,
     account_id: str(form, "account_id") || null,
     payer_name: str(form, "payer_name") || null,
     approver_name: str(form, "approver_name") || null,

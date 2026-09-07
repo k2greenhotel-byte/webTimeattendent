@@ -66,9 +66,14 @@ export default async function AccountSetupPage({
             {all.length} บัญชี · ใช้เป็นประเภทค่าใช้จ่ายในใบเบิกเงินสดย่อย
           </p>
         </div>
-        <Link href="/procurement" className="btn-secondary">
-          ← กลับหน้าแรก
-        </Link>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <Link href="/procurement/setup/vendors" className="btn-secondary flex-1 sm:flex-none">
+            เจ้าหนี้/ผู้ขาย
+          </Link>
+          <Link href="/procurement" className="btn-secondary flex-1 sm:flex-none">
+            ← กลับหน้าแรก
+          </Link>
+        </div>
       </div>
 
       {params.msg && (
