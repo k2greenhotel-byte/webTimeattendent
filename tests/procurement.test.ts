@@ -11,7 +11,10 @@ import {
   payableProblem,
   remainingToPay,
   sumItems,
+  summarizeByTag,
   summarizeDocs,
+  parseTags,
+  tagSlug,
   validateAccount,
   validateApproval,
   validatePayment,
@@ -566,5 +569,81 @@ describe("ข้อความสรุป", () => {
 
   it("ป้ายกำกับเอกสารในกล่องตัวเลือก", () => {
     expect(docOptionLabel(doc())).toBe("RQ-2569-0001 · แอร์ห้องประชุมไม่เย็น · 3,500 บาท");
+  });
+});
+
+// ---------- ป้ายกำกับ ----------
+
+describe("parseTags / tagSlug", () => {
+  it("รับได้ทั้งแบบมี # และแบบคั่นด้วยจุลภาค", () => {
+    expect(parseTags("#ค่าน้ำมัน #ซ่อมด่วน").map((t) => t.name)).toEqual(["ค่าน้ำมัน", "ซ่อมด่วน"]);
+    expect(parseTags("ค่าน้ำมัน, ซ่อมด่วน").map((t) => t.name)).toEqual(["ค่าน้ำมัน", "ซ่อมด่วน"]);
+  });
+
+  it("ป้ายที่ต่างกันแค่ตัวพิมพ์หรือช่องว่าง ถือเป็นป้ายเดียวกัน", () => {
+    expect(tagSlug("#Fuel")).toBe(tagSlug("fuel"));
+    expect(tagSlug("  ค่า  น้ำมัน  ")).toBe("ค่า น้ำมัน");
+    expect(parseTags("Fuel, fuel, FUEL")).toHaveLength(1);
+  });
+
+  it("ตัดป้ายว่างและป้ายที่ยาวเกินไปทิ้ง", () => {
+    expect(parseTags("#, ,  ")).toEqual([]);
+    expect(parseTags("ก".repeat(61))).toEqual([]);
+  });
+
+  it("จำกัดจำนวนป้ายตามที่กำหนด", () => {
+    expect(parseTags("a,b,c,d,e,f", 3)).toHaveLength(3);
+  });
+
+  it("เก็บชื่อที่แสดงตามที่ผู้ใช้พิมพ์ แต่ตัด # กับช่องว่างส่วนเกินออก", () => {
+    expect(parseTags("  #ค่าน้ำมัน รถส่งของ  ")[0]).toEqual({
+      name: "ค่าน้ำมัน รถส่งของ",
+      slug: "ค่าน้ำมัน รถส่งของ",
+    });
+  });
+});
+
+describe("summarizeByTag", () => {
+  const row = (payment_id: string, amount: number, tag_id: string | null, tag_name: string | null) =>
+    ({ payment_id, paid_amount: amount, tag_id, tag_name }) as const;
+
+  it("รวมยอดและนับใบแยกตามป้าย", () => {
+    const s = summarizeByTag([
+      row("p1", 100, "t1", "ค่าน้ำมัน"),
+      row("p2", 200, "t1", "ค่าน้ำมัน"),
+      row("p3", 50, "t2", "ซ่อมด่วน"),
+    ]);
+    expect(s.lines[0]).toEqual({ tag_id: "t1", tag_name: "ค่าน้ำมัน", count: 2, amount: 300 });
+    expect(s.lines[1]).toEqual({ tag_id: "t2", tag_name: "ซ่อมด่วน", count: 1, amount: 50 });
+    expect(s.totalPayments).toBe(3);
+    expect(s.totalAmount).toBe(350);
+  });
+
+  it("ใบที่ติดหลายป้าย นับเข้าทุกป้าย แต่ยอดรวมทั้งหมดนับใบละครั้ง", () => {
+    const s = summarizeByTag([
+      row("p1", 100, "t1", "ค่าน้ำมัน"),
+      row("p1", 100, "t2", "ซ่อมด่วน"),
+    ]);
+    expect(s.lines.find((l) => l.tag_id === "t1")?.amount).toBe(100);
+    expect(s.lines.find((l) => l.tag_id === "t2")?.amount).toBe(100);
+    expect(s.totalPayments).toBe(1);
+    expect(s.totalAmount).toBe(100);
+  });
+
+  it("ใบที่ยังไม่ติดป้ายรวมเป็นกลุ่มเดียว และอยู่ท้ายสุดเสมอ", () => {
+    const s = summarizeByTag([
+      row("p1", 10, null, null),
+      row("p2", 999, "t1", "ค่าน้ำมัน"),
+      row("p3", 20, null, null),
+    ]);
+    const last = s.lines[s.lines.length - 1];
+    expect(last.tag_id).toBeNull();
+    expect(last.tag_name).toContain("ยังไม่ติดป้าย");
+    expect(last.count).toBe(2);
+    expect(last.amount).toBe(30);
+  });
+
+  it("ไม่มีข้อมูลก็ต้องได้ผลลัพธ์ว่างที่ใช้งานได้", () => {
+    expect(summarizeByTag([])).toEqual({ lines: [], totalPayments: 0, totalAmount: 0 });
   });
 });

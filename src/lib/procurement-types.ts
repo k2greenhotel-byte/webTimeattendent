@@ -584,3 +584,52 @@ export const PAY_SOURCE_CLASS: Record<PaySource, string> = {
   petty: "bg-amber-100 text-amber-700",
   central: "bg-indigo-100 text-indigo-700",
 };
+
+// ---------- ป้ายกำกับ (แฮชแท็ก) ของใบเบิกจ่าย ----------
+
+/** ป้ายหนึ่งอันในทะเบียน — slug คือชื่อที่ normalize แล้ว ใช้กันป้ายซ้ำ */
+export type PrTag = {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+};
+
+export type PrTagRow = PrTag & {
+  /** จำนวนใบเบิกที่ติดป้ายนี้ */
+  use_count: number;
+};
+
+/** หนึ่งแถวของคู่ (ใบเบิก × ป้าย) จาก view v_pr_payment_tag_rows — ใบที่ยังไม่ติดป้ายมี tag_id เป็น null */
+export type PaymentTagRow = {
+  payment_id: string;
+  doc_no: string;
+  pay_date: string;
+  paid_amount: number;
+  pay_source: PaySource;
+  company_id: string | null;
+  company_name: string | null;
+  branch_id: string | null;
+  branch_name: string | null;
+  payee_name: string | null;
+  expense_detail: string | null;
+  account_id: string | null;
+  account_code: string | null;
+  account_name: string | null;
+  tag_id: string | null;
+  tag_name: string | null;
+  tag_slug: string | null;
+};
+
+/** เงื่อนไขของรายงานสรุปตามป้ายกำกับ */
+export type TagReportQuery = {
+  from?: string | null;
+  to?: string | null;
+  company_id?: string | null;
+  branch_id?: string | null;
+  pay_source?: PaySource | null;
+  tag_id?: string | null;
+};
+
+/** จำนวนป้ายสูงสุดต่อหนึ่งใบเบิก — กันติดรัวจนรายงานอ่านไม่รู้เรื่อง */
+export const MAX_TAGS_PER_PAYMENT = 10;

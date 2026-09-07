@@ -1,7 +1,7 @@
 import PaymentForm from "@/components/procurement/PaymentForm";
 import { getSelectableContext } from "@/lib/core-db";
 import { remainingToPay } from "@/lib/procurement";
-import { listAccounts, listDocs } from "@/lib/procurement-db";
+import { listAccounts, listDocs, listTags } from "@/lib/procurement-db";
 import { requirePermission } from "@/lib/session";
 import { PAY_SOURCES, type PaySource } from "@/lib/procurement-types";
 import { createPaymentForm } from "@/app/procurement/payments/actions";
@@ -22,9 +22,10 @@ export default async function PaymentNewView({
   const spec = PAY_SOURCES[source];
   const user = await requirePermission(spec.menuCode, "write");
 
-  const [all, accounts, context] = await Promise.all([
+  const [all, accounts, tagSuggestions, context] = await Promise.all([
     listDocs({ doc_status: "active" }),
     listAccounts(),
+    listTags(),
     getSelectableContext(user.id),
   ]);
 
@@ -50,6 +51,7 @@ export default async function PaymentNewView({
         source={source}
         docs={docs}
         accounts={accounts}
+        tagSuggestions={tagSuggestions}
         companies={context.companies}
         branches={context.branches}
         defaultCompanyId={user.company_id ?? null}

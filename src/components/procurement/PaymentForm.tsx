@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import FileUploader, { type UploadedFile } from "@/components/marketing/FileUploader";
 import PhotoUploader from "@/components/marketing/PhotoUploader";
 import SignaturePad from "@/components/procurement/SignaturePad";
+import TagInput from "@/components/procurement/TagInput";
 import type { Company } from "@/lib/core-types";
 import { formatThaiDate } from "@/lib/datetime";
 import { formatBaht, remainingToPay, round2 } from "@/lib/procurement";
@@ -17,6 +18,8 @@ import {
   PR_FILE_ACCEPT,
   type PaymentRow,
   type PrAccountRow,
+  type PrTag,
+  type PrTagRow,
   type PaySource,
   type PrDocRow,
 } from "@/lib/procurement-types";
@@ -40,6 +43,8 @@ export default function PaymentForm({
   payment,
   docs,
   accounts,
+  tags = [],
+  tagSuggestions = [],
   companies,
   branches,
   picked = [],
@@ -57,6 +62,10 @@ export default function PaymentForm({
   /** ใบขอซ่อม/ใบขอซื้อที่ยังเบิกได้ (รวมใบที่ใบนี้เลือกไว้อยู่แล้วตอนแก้ไข) */
   docs: PrDocRow[];
   accounts: PrAccountRow[];
+  /** ป้ายที่ติดอยู่บนใบนี้ (ตอนแก้ไข) */
+  tags?: PrTag[];
+  /** ป้ายที่เคยใช้ในระบบ ไว้ให้กดเลือก */
+  tagSuggestions?: PrTagRow[];
   companies: Company[];
   branches: Branch[];
   picked?: PickedItem[];
@@ -392,6 +401,15 @@ export default function PaymentForm({
           </select>
         </div>
       </div>
+
+      {/* ---------- ป้ายกำกับ ---------- */}
+      <TagInput
+        name="tags"
+        label="ป้ายกำกับ (แฮชแท็ก)"
+        hint="ใช้จัดกลุ่มค่าใช้จ่ายเพื่อดูรายงานสรุปตามป้าย · ติดได้หลายป้ายต่อหนึ่งใบ"
+        initialTags={tags}
+        suggestions={tagSuggestions}
+      />
 
       {/* ---------- รูปและเอกสารแนบ ---------- */}
       <div className="grid gap-4 lg:grid-cols-2">

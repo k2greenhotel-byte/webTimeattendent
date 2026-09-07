@@ -9,7 +9,11 @@ import type {
   PaymentInput,
   PaymentItem,
   PaymentQuery,
+  PaymentTagRow,
   PaySource,
+  PrTag,
+  PrTagRow,
+  TagReportQuery,
   PaymentRow,
   PrAccountInput,
   PrAccountRow,
@@ -1071,4 +1075,135 @@ export async function countAccountUsage(id: string): Promise<{ payments: number;
 export async function deleteAccount(id: string): Promise<void> {
   const { error } = await getSupabase().from("pr_accounts").delete().eq("id", id);
   if (error) throw new Error(`ลบบัญชีไม่สำเร็จ: ${error.message}`);
+}
+
+// ---------- ป้ายกำกับ (แฮชแท็ก) ของใบเบิกจ่าย ----------
+
+export async function listTags(options: { includeInactive?: boolean } = {}): Promise<PrTagRow[]> {
+  let q = getSupabase().from("v_pr_tags").select("id, name, slug, is_active, use_count");
+  if (!options.includeInactive) q = q.eq("is_active", true);
+
+  const { data, error } = await q.order("name");
+  if (error) throw new Error(`อ่านรายการป้ายกำกับไม่สำเร็จ: ${error.message}`);
+
+  return (data ?? []).map((r) => ({
+    ...(r as unknown as PrTagRow),
+    use_count: num((r as Record<string, unknown>).use_count),
+  }));
+}
+
+/**
+ * หาป้ายจาก slug ถ้ายังไม่มีก็สร้างให้ แล้วคืน id ทั้งชุด
+ * (ผู้ใช้พิมพ์ป้ายใหม่ได้เลยเหมือนแฮชแท็ก ไม่ต้องไปตั้งค่าก่อน)
+ */
+async function ensureTags(tags: { name: string; slug: string }[]): Promise<string[]> {
+  if (tags.length === 0) return [];
+
+  const supabase = getSupabase();
+  const slugs = tags.map((t) => t.slug);
+
+  const { data: existing, error } = await supabase
+    .from("pr_tags")
+    .select("id, slug")
+    .in("slug", slugs);
+  if (error) throw new Error(`อ่านป้ายกำกับไม่สำเร็จ: ${error.message}`);
+
+  const idOf = new Map((existing ?? []).map((r) => [(r as { slug: string }).slug, (r as { id: string }).id]));
+  const missing = tags.filter((t) => !idOf.has(t.slug));
+
+  if (missing.length > 0) {
+    // upsert กัน race ตอนสองคนพิมพ์ป้ายเดียวกันพร้อมกัน
+    const { data: created, error: insertError } = await supabase
+      .from("pr_tags")
+      .upsert(missing.map((t) => ({ name: t.name, slug: t.slug })), { onConflict: "slug" })
+      .select("id, slug");
+    if (insertError) throw new Error(`สร้างป้ายกำกับไม่สำเร็จ: ${insertError.message}`);
+
+    for (const r of created ?? []) {
+      idOf.set((r as { slug: string }).slug, (r as { id: string }).id);
+    }
+  }
+
+  return tags.map((t) => idOf.get(t.slug)).filter((id): id is string => Boolean(id));
+}
+
+/** ป้ายที่ติดอยู่บนใบเบิกใบนี้ */
+export async function listPaymentTags(paymentId: string): Promise<PrTag[]> {
+  const { data, error } = await getSupabase()
+    .from("pr_payment_tags")
+    .select("tag_id, pr_tags (id, name, slug, is_active)")
+    .eq("payment_id", paymentId);
+  if (error) throw new Error(`อ่านป้ายของใบเบิกไม่สำเร็จ: ${error.message}`);
+
+  // supabase คืนตารางที่ join มาเป็น array เสมอ แม้ความสัมพันธ์จะเป็นหนึ่งต่อหนึ่ง
+  return (data ?? [])
+    .flatMap((r) => {
+      const joined = (r as unknown as { pr_tags: PrTag | PrTag[] | null }).pr_tags;
+      if (!joined) return [];
+      return Array.isArray(joined) ? joined : [joined];
+    })
+    .filter((t): t is PrTag => Boolean(t?.id));
+}
+
+/** ตั้งชุดป้ายของใบเบิกใหม่ทั้งชุด (สร้างป้ายที่ยังไม่มีให้อัตโนมัติ) */
+export async function setPaymentTags(
+  paymentId: string,
+  tags: { name: string; slug: string }[],
+): Promise<void> {
+  const supabase = getSupabase();
+  const tagIds = await ensureTags(tags);
+
+  const { error: delError } = await supabase
+    .from("pr_payment_tags")
+    .delete()
+    .eq("payment_id", paymentId);
+  if (delError) throw new Error(`อัปเดตป้ายกำกับไม่สำเร็จ: ${delError.message}`);
+
+  if (tagIds.length === 0) return;
+
+  const { error } = await supabase
+    .from("pr_payment_tags")
+    .insert(tagIds.map((tag_id) => ({ payment_id: paymentId, tag_id })));
+  if (error) throw new Error(`บันทึกป้ายกำกับไม่สำเร็จ: ${error.message}`);
+}
+
+/** แถวคู่ (ใบเบิก × ป้าย) สำหรับรายงานสรุป — ใบที่ยังไม่ติดป้ายมาด้วย tag_id เป็น null */
+export async function listPaymentTagRows(query: TagReportQuery = {}): Promise<PaymentTagRow[]> {
+  let q = getSupabase().from("v_pr_payment_tag_rows").select("*");
+
+  if (query.pay_source) q = q.eq("pay_source", query.pay_source);
+  if (query.company_id) q = q.eq("company_id", query.company_id);
+  if (query.branch_id) q = q.eq("branch_id", query.branch_id);
+  if (query.tag_id) q = q.eq("tag_id", query.tag_id);
+  if (query.from) q = q.gte("pay_date", query.from);
+  if (query.to) q = q.lte("pay_date", query.to);
+
+  const { data, error } = await q.order("pay_date", { ascending: false }).limit(5000);
+  if (error) throw new Error(`อ่านข้อมูลรายงานป้ายกำกับไม่สำเร็จ: ${error.message}`);
+
+  return (data ?? []).map((r) => ({
+    ...(r as unknown as PaymentTagRow),
+    paid_amount: num((r as Record<string, unknown>).paid_amount),
+  }));
+}
+
+/** เปลี่ยนชื่อป้าย (slug คำนวณใหม่จากชื่อ) หรือปิดใช้งาน */
+export async function updateTag(
+  id: string,
+  patch: { name?: string; slug?: string; is_active?: boolean },
+): Promise<void> {
+  const { error } = await getSupabase().from("pr_tags").update(patch).eq("id", id);
+  if (error) {
+    throw new Error(
+      error.code === "23505"
+        ? `มีป้าย "${patch.name}" อยู่แล้ว กรุณาใช้ชื่ออื่น`
+        : `บันทึกป้ายกำกับไม่สำเร็จ: ${error.message}`,
+    );
+  }
+}
+
+/** ลบป้าย — ใบเบิกที่เคยติดป้ายนี้จะหลุดป้ายไป (cascade) แต่ตัวใบยังอยู่ครบ */
+export async function deleteTag(id: string): Promise<void> {
+  const { error } = await getSupabase().from("pr_tags").delete().eq("id", id);
+  if (error) throw new Error(`ลบป้ายกำกับไม่สำเร็จ: ${error.message}`);
 }

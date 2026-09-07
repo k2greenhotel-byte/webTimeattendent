@@ -5,18 +5,20 @@ import { redirect } from "next/navigation";
 import { getSelectableContext } from "@/lib/core-db";
 import { logAudit } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
-import { parseAmount, validatePayment } from "@/lib/procurement";
+import { parseAmount, parseTags, validatePayment } from "@/lib/procurement";
 import {
   createPayment,
   deletePayment,
   getDocsByIds,
   getPayment,
   listPaymentItems,
+  setPaymentTags,
   updatePayment,
 } from "@/lib/procurement-db";
 import {
   MAX_PAYMENT_DOCS,
   MAX_PHOTOS,
+  MAX_TAGS_PER_PAYMENT,
   PAY_SOURCES,
   type PaySourceSpec,
   type PaymentFile,
@@ -203,6 +205,7 @@ export async function createPaymentForm(form: FormData): Promise<void> {
     const created = await createPayment(row, items, readFiles(form));
     id = created.id;
     docNo = created.doc_no;
+    await setPaymentTags(id, parseTags(str(form, "tags"), MAX_TAGS_PER_PAYMENT));
     await logAudit({
       actor_id: user.id,
       action: "create_payment",
@@ -252,6 +255,7 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
       items,
       readFiles(form),
     );
+    await setPaymentTags(id, parseTags(str(form, "tags"), MAX_TAGS_PER_PAYMENT));
     await logAudit({
       actor_id: user.id,
       action: "update_payment",

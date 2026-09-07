@@ -16,6 +16,7 @@ import {
   type JobStatus,
   type PayStatus,
   type PaymentItem,
+  type PaymentTagRow,
   type PrDocRow,
   type PrAccountInput,
   type PrAccountRow,
@@ -494,4 +495,115 @@ export function overdueText(row: PrDocRow, today: string): string {
 /** ป้ายความเร่งด่วนพร้อมกำหนดเสร็จ ใช้ในการ์ดบนมือถือ */
 export function urgencyText(row: PrDocRow): string {
   return `${URGENCY_LABEL[row.urgency]} (ครบกำหนด ${deadlineOf(row)})`;
+}
+
+// ---------- ป้ายกำกับ (แฮชแท็ก) ----------
+
+/**
+ * แปลงข้อความที่ผู้ใช้พิมพ์ให้เป็น slug ที่ใช้เทียบป้ายซ้ำ
+ * ตัด # นำหน้า ตัดช่องว่างหัวท้าย ยุบช่องว่างซ้อน และเทียบแบบไม่สนตัวพิมพ์
+ * (ป้ายไทยไม่มีตัวพิมพ์เล็กใหญ่ แต่ป้ายอังกฤษมี — "Fuel" กับ "fuel" ต้องเป็นป้ายเดียวกัน)
+ */
+export function tagSlug(raw: string): string {
+  return raw
+    .replace(/^#+/, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/** ชื่อป้ายที่จะเก็บไว้แสดง — เก็บตัวพิมพ์ตามที่ผู้ใช้พิมพ์ครั้งแรก แต่ตัดขยะออก */
+export function tagDisplayName(raw: string): string {
+  return raw.replace(/^#+/, "").trim().replace(/\s+/g, " ");
+}
+
+/**
+ * แยกข้อความช่องป้ายกำกับออกเป็นรายป้าย
+ * รับได้ทั้ง "#ค่าน้ำมัน #ซ่อมด่วน" และ "ค่าน้ำมัน, ซ่อมด่วน"
+ * คืนเฉพาะป้ายที่ไม่ซ้ำกัน (เทียบด้วย slug) และไม่เกินจำนวนที่กำหนด
+ */
+export function parseTags(raw: string, max = 10): { name: string; slug: string }[] {
+  const out: { name: string; slug: string }[] = [];
+  const seen = new Set<string>();
+
+  for (const piece of raw.split(/[,\n]|\s(?=#)/)) {
+    const name = tagDisplayName(piece);
+    const slug = tagSlug(piece);
+    if (!name || !slug || seen.has(slug)) continue;
+    if (name.length > 60) continue;
+
+    seen.add(slug);
+    out.push({ name, slug });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export type TagSummaryLine = {
+  tag_id: string | null;
+  tag_name: string;
+  count: number;
+  amount: number;
+};
+
+export type TagSummary = {
+  lines: TagSummaryLine[];
+  /** จำนวนใบเบิกทั้งหมด (นับใบไม่ซ้ำ ไม่ใช่นับคู่ใบ-ป้าย) */
+  totalPayments: number;
+  /** ยอดเงินรวมทั้งหมด (นับใบละครั้ง แม้ใบนั้นจะติดหลายป้าย) */
+  totalAmount: number;
+};
+
+const UNTAGGED = "— ยังไม่ติดป้าย —";
+
+/**
+ * สรุปยอดตามป้ายกำกับ จากแถวคู่ (ใบเบิก × ป้าย)
+ *
+ * ระวัง: ใบเบิกที่ติดหลายป้ายจะปรากฏหลายแถว ยอดของใบนั้นจึงถูกนับซ้ำในแต่ละป้าย
+ * ซึ่งถูกต้องสำหรับ "ยอดต่อป้าย" แต่ผลรวมของทุกป้ายจะมากกว่ายอดจริง
+ * ตัวเลขรวมทั้งหมด (totalAmount) จึงนับจากใบที่ไม่ซ้ำแทน
+ */
+export function summarizeByTag(
+  rows: Pick<PaymentTagRow, "payment_id" | "paid_amount" | "tag_id" | "tag_name">[],
+): TagSummary {
+  const byTag = new Map<string, TagSummaryLine & { payments: Set<string> }>();
+  const allPayments = new Map<string, number>();
+
+  for (const row of rows) {
+    allPayments.set(row.payment_id, row.paid_amount);
+
+    const key = row.tag_id ?? "";
+    let line = byTag.get(key);
+    if (!line) {
+      line = {
+        tag_id: row.tag_id,
+        tag_name: row.tag_name ?? UNTAGGED,
+        count: 0,
+        amount: 0,
+        payments: new Set<string>(),
+      };
+      byTag.set(key, line);
+    }
+
+    // ใบเดิมที่มาซ้ำในป้ายเดียวกันไม่ควรนับสองรอบ
+    if (line.payments.has(row.payment_id)) continue;
+    line.payments.add(row.payment_id);
+    line.count += 1;
+    line.amount = round2(line.amount + row.paid_amount);
+  }
+
+  const lines = [...byTag.values()]
+    .map(({ payments: _payments, ...line }) => line)
+    // ยอดมากขึ้นก่อน ป้ายที่ยังไม่ติดไว้ท้ายสุดเสมอ
+    .sort((a, b) => {
+      if (!a.tag_id) return 1;
+      if (!b.tag_id) return -1;
+      return b.amount - a.amount;
+    });
+
+  return {
+    lines,
+    totalPayments: allPayments.size,
+    totalAmount: round2([...allPayments.values()].reduce((sum, v) => sum + v, 0)),
+  };
 }

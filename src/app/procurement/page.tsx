@@ -10,6 +10,7 @@ const CARDS: { href: string; menuCode: string; title: string; desc: string }[] =
   { href: "/procurement/approvals", menuCode: "PR_APPROVE", title: "3.1 อนุมัติซ่อม/จัดซื้อ", desc: "พิจารณาอนุมัติ ไม่อนุมัติ หรือให้หาราคาใหม่มาเทียบ" },
   { href: "/procurement/payments", menuCode: "PR_PAYMENT", title: "4.1 จ่ายเงินจากเงินสดย่อย", desc: "จ่ายทั้งรายการที่อนุมัติแล้วและรายการทั่วไป พร้อมลายเซ็นและพิมพ์เอกสาร" },
   { href: "/procurement/central-payments", menuCode: "PR_CENTRAL_PAY", title: "4.2 จ่ายเงินจากส่วนกลาง", desc: "ฟังก์ชันเหมือนเงินสดย่อยทุกอย่าง แต่ใช้ชุดเลขที่เอกสารแยกต่างหาก" },
+  { href: "/procurement/tag-report", menuCode: "PR_TAG_REPORT", title: "4.3 รายงานสรุปตามป้ายกำกับ", desc: "สรุปยอดจ่ายแยกตามป้ายที่ติดไว้ ทั้งเงินสดย่อยและส่วนกลาง" },
   { href: "/procurement/search", menuCode: "PR_SEARCH", title: "5. สอบถามงานซ่อม/งานขอซื้อ", desc: "ค้นหาและติดตามเอกสารทุกสถานะ" },
   { href: "/procurement/dashboard", menuCode: "PR_DASH", title: "6. Dashboard ติดตามงานซ่อม", desc: "ภาพรวมสถานะงาน ยอดเงิน และงานเกินกำหนด" },
   { href: "/procurement/setup/accounts", menuCode: "PR_ACCOUNT", title: "ตั้งค่า ผังบัญชี", desc: "กำหนดหมวดบัญชี บัญชีคุม และบัญชีย่อย ใช้เป็นประเภทค่าใช้จ่าย" },

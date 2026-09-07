@@ -10,6 +10,8 @@ import {
   listDocs,
   listPaymentFiles,
   listPaymentItems,
+  listPaymentTags,
+  listTags,
 } from "@/lib/procurement-db";
 import { checkPermission, requirePermission } from "@/lib/session";
 import { PAY_SOURCES, type PaySource } from "@/lib/procurement-types";
@@ -33,11 +35,13 @@ export default async function PaymentDetailView({
   const payment = await getPayment(id);
   if (!payment) notFound();
 
-  const [items, files, approved, accounts, context, canEdit, canDelete] = await Promise.all([
+  const [items, files, approved, accounts, tags, tagSuggestions, context, canEdit, canDelete] = await Promise.all([
     listPaymentItems(id),
     listPaymentFiles(id),
     listDocs({ doc_status: "active" }),
     listAccounts(),
+    listPaymentTags(id),
+    listTags(),
     getSelectableContext(user.id),
     checkPermission(spec.menuCode, "edit"),
     checkPermission(spec.menuCode, "delete"),
@@ -103,6 +107,8 @@ export default async function PaymentDetailView({
           payment={payment}
           docs={docs}
           accounts={accounts}
+          tags={tags}
+          tagSuggestions={tagSuggestions}
           companies={context.companies}
           branches={context.branches}
           picked={picked}
