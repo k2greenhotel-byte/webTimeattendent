@@ -344,10 +344,12 @@ export async function getUserScope(userId: string): Promise<UserScope> {
     supabase.from("user_branches").select("branch_id").eq("user_id", userId),
   ]);
 
+  // ระดับผู้ดูแลระบบเข้าได้ทุกบริษัท/ทุกสาขาเสมอ (ฐานข้อมูลบังคับธงไว้แล้วใน 0044 — กันซ้ำที่นี่เผื่อข้อมูลเก่า)
+  const isAdmin = data?.access_level === "admin";
   return {
     access_level: (data?.access_level ?? "user") as AccessLevel,
-    all_companies: data?.all_companies ?? false,
-    all_branches: data?.all_branches ?? false,
+    all_companies: isAdmin || (data?.all_companies ?? false),
+    all_branches: isAdmin || (data?.all_branches ?? false),
     company_ids: (companies.data ?? []).map((r: { company_id: string }) => r.company_id),
     branch_ids: (branches.data ?? []).map((r: { branch_id: string }) => r.branch_id),
   };
