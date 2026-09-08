@@ -172,7 +172,12 @@ export default function AttWallBoard() {
               tone={t.overdue > 0 ? "rose" : "slate"}
             />
             <Big label="มาสาย" value={int(t.late)} sub={`รวม ${int(t.lateMinutes)} นาที`} tone={t.late > 0 ? "rose" : "slate"} />
-            <Big label="ลงเวลาไม่ครบ" value={int(t.incomplete)} sub={`ขาดงาน ${int(t.absent)} คน`} tone={t.incomplete > 0 ? "amber" : "slate"} />
+            <Big
+              label="ลงเวลาไม่ครบ"
+              value={int(t.incomplete)}
+              sub={`ขาดงาน ${int(t.absent)} คน · ลา ${int(t.onLeave)} คน`}
+              tone={t.incomplete > 0 ? "amber" : "slate"}
+            />
             <Big
               label="อยู่ข้างนอกตอนนี้"
               value={int(t.onErrand + t.onField)}
@@ -188,9 +193,10 @@ export default function AttWallBoard() {
           </div>
 
           {/* ---------- รายชื่อที่ต้องตาม ---------- */}
-          <div className="mb-4 grid gap-3 lg:grid-cols-4">
+          <div className="mb-4 grid gap-3 lg:grid-cols-5">
             <PeoplePanel title="ยังไม่มา" people={data.notArrived} tone="rose" empty="มากันครบแล้ว 🎉" />
             <PeoplePanel title="มาสาย" people={data.late} tone="amber" empty="วันนี้ไม่มีใครสาย" />
+            <PeoplePanel title="ลาวันนี้" people={data.onLeave} tone="violet" empty="วันนี้ไม่มีคนลา" />
             <PeoplePanel title="ออกไปทำธุระ" people={data.onErrand} tone="violet" empty="ไม่มีใครออกไปข้างนอก" />
             <PeoplePanel title="งานนอกสถานที่" people={data.onField} tone="sky" empty="ไม่มีงานนอกสถานที่ที่กำลังทำ" />
           </div>

@@ -16,9 +16,17 @@ import {
   getSettingsResolver,
   listEmployees,
   getErrandSummaryMap,
+  getLeaveDayMap,
   listFieldTasks,
 } from "./db";
-import type { AttendanceDayRow, DaySummary, Employee, FieldTask, WorkSettings } from "./types";
+import type {
+  AttendanceDayRow,
+  DaySummary,
+  Employee,
+  FieldTask,
+  LeaveDay,
+  WorkSettings,
+} from "./types";
 
 export type ReportRow = {
   employeeId: string;
@@ -85,7 +93,11 @@ function toReportRow(
   isDayOff: boolean,
   siteName: string | null = null,
   errand: { minutes: number; rounds: number } = { minutes: 0, rounds: 0 },
-  meta: { payrollCode: string | null; companyName: string | null } = { payrollCode: null, companyName: null },
+  meta: {
+    payrollCode: string | null;
+    companyName: string | null;
+    leave?: LeaveDay | null;
+  } = { payrollCode: null, companyName: null },
 ): ReportRow {
   return {
     employeeId: row.employee_id,
@@ -104,6 +116,7 @@ function toReportRow(
       settings,
       holidays.has(row.work_date),
       isDayOff,
+      meta.leave ?? null,
     ),
     photos: {
       check_in: row.check_in_photo,
@@ -136,9 +149,10 @@ export async function buildEmployeeReport(params: {
     getDayRows({ from: params.from, to: params.to, employeeId: params.employeeId }),
     getSettingsResolver(params.companyId, { from: params.from, to: params.to }),
   ]);
-  const [errands, companyOf] = await Promise.all([
+  const [errands, companyOf, leaves] = await Promise.all([
     getErrandSummaryMap({ from: params.from, to: params.to, employeeIds: [params.employeeId] }),
     companyNameByBranch(),
+    getLeaveDayMap({ from: params.from, to: params.to, employeeIds: [params.employeeId] }),
   ]);
 
   const byDate = new Map(dayRows.map((r) => [r.work_date, r]));
@@ -162,6 +176,7 @@ export async function buildEmployeeReport(params: {
           {
             payrollCode: employee.payroll_code,
             companyName: employee.branch_id ? (companyOf.get(employee.branch_id) ?? null) : null,
+            leave: leaves.get(`${employee.id}|${date}`) ?? null,
           },
         ),
       );
@@ -191,9 +206,10 @@ export async function buildDailyReport(
     getDayRows({ from: date, to: date, branchId, companyId }),
     getSettingsResolver(companyId, { from: date, to: date }),
   ]);
-  const [errands, companyOf] = await Promise.all([
+  const [errands, companyOf, leaves] = await Promise.all([
     getErrandSummaryMap({ from: date, to: date, employeeIds: employees.map((e) => e.id) }),
     companyNameByBranch(),
+    getLeaveDayMap({ from: date, to: date, employeeIds: employees.map((e) => e.id) }),
   ]);
 
   const byEmployee = new Map(dayRows.map((r) => [r.employee_id, r]));
@@ -215,6 +231,7 @@ export async function buildDailyReport(
       {
         payrollCode: emp.payroll_code,
         companyName: emp.branch_id ? (companyOf.get(emp.branch_id) ?? null) : null,
+        leave: leaves.get(`${emp.id}|${date}`) ?? null,
       },
     );
   });
@@ -262,9 +279,10 @@ export async function buildMonthlyReport(
   }
 
   // ชั่วโมงงานพิเศษของทั้งเดือน คำนวณครั้งเดียวจากภารกิจทั้งหมดในช่วง
-  const [errands, companyOf] = await Promise.all([
+  const [errands, companyOf, leaves] = await Promise.all([
     getErrandSummaryMap({ from, to, employeeIds: employees.map((e) => e.id) }),
     companyNameByBranch(),
+    getLeaveDayMap({ from, to, employeeIds: employees.map((e) => e.id) }),
   ]);
   const fieldRows = await buildFieldRows({ from, to, companyId, branchId });
   const fieldByEmp = new Map<string, number>();
@@ -286,6 +304,7 @@ export async function buildMonthlyReport(
           daySettings,
           holidays.has(date),
           resolver.isDayOff(emp.id, date),
+          leaves.get(`${emp.id}|${date}`) ?? null,
         ),
       );
     }

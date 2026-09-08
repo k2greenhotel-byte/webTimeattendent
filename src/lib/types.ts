@@ -277,8 +277,11 @@ export type AttendanceDayRow = {
   branch_name: string | null;
 };
 
-/** off = วันหยุดตามตารางเวร (ไม่ใช่วันหยุดนักขัตฤกษ์) ไม่นับเป็นขาดงาน */
-export type DayStatus = "complete" | "incomplete" | "absent" | "holiday" | "off";
+/**
+ * off   = วันหยุดตามตารางเวร (ไม่ใช่วันหยุดนักขัตฤกษ์) ไม่นับเป็นขาดงาน
+ * leave = ลาและได้รับอนุมัติแล้ว (จากโปรแกรม HR) ไม่นับเป็นขาดงาน
+ */
+export type DayStatus = "complete" | "incomplete" | "absent" | "holiday" | "off" | "leave";
 
 export const DAY_STATUS_LABEL: Record<DayStatus, string> = {
   complete: "ครบ",
@@ -286,6 +289,17 @@ export const DAY_STATUS_LABEL: Record<DayStatus, string> = {
   absent: "ขาดงาน",
   holiday: "วันหยุด",
   off: "หยุดเวร",
+  leave: "ลา",
+};
+
+/** วันลาที่อนุมัติแล้ว 1 วันของพนักงาน 1 คน (อ่านจากใบลาในโปรแกรม HR) */
+export type LeaveDay = {
+  /** ชื่อประเภทการลา เช่น ลาป่วย ลากิจ */
+  typeName: string;
+  /** true = แจ้งลาช้ากว่ากติกา ให้ยังนับเป็นขาดงานตามนโยบาย */
+  countsAsAbsent: boolean;
+  /** เวลาที่แจ้งว่าจะเข้ามา (กรณีลาแล้วเข้ามาสาย) */
+  arrivalTime: string | null;
 };
 
 /** ตารางเวร: พนักงานคนหนึ่ง วันหนึ่ง ใช้กะไหน (หรือหยุดเวร) */
@@ -324,6 +338,8 @@ export type DaySummary = {
   otMinutes: number;
   missing: PunchType[];
   flags: string[];
+  /** ชื่อประเภทการลาที่อนุมัติแล้วของวันนั้น (null = ไม่ได้ลา) */
+  leaveTypeName: string | null;
 };
 
 export type SessionUser = {

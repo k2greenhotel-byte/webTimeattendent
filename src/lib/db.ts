@@ -1,6 +1,6 @@
 import "server-only";
 import { expectedTimes, groupErrandRounds, resolveSettings } from "./attendance";
-import { addDays, workDateOf } from "./datetime";
+import { addDays, dateRange, workDateOf } from "./datetime";
 import { getSupabase, PHOTO_BUCKET } from "./supabase-server";
 import type {
   AttendanceDayRow,
@@ -17,6 +17,7 @@ import type {
   FieldTaskMember,
   FieldTaskType,
   Holiday,
+  LeaveDay,
   OrgSettings,
   Position,
   PunchType,
@@ -1537,6 +1538,68 @@ export async function insertErrandPunch(row: {
 }
 
 /** เวลาธุระรวมต่อคนต่อวันในช่วงที่เลือก — ใช้ในรายงาน (อ่านจาก view ครั้งเดียว ไม่ยิงทีละวัน) */
+// ---------- วันลาที่อนุมัติแล้ว (อ่านจากโปรแกรม HR) ----------
+
+/** สถานะใบลาที่ถือว่าอนุมัติแล้ว — ฝ่ายบุคคลอนุมัติ หรือผู้บริหารอนุมัติหลังส่งต่อ */
+const APPROVED_LEAVE_STATUSES = ["approved_hr", "approved_exec"] as const;
+
+/**
+ * แผนที่วันลาที่อนุมัติแล้ว key = `${employeeId}|${workDate}`
+ * ใช้ให้รายงานและจอ War Room แสดง "ลา" แทน "ขาดงาน"
+ * อ่านอย่างเดียวจากตารางของโปรแกรม HR — ระบบลงเวลาไม่แก้ใบลา
+ */
+export async function getLeaveDayMap(params: {
+  from: string;
+  to: string;
+  employeeIds?: string[] | null;
+  companyId?: string | null;
+}): Promise<Map<string, LeaveDay>> {
+  let query = getSupabase()
+    .from("hr_leave_requests")
+    .select(
+      "employee_id, start_date, end_date, counts_as_absent, arrival_time, hr_leave_types(name)",
+    )
+    .in("status", APPROVED_LEAVE_STATUSES as unknown as string[])
+    // ใบลาที่ช่วงวันคาบเกี่ยวกับช่วงที่ขอมา
+    .lte("start_date", params.to)
+    .gte("end_date", params.from);
+  if (params.companyId) query = query.eq("company_id", params.companyId);
+  if (params.employeeIds) {
+    if (params.employeeIds.length === 0) return new Map();
+    query = query.in("employee_id", params.employeeIds);
+  }
+
+  const { data, error } = await query;
+  const map = new Map<string, LeaveDay>();
+  // โปรแกรม HR อาจยังไม่ได้ติดตั้งตารางในบางสภาพแวดล้อม — ถือว่าไม่มีใบลา ไม่ทำให้รายงานพัง
+  if (error) {
+    console.warn(`อ่านใบลาไม่สำเร็จ (ข้ามการนับวันลา): ${error.message}`);
+    return map;
+  }
+
+  for (const r of (data ?? []) as {
+    employee_id: string | null;
+    start_date: string;
+    end_date: string | null;
+    counts_as_absent: boolean | null;
+    arrival_time: string | null;
+    hr_leave_types: { name: string } | { name: string }[] | null;
+  }[]) {
+    if (!r.employee_id) continue;
+    const typeRel = Array.isArray(r.hr_leave_types) ? r.hr_leave_types[0] : r.hr_leave_types;
+    const day: LeaveDay = {
+      typeName: typeRel?.name ?? "ลา",
+      countsAsAbsent: r.counts_as_absent === true,
+      arrivalTime: r.arrival_time ? String(r.arrival_time).slice(0, 5) : null,
+    };
+    const first = r.start_date > params.from ? r.start_date : params.from;
+    const lastRaw = r.end_date ?? r.start_date;
+    const last = lastRaw < params.to ? lastRaw : params.to;
+    for (const d of dateRange(first, last)) map.set(`${r.employee_id}|${d}`, day);
+  }
+  return map;
+}
+
 export async function getErrandSummaryMap(params: {
   from: string;
   to: string;

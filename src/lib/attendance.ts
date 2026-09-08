@@ -11,6 +11,7 @@ import {
   type ErrandRound,
   type Branch,
   type DayStatus,
+  type LeaveDay,
   type DaySummary,
   type OrgSettings,
   type PunchType,
@@ -109,12 +110,15 @@ function minutesFrom(from: Date, to: string | null | undefined): number | null {
  * - ชม.ทำงาน   = (ออกงาน − เข้างาน) − เวลาส่วนตัวที่หัก
  * - OT         = ออกงาน − เลิกงานมาตรฐาน − นาทีผ่อนผัน OT
  * - isDayOff   = วันหยุดตามตารางเวร → สถานะ "off" ไม่นับขาดงาน (ถ้ามาทำงานก็ยังคำนวณให้)
+ * - leave      = ใบลาที่อนุมัติแล้ว → สถานะ "ลา" แทน "ขาดงาน" เว้นแต่ใบลานั้นถูกตีเป็นขาดงาน
+ *                (แจ้งช้ากว่ากติกา) ซึ่งยังนับขาดงานตามเดิม
  */
 export function computeDaySummary(
   punches: DayPunches,
   settings: WorkSettings,
   isHoliday = false,
   isDayOff = false,
+  leave: LeaveDay | null = null,
 ): DaySummary {
   const checkInAt = punches.check_in_at ?? null;
   const breakOutAt = punches.break_out_at ?? null;
@@ -172,16 +176,21 @@ export function computeDaySummary(
 
   // ---- สถานะ ----
   let status: DayStatus;
+  const onLeave = leave !== null && !leave.countsAsAbsent;
   if (punchCount === 4) {
     status = "complete";
   } else if (punchCount === 0) {
+    // ลำดับ: หยุดเวร > วันหยุด > ลา > ขาดงาน — การลาแทนที่เฉพาะวันที่จะถูกนับเป็นขาดงาน
     if (isDayOff) status = "off";
-    else status = isHoliday || !isWorkday(punches.work_date, settings) ? "holiday" : "absent";
+    else if (isHoliday || !isWorkday(punches.work_date, settings)) status = "holiday";
+    else if (onLeave) status = "leave";
+    else status = "absent";
   } else {
     status = "incomplete";
   }
 
   const flags: string[] = [];
+  if (leave) flags.push(leave.countsAsAbsent ? `${leave.typeName} (นับขาดงาน)` : leave.typeName);
   if (lateMinutes > 0) flags.push("มาสาย");
   if (earlyLeaveMinutes > 0) flags.push("กลับก่อนเวลา");
   if (errandRounds > 0) flags.push(`ออกทำธุระ ${errandRounds} ครั้ง`);
@@ -208,6 +217,7 @@ export function computeDaySummary(
     otMinutes,
     missing,
     flags,
+    leaveTypeName: leave?.typeName ?? null,
   };
 }
 
@@ -219,6 +229,8 @@ export type PeriodTotals = {
   absentDays: number;
   /** วันหยุดตามตารางเวร */
   offDays: number;
+  /** วันลาที่อนุมัติแล้ว (ไม่รวมใบลาที่ถูกตีเป็นขาดงาน) */
+  leaveDays: number;
   lateDays: number;
   lateMinutes: number;
   earlyLeaveDays: number;
@@ -242,6 +254,7 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
     incompleteDays: 0,
     absentDays: 0,
     offDays: 0,
+    leaveDays: 0,
     lateDays: 0,
     lateMinutes: 0,
     earlyLeaveDays: 0,
@@ -259,6 +272,7 @@ export function summarizePeriod(summaries: DaySummary[]): PeriodTotals {
     if (s.status === "incomplete") totals.incompleteDays += 1;
     if (s.status === "absent") totals.absentDays += 1;
     if (s.status === "off") totals.offDays += 1;
+    if (s.status === "leave") totals.leaveDays += 1;
     if (s.status === "complete" || s.status === "incomplete") totals.workedDays += 1;
     if (s.lateMinutes > 0) {
       totals.lateDays += 1;

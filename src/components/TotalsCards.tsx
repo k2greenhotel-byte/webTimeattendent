@@ -3,13 +3,14 @@ import type { PeriodTotals } from "@/lib/attendance";
 import { formatDuration } from "@/lib/datetime";
 
 /** ธงที่คลิกกรองได้จากกล่องสรุป (ใช้ในรายงานรายวัน) */
-export type SummaryFlag = "incomplete" | "absent" | "late" | "overbreak";
+export type SummaryFlag = "incomplete" | "absent" | "late" | "overbreak" | "leave";
 
 export const SUMMARY_FLAG_LABEL: Record<SummaryFlag, string> = {
   incomplete: "ลงเวลาไม่ครบ",
   absent: "ขาดงาน",
   late: "มาสาย",
   overbreak: "พักเกินเวลา",
+  leave: "ลา",
 };
 
 export default function TotalsCards({
@@ -32,6 +33,16 @@ export default function TotalsCards({
       flag: "incomplete",
     },
     { label: "ขาดงาน", value: `${totals.absentDays} วัน`, tone: "text-rose-600", flag: "absent" },
+    ...(totals.leaveDays > 0
+      ? [
+          {
+            label: "ลา",
+            value: `${totals.leaveDays} วัน`,
+            tone: "text-violet-700",
+            flag: "leave" as const,
+          },
+        ]
+      : []),
     ...(totals.offDays > 0
       ? [{ label: "หยุดเวร", value: `${totals.offDays} วัน`, tone: "text-sky-600" }]
       : []),

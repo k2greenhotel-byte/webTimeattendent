@@ -52,6 +52,7 @@ export default async function DailyReportPage({
     absent: (r) => r.summary.status === "absent",
     late: (r) => r.summary.lateMinutes > 0,
     overbreak: (r) => r.summary.overBreakMinutes > 0,
+    leave: (r) => r.summary.status === "leave",
   };
   const flag = (params.flag && params.flag in FLAGS ? params.flag : null) as SummaryFlag | null;
   const rows = flag ? scopedRows.filter(FLAGS[flag]) : scopedRows;

@@ -10,6 +10,7 @@ const STATUS_CLASS: Record<DayStatus, string> = {
   absent: "bg-rose-50 text-rose-700",
   holiday: "bg-slate-100 text-slate-500",
   off: "bg-sky-50 text-sky-600",
+  leave: "bg-violet-50 text-violet-700",
 };
 
 export default function ReportTable({

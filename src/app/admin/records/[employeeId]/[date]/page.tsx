@@ -7,6 +7,7 @@ import { formatDuration, formatThaiDate, formatTime } from "@/lib/datetime";
 import {
   getBranchById,
   getEmployeeById,
+  getLeaveDayMap,
   getPunchesOfDay,
   getResolvedSettings,
   listErrandRounds,
@@ -63,6 +64,11 @@ export default async function EditRecordPage({
       errand_rounds: errandRounds.length,
     },
     settings,
+    false,
+    false,
+    (await getLeaveDayMap({ from: date, to: date, employeeIds: [employee.id] })).get(
+      `${employee.id}|${date}`,
+    ) ?? null,
   );
 
   return (

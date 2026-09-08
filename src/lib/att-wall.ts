@@ -6,6 +6,7 @@ import {
   getDayRows,
   getErrandSummaryMap,
   getHolidaySet,
+  getLeaveDayMap,
   getSettingsResolver,
   listBranches,
   listEmployees,
@@ -61,6 +62,8 @@ export type AttendanceWall = {
     absent: number;
     off: number;
     holiday: number;
+    /** ลาและได้รับอนุมัติแล้ว — ไม่ต้องตามตัว */
+    onLeave: number;
     complete: number;
     onErrand: number;
     onField: number;
@@ -71,6 +74,7 @@ export type AttendanceWall = {
   dims: Record<WallDim, { title: string; items: WallDimItem[] }>;
   notArrived: WallPerson[];
   late: WallPerson[];
+  onLeave: WallPerson[];
   onErrand: WallPerson[];
   onField: WallPerson[];
   trend: { date: string; arrived: number; late: number; absent: number; incomplete: number }[];
@@ -148,6 +152,7 @@ export async function buildAttendanceWall(params: {
     absent: 0,
     off: 0,
     holiday: 0,
+    onLeave: 0,
     complete: 0,
     onErrand: 0,
     onField: 0,
@@ -158,6 +163,7 @@ export async function buildAttendanceWall(params: {
 
   const notArrived: WallPerson[] = [];
   const late: WallPerson[] = [];
+  const onLeave: WallPerson[] = [];
 
   for (const r of rows) {
     const s = r.summary;
@@ -167,6 +173,10 @@ export async function buildAttendanceWall(params: {
     if (s.status === "absent") totals.absent += 1;
     if (s.status === "off") totals.off += 1;
     if (s.status === "holiday") totals.holiday += 1;
+    if (s.status === "leave") {
+      totals.onLeave += 1;
+      onLeave.push(person(r, s.leaveTypeName ?? "ลา"));
+    }
     totals.lateMinutes += s.lateMinutes;
     totals.overBreakMinutes += s.overBreakMinutes;
     totals.workMinutes += s.workMinutes;
@@ -177,8 +187,8 @@ export async function buildAttendanceWall(params: {
       late.push(person(r, `เข้า ${s.checkInAt ? hhmm(s.checkInAt) : "-"} · สาย ${s.lateMinutes} นาที`));
     }
 
-    // ยังไม่มา = ไม่มีเวลาเข้างาน และวันนั้นไม่ใช่วันหยุด/หยุดเวร
-    if (!s.checkInAt && s.status !== "holiday" && s.status !== "off") {
+    // ยังไม่มา = ไม่มีเวลาเข้างาน และวันนั้นไม่ใช่วันหยุด/หยุดเวร/วันลาที่อนุมัติแล้ว
+    if (!s.checkInAt && s.status !== "holiday" && s.status !== "off" && s.status !== "leave") {
       totals.notArrived += 1;
       // เลยเวลาเข้างานมาตรฐานแล้วหรือยัง (ดูเฉพาะวันนี้ ย้อนหลังถือว่าเลยหมดแล้ว)
       const overdue = !isToday || hhmm(now.toISOString()) > r.workStart;
@@ -293,6 +303,7 @@ export async function buildAttendanceWall(params: {
     dims,
     notArrived: notArrived.sort((a, b) => a.empCode.localeCompare(b.empCode)),
     late: late.sort((a, b) => b.detail.localeCompare(a.detail)),
+    onLeave: onLeave.sort((a, b) => a.empCode.localeCompare(b.empCode)),
     onErrand,
     onField,
     trend,
@@ -320,6 +331,7 @@ async function buildTrend(params: {
     getSettingsResolver(params.companyId, { from, to }),
     getErrandSummaryMap({ from, to }),
   ]);
+  const leaves = await getLeaveDayMap({ from, to, companyId: params.companyId });
 
   const scoped = employees.filter(
     (e) => !params.branchScope || (e.branch_id !== null && params.branchScope.has(e.branch_id)),
@@ -344,6 +356,7 @@ async function buildTrend(params: {
         resolver.resolve(row?.branch_id ?? emp.branch_id, emp.id, date),
         holidays.has(date),
         resolver.isDayOff(emp.id, date),
+        leaves.get(`${emp.id}|${date}`) ?? null,
       );
       if (summary.checkInAt) day.arrived += 1;
       if (summary.lateMinutes > 0) day.late += 1;

@@ -514,6 +514,55 @@ describe("กะข้ามเที่ยงคืน (กะดึกโร�
   });
 });
 
+describe("วันลาที่อนุมัติแล้ว", () => {
+  const sick = { typeName: "ลาป่วย", countsAsAbsent: false, arrivalTime: null };
+
+  it("ไม่มาทำงานเพราะลา = สถานะ ลา ไม่ใช่ขาดงาน", () => {
+    const s = computeDaySummary({ work_date: D }, settings, false, false, sick);
+    expect(s.status).toBe("leave");
+    expect(s.leaveTypeName).toBe("ลาป่วย");
+    const totals = summarizePeriod([s]);
+    expect(totals.absentDays).toBe(0);
+    expect(totals.leaveDays).toBe(1);
+  });
+
+  it("ใบลาที่ถูกตีเป็นขาดงาน (แจ้งช้า) ยังนับขาดงานตามเดิม", () => {
+    const s = computeDaySummary({ work_date: D }, settings, false, false, {
+      ...sick,
+      countsAsAbsent: true,
+    });
+    expect(s.status).toBe("absent");
+    expect(summarizePeriod([s]).leaveDays).toBe(0);
+    expect(s.flags).toContain("ลาป่วย (นับขาดงาน)");
+  });
+
+  it("ลาแต่ยังมาลงเวลา = คำนวณตามจริง ไม่ถูกกลบเป็นวันลา", () => {
+    const s = computeDaySummary(
+      {
+        work_date: D,
+        check_in_at: at(D, "08:00"),
+        break_out_at: at(D, "12:00"),
+        break_in_at: at(D, "13:00"),
+        check_out_at: at(D, "17:00"),
+      },
+      settings,
+      false,
+      false,
+      sick,
+    );
+    expect(s.status).toBe("complete");
+    expect(s.workMinutes).toBe(480);
+    expect(s.flags).toContain("ลาป่วย");
+  });
+
+  it("หยุดเวรและวันหยุดมาก่อนวันลา (ไม่นับซ้ำ)", () => {
+    expect(computeDaySummary({ work_date: D }, settings, false, true, sick).status).toBe("off");
+    expect(computeDaySummary({ work_date: D }, settings, true, false, sick).status).toBe(
+      "holiday",
+    );
+  });
+});
+
 describe("วันหยุดตามตารางเวร", () => {
   it("ไม่มีการลงเวลาในวันหยุดเวร = off ไม่นับขาดงาน", () => {
     const s = computeDaySummary({ work_date: D }, settings, false, true);
