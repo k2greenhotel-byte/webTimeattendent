@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * ข้อมูลจอ War Room ของกิจกรรมการตลาด — หน้าจอเรียกซ้ำเองทุก 2 นาที
- * /api/marketing/wall?from=YYYY-MM-DD&to=YYYY-MM-DD&company=<id>
+ * /api/marketing/wall?from=YYYY-MM-DD&to=YYYY-MM-DD&company=<id>&type=<id>
  */
 export async function GET(req: Request) {
   if (!(await checkPermission("MKT_WALL", "read"))) {
@@ -20,6 +20,7 @@ export async function GET(req: Request) {
       from: sp.get("from"),
       to: sp.get("to"),
       companyId: sp.get("company"),
+      activityTypeId: sp.get("type"),
     });
     return NextResponse.json(wall, { headers: { "cache-control": "no-store" } });
   } catch (err) {

@@ -33,9 +33,10 @@ export default async function CombinedWallPage() {
     label: s.label,
   }));
 
-  const [branches, companies] = await Promise.all([
+  const [branches, companies, activityTypes] = await Promise.all([
     listBranches(),
     listMaster("company", { includeInactive: true }),
+    listMaster("activityType", { includeInactive: true }),
   ]);
 
   return (
@@ -43,6 +44,7 @@ export default async function CombinedWallPage() {
       screens={screens}
       branches={branches.map((b) => ({ id: b.id, name: b.name }))}
       companies={companies.map((c) => ({ id: c.id, name: c.name }))}
+      activityTypes={activityTypes.map((t) => ({ id: t.id, name: t.name }))}
     />
   );
 }

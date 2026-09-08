@@ -8,17 +8,25 @@ import { MKT_SLOW_DAYS, type MarketingWall } from "@/lib/wall-types";
 /** ยอดเงินไม่ได้เปลี่ยนทุกนาทีเหมือนการลงเวลา จึงรีเฟรชห่างกว่า */
 const REFRESH_MS = 2 * 60_000;
 
-type Company = { id: string; name: string };
+type Option = { id: string; name: string };
 
-export default function MarketingWallBoard({ companies }: { companies: Company[] }) {
+export default function MarketingWallBoard({
+  companies,
+  activityTypes = [],
+}: {
+  companies: Option[];
+  activityTypes?: Option[];
+}) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [company, setCompany] = useState("");
+  const [type, setType] = useState("");
 
   const qs = new URLSearchParams();
   if (from) qs.set("from", from);
   if (to) qs.set("to", to);
   if (company) qs.set("company", company);
+  if (type) qs.set("type", type);
 
   const inputCls =
     "rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100";
@@ -57,12 +65,28 @@ export default function MarketingWallBoard({ companies }: { companies: Company[]
               </option>
             ))}
           </select>
-          {(from || to || company) && (
+          {activityTypes.length > 0 && (
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className={inputCls}
+              aria-label="ประเภทกิจกรรม"
+            >
+              <option value="">ทุกประเภทกิจกรรม</option>
+              {activityTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {(from || to || company || type) && (
             <button
               onClick={() => {
                 setFrom("");
                 setTo("");
                 setCompany("");
+                setType("");
               }}
               className="rounded-md bg-sky-500 px-3 py-1 text-sm text-white"
             >

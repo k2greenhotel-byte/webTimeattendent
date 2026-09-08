@@ -42,20 +42,28 @@ function monthLabel(key: string): string {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; company_id?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    company_id?: string;
+    activity_type_id?: string;
+  }>;
 }) {
   const params = await searchParams;
 
-  const filter = {
+  // Memo ไม่มีประเภทกิจกรรม จึงกรองด้วยช่วงวันที่และบริษัทเท่านั้น
+  const memoFilter = {
     from: params.from || undefined,
     to: params.to || undefined,
     company_id: params.company_id || undefined,
   };
+  const filter = { ...memoFilter, activity_type_id: params.activity_type_id || undefined };
 
-  const [rows, memos, companies] = await Promise.all([
+  const [rows, memos, companies, activityTypes] = await Promise.all([
     listActivities(filter),
-    listMemos(filter),
+    listMemos(memoFilter),
     listMaster("company", { includeInactive: true }),
+    listMaster("activityType", { includeInactive: true }),
   ]);
 
   const totals = summarize(rows);
@@ -109,6 +117,21 @@ export default async function DashboardPage({
             {companies.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-56">
+          <label className="label">ประเภทกิจกรรม</label>
+          <select
+            name="activity_type_id"
+            defaultValue={params.activity_type_id ?? ""}
+            className="input"
+          >
+            <option value="">ทั้งหมด</option>
+            {activityTypes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
               </option>
             ))}
           </select>

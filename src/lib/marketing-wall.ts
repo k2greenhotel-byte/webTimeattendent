@@ -42,15 +42,18 @@ export async function buildMarketingWall(input: {
   from?: string | null;
   to?: string | null;
   companyId?: string | null;
+  activityTypeId?: string | null;
 }): Promise<MarketingWall> {
   const today = workDateOf();
-  const query = {
+  // Memo ไม่มีประเภทกิจกรรม จึงกรองด้วยช่วงวันที่และบริษัทเท่านั้น
+  const memoQuery = {
     from: input.from || undefined,
     to: input.to || undefined,
     company_id: input.companyId || undefined,
   };
+  const query = { ...memoQuery, activity_type_id: input.activityTypeId || undefined };
 
-  const [rows, memos] = await Promise.all([listActivities(query), listMemos(query)]);
+  const [rows, memos] = await Promise.all([listActivities(query), listMemos(memoQuery)]);
   const live = rows.filter((r) => r.active_status === "active");
 
   const counts = countByFlowStatus(rows);

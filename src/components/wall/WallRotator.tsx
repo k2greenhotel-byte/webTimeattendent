@@ -31,10 +31,12 @@ export default function WallRotator({
   screens,
   branches,
   companies,
+  activityTypes,
 }: {
   screens: WallScreen[];
   branches: Option[];
   companies: Option[];
+  activityTypes: Option[];
 }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -115,7 +117,9 @@ export default function WallRotator({
       </div>
 
       {current.key === "att" && <AttWallBoard />}
-      {current.key === "marketing" && <MarketingWallBoard companies={companies} />}
+      {current.key === "marketing" && (
+        <MarketingWallBoard companies={companies} activityTypes={activityTypes} />
+      )}
       {current.key === "booking" && <BookingWallBoard branches={branches} />}
       {current.key === "lead" && <LeadWallBoard branches={branches} />}
       {current.key === "procurement" && <ProcurementWallBoard branches={branches} />}
