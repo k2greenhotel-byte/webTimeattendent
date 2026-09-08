@@ -1724,3 +1724,23 @@ export function findPayrollDuplicates(employees: Employee[]): PayrollDuplicate[]
       employees: list.map((e) => ({ id: e.id, emp_code: e.emp_code, full_name: e.full_name })),
     }));
 }
+
+/** การลงเวลาธุระของทั้งวัน (ทุกคน) — ใช้ในจอ War Room ดูว่าใครกำลังออกไปข้างนอก */
+export async function listErrandPunchesOfDate(
+  workDate: string,
+  employeeIds?: string[] | null,
+): Promise<ErrandPunch[]> {
+  let query = getSupabase()
+    .from("errand_punches")
+    .select(ERRAND_COLUMNS)
+    .eq("work_date", workDate)
+    .order("round");
+  if (employeeIds) {
+    if (employeeIds.length === 0) return [];
+    query = query.in("employee_id", employeeIds);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`อ่านการลงเวลาธุระไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as ErrandPunch[];
+}

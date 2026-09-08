@@ -32,6 +32,8 @@ export type ReportRow = {
   branchName: string | null;
   /** ชื่อกะที่ใช้คำนวณวันนั้น (จากตารางเวร หรือกะสาขา) */
   scheduleName: string;
+  /** เวลาเข้างานมาตรฐานของวันนั้น (HH:mm) */
+  workStart: string;
   /** สถานที่นอกสาขาที่ไปประจำวันนั้น (ตามตารางเวร) */
   siteName: string | null;
   summary: DaySummary;
@@ -95,6 +97,7 @@ function toReportRow(
     branchId: row.branch_id,
     branchName: row.branch_name,
     scheduleName: isDayOff ? "หยุดเวร" : settings.schedule_name,
+    workStart: settings.work_start,
     siteName,
     summary: computeDaySummary(
       { ...row, errand_minutes: errand.minutes, errand_rounds: errand.rounds },

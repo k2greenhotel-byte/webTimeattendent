@@ -8,6 +8,7 @@ const SHARED_ADMIN_PATHS = [
   "/admin/reports",
   "/admin/records",
   "/admin/payroll-map",
+  "/admin/wall",
 ];
 
 export async function middleware(req: NextRequest) {

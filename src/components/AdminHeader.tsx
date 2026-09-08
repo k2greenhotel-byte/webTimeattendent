@@ -3,6 +3,7 @@ import { adminLogoutAction } from "@/app/admin/actions";
 
 const NAV = [
   { href: "/admin", label: "ภาพรวม" },
+  { href: "/admin/wall", label: "จอ War Room" },
   { href: "/admin/reports/employee", label: "รายบุคคล" },
   { href: "/admin/reports/daily", label: "รายวัน" },
   { href: "/admin/reports/monthly", label: "รายเดือน" },

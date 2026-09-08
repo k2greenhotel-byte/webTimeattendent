@@ -3,6 +3,7 @@ import { readableMenuCodes } from "@/lib/att-access";
 import type { SessionUser } from "@/lib/types";
 
 const MENU_LINKS: { code: string; href: string; label: string }[] = [
+  { code: "ATT_WALL", href: "/admin/wall", label: "จอ War Room" },
   { code: "ATT_REP_DAILY", href: "/admin/reports/daily", label: "รายงานรายวัน" },
   { code: "ATT_REP_MONTHLY", href: "/admin/reports/monthly", label: "รายงานรายเดือน" },
   { code: "ATT_REP_EMP", href: "/admin/reports/employee", label: "รายงานรายบุคคล" },
