@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-/** จอ War Room ระบบ Lead — ข้อมูลจาก /api/leads/wall รีเฟรชเองทุก 2 นาที */
+/** จอ War Room ระบบ Lead — ข้อมูลจาก /api/lead/wall รีเฟรชเองทุก 2 นาที */
 export default async function LeadWallPage() {
   await requirePermission("LEAD_WALL", "read");
   const branches = await listBranches();

@@ -5,7 +5,7 @@ import { checkPermission } from "@/lib/session";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** ข้อมูลจอ War Room ของระบบ Lead — /api/leads/wall?branch=<id> */
+/** ข้อมูลจอ War Room ของระบบ Lead — /api/lead/wall?branch=<id> */
 export async function GET(req: Request) {
   if (!(await checkPermission("LEAD_WALL", "read"))) {
     return NextResponse.json({ ok: false, error: "ไม่มีสิทธิ์ดูจอนี้" }, { status: 403 });

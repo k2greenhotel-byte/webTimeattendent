@@ -18,7 +18,7 @@ export default function LeadWallBoard({ branches }: { branches: Branch[] }) {
   return (
     <WallShell<LeadWall>
       title="คิวติดตามลูกค้า"
-      endpoint={`/api/leads/wall?${qs}`}
+      endpoint={`/api/lead/wall?${qs}`}
       refreshMs={REFRESH_MS}
       controls={
         <select
