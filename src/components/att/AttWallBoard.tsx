@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AttendanceWall, WallDim, WallDimItem, WallPerson } from "@/lib/att-wall";
+import type { AttendanceWall, WallDim, WallDimItem, WallMode, WallPerson } from "@/lib/att-wall";
 
 /**
  * จอ War Room ระบบลงเวลา — เปิดค้างบนจอมอนิเตอร์ พื้นมืด ตัวเลขใหญ่ รีเฟรชเองทุก 60 วินาที
@@ -10,10 +10,20 @@ import type { AttendanceWall, WallDim, WallDimItem, WallPerson } from "@/lib/att
  *   1. กล่องสรุปของวัน (มาแล้ว / ยังไม่มา / สาย / ขาด / อยู่ข้างนอก)
  *   2. รายชื่อที่ต้องตามตอนนี้ — ยังไม่มา · มาสาย · ออกไปทำธุระ · งานนอกสถานที่
  *   3. เทียบรายสาขา/บริษัท/แผนก/ตำแหน่ง แล้วค่อยเป็นแนวโน้ม 14 วัน
+ *
+ * สลับเป็น **โหมดเดือน** ได้ ตัวเลขจะเปลี่ยนเป็นยอดสะสมทั้งเดือน (คน-วัน)
+ * และรายชื่อเปลี่ยนจาก "ใครอยู่ไหนตอนนี้" เป็น "ใครต้องดูแลเดือนนี้"
  */
 
 const REFRESH_MS = 60_000;
+/** โหมดเดือนคำนวณทั้งเดือน ข้อมูลไม่ได้เปลี่ยนทุกนาที จึงรีเฟรชห่างกว่า */
+const REFRESH_MS_MONTH = 5 * 60_000;
 const TH_M = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+const MODES: { key: WallMode; label: string }[] = [
+  { key: "day", label: "รายวัน" },
+  { key: "month", label: "รายเดือน" },
+];
 
 const DIMS: { key: WallDim; label: string }[] = [
   { key: "branch", label: "สาขา" },
@@ -29,9 +39,12 @@ const thDate = (iso: string) => {
   return `${d} ${TH_M[m - 1]} ${y + 543}`;
 };
 const todayTH = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+const thisMonthTH = () => todayTH().slice(0, 7);
 
 export default function AttWallBoard() {
+  const [mode, setMode] = useState<WallMode>("day");
   const [date, setDate] = useState(todayTH());
+  const [month, setMonth] = useState(thisMonthTH());
   const [company, setCompany] = useState("");
   const [branch, setBranch] = useState("");
   const [dim, setDim] = useState<WallDim>("branch");
@@ -43,6 +56,10 @@ export default function AttWallBoard() {
   const load = useCallback(async () => {
     try {
       const qs = new URLSearchParams({ date });
+      if (mode === "month") {
+        qs.set("mode", "month");
+        qs.set("month", month);
+      }
       if (company) qs.set("company", company);
       if (branch) qs.set("branch", branch);
       const res = await fetch(`/api/att/wall?${qs}`, { cache: "no-store" });
@@ -53,16 +70,16 @@ export default function AttWallBoard() {
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [date, company, branch]);
+  }, [mode, date, month, company, branch]);
 
   useEffect(() => {
     load();
     if (timer.current) window.clearInterval(timer.current);
-    timer.current = window.setInterval(load, REFRESH_MS);
+    timer.current = window.setInterval(load, mode === "month" ? REFRESH_MS_MONTH : REFRESH_MS);
     return () => {
       if (timer.current) window.clearInterval(timer.current);
     };
-  }, [load]);
+  }, [load, mode]);
 
   useEffect(() => {
     setNow(new Date());
@@ -76,7 +93,11 @@ export default function AttWallBoard() {
   }
 
   const t = data?.totals;
-  const arrivedPct = t && t.staff > 0 ? Math.round((t.arrived / t.staff) * 100) : 0;
+  const isMonth = data?.mode === "month";
+  // โหมดวันเทียบกับจำนวนพนักงาน · โหมดเดือนเทียบ "วันที่มาจริง" กับ "วันที่ต้องมา"
+  const expected = t ? t.arrived + t.absent : 0;
+  const base = isMonth ? expected : (t?.staff ?? 0);
+  const arrivedPct = t && base > 0 ? Math.round((t.arrived / base) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-slate-950 p-4 text-slate-100 lg:p-6">
@@ -84,20 +105,58 @@ export default function AttWallBoard() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h1 className="mr-2 text-2xl font-bold tracking-tight">การลงเวลาสด</h1>
 
-        <input
-          type="date"
-          value={date}
-          max={todayTH()}
-          onChange={(e) => e.target.value && setDate(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
-        />
-        {date !== todayTH() && (
-          <button
-            onClick={() => setDate(todayTH())}
-            className="rounded-md bg-sky-500 px-3 py-1 text-sm text-white"
-          >
-            กลับมาวันนี้
-          </button>
+        <div className="flex overflow-hidden rounded-lg border border-slate-700">
+          {MODES.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setMode(m.key)}
+              className={`px-3 py-1 text-sm ${
+                mode === m.key
+                  ? "bg-sky-500 text-white"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {mode === "day" ? (
+          <>
+            <input
+              type="date"
+              value={date}
+              max={todayTH()}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
+            />
+            {date !== todayTH() && (
+              <button
+                onClick={() => setDate(todayTH())}
+                className="rounded-md bg-sky-500 px-3 py-1 text-sm text-white"
+              >
+                กลับมาวันนี้
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <input
+              type="month"
+              value={month}
+              max={thisMonthTH()}
+              onChange={(e) => e.target.value && setMonth(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
+            />
+            {month !== thisMonthTH() && (
+              <button
+                onClick={() => setMonth(thisMonthTH())}
+                className="rounded-md bg-sky-500 px-3 py-1 text-sm text-white"
+              >
+                กลับมาเดือนนี้
+              </button>
+            )}
+          </>
         )}
 
         <select
@@ -152,8 +211,8 @@ export default function AttWallBoard() {
         <>
           <div className="mb-3 flex flex-wrap items-baseline gap-x-4 text-slate-300">
             <span className="text-xl font-semibold text-white">
-              {thDate(data.date)}
-              {data.isToday ? " (วันนี้)" : ""}
+              {data.period.label}
+              {!isMonth && data.isToday ? " (วันนี้)" : ""}
             </span>
             <span className="text-sm text-slate-400">
               พนักงาน {int(t.staff)} คน
@@ -164,47 +223,105 @@ export default function AttWallBoard() {
 
           {/* ---------- กล่องสรุป ---------- */}
           <div className="mb-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <Big label="มาแล้ว" value={int(t.arrived)} sub={`${arrivedPct}% ของพนักงาน`} tone="sky" />
-            <Big
-              label="ยังไม่มา"
-              value={int(t.notArrived)}
-              sub={t.overdue > 0 ? `เลยเวลาเข้างานแล้ว ${int(t.overdue)} คน` : "ยังไม่ถึงเวลาเข้างาน"}
-              tone={t.overdue > 0 ? "rose" : "slate"}
-            />
-            <Big label="มาสาย" value={int(t.late)} sub={`รวม ${int(t.lateMinutes)} นาที`} tone={t.late > 0 ? "rose" : "slate"} />
-            <Big
-              label="ลงเวลาไม่ครบ"
-              value={int(t.incomplete)}
-              sub={`ขาดงาน ${int(t.absent)} คน · ลา ${int(t.onLeave)} คน`}
-              tone={t.incomplete > 0 ? "amber" : "slate"}
-            />
-            <Big
-              label="อยู่ข้างนอกตอนนี้"
-              value={int(t.onErrand + t.onField)}
-              sub={`ธุระ ${int(t.onErrand)} · งานนอกสถานที่ ${int(t.onField)}`}
-              tone={t.onErrand + t.onField > 0 ? "violet" : "slate"}
-            />
-            <Big
-              label="ชั่วโมงทำงานรวม"
-              value={hours(t.workMinutes)}
-              // นับได้เฉพาะคนที่ลงเวลาครบแล้ว ระหว่างวันตัวเลขนี้จึงยังน้อย เป็นเรื่องปกติ
-              sub={`จาก ${int(t.complete)} คนที่ลงครบ · OT ${int(t.otMinutes)} นาที · พักเกิน ${int(t.overBreakMinutes)} นาที`}
-            />
+            {isMonth ? (
+              <>
+                <Big
+                  label="มาทำงาน (คน-วัน)"
+                  value={int(t.arrived)}
+                  sub={`${arrivedPct}% ของ ${int(expected)} วันที่ต้องมา`}
+                  tone="sky"
+                />
+                <Big
+                  label="ขาดงาน (คน-วัน)"
+                  value={int(t.absent)}
+                  sub={`หยุดเวร ${int(t.off)} · ลา ${int(t.onLeave)}`}
+                  tone={t.absent > 0 ? "rose" : "slate"}
+                />
+                <Big
+                  label="มาสาย (คน-วัน)"
+                  value={int(t.late)}
+                  sub={`รวม ${int(t.lateMinutes)} นาที`}
+                  tone={t.late > 0 ? "rose" : "slate"}
+                />
+                <Big
+                  label="ลา (คน-วัน)"
+                  value={int(t.onLeave)}
+                  sub="ใบลาที่อนุมัติแล้ว"
+                  tone={t.onLeave > 0 ? "violet" : "slate"}
+                />
+                <Big
+                  label="ลงเวลาไม่ครบ (คน-วัน)"
+                  value={int(t.incomplete)}
+                  sub={`ลงครบ ${int(t.complete)} · พักเกิน ${int(t.overBreakMinutes)} นาที`}
+                  tone={t.incomplete > 0 ? "amber" : "slate"}
+                />
+                <Big
+                  label="ชั่วโมงทำงานรวม"
+                  value={hours(t.workMinutes)}
+                  sub={`OT ${int(t.otMinutes)} นาที · เฉลี่ย ${hours(t.staff > 0 ? t.workMinutes / t.staff : 0)} ต่อคน`}
+                />
+              </>
+            ) : (
+              <>
+                <Big label="มาแล้ว" value={int(t.arrived)} sub={`${arrivedPct}% ของพนักงาน`} tone="sky" />
+                <Big
+                  label="ยังไม่มา"
+                  value={int(t.notArrived)}
+                  sub={t.overdue > 0 ? `เลยเวลาเข้างานแล้ว ${int(t.overdue)} คน` : "ยังไม่ถึงเวลาเข้างาน"}
+                  tone={t.overdue > 0 ? "rose" : "slate"}
+                />
+                <Big
+                  label="มาสาย"
+                  value={int(t.late)}
+                  sub={`รวม ${int(t.lateMinutes)} นาที`}
+                  tone={t.late > 0 ? "rose" : "slate"}
+                />
+                <Big
+                  label="ลงเวลาไม่ครบ"
+                  value={int(t.incomplete)}
+                  sub={`ขาดงาน ${int(t.absent)} คน · ลา ${int(t.onLeave)} คน`}
+                  tone={t.incomplete > 0 ? "amber" : "slate"}
+                />
+                <Big
+                  label="อยู่ข้างนอกตอนนี้"
+                  value={int(t.onErrand + t.onField)}
+                  sub={`ธุระ ${int(t.onErrand)} · งานนอกสถานที่ ${int(t.onField)}`}
+                  tone={t.onErrand + t.onField > 0 ? "violet" : "slate"}
+                />
+                <Big
+                  label="ชั่วโมงทำงานรวม"
+                  value={hours(t.workMinutes)}
+                  // นับได้เฉพาะคนที่ลงเวลาครบแล้ว ระหว่างวันตัวเลขนี้จึงยังน้อย เป็นเรื่องปกติ
+                  sub={`จาก ${int(t.complete)} คนที่ลงครบ · OT ${int(t.otMinutes)} นาที · พักเกิน ${int(t.overBreakMinutes)} นาที`}
+                />
+              </>
+            )}
           </div>
 
           {/* ---------- รายชื่อที่ต้องตาม ---------- */}
-          <div className="mb-4 grid gap-3 lg:grid-cols-5">
-            <PeoplePanel title="ยังไม่มา" people={data.notArrived} tone="rose" empty="มากันครบแล้ว 🎉" />
-            <PeoplePanel title="มาสาย" people={data.late} tone="amber" empty="วันนี้ไม่มีใครสาย" />
-            <PeoplePanel title="ลาวันนี้" people={data.onLeave} tone="violet" empty="วันนี้ไม่มีคนลา" />
-            <PeoplePanel title="ออกไปทำธุระ" people={data.onErrand} tone="violet" empty="ไม่มีใครออกไปข้างนอก" />
-            <PeoplePanel title="งานนอกสถานที่" people={data.onField} tone="sky" empty="ไม่มีงานนอกสถานที่ที่กำลังทำ" />
+          <div className={`mb-4 grid gap-3 ${isMonth ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
+            {isMonth ? (
+              <>
+                <PeoplePanel title="สายบ่อยที่สุด" people={data.ranks.late} tone="rose" empty="เดือนนี้ไม่มีใครสาย" />
+                <PeoplePanel title="ขาดงานมากที่สุด" people={data.ranks.absent} tone="rose" empty="เดือนนี้ไม่มีใครขาดงาน" />
+                <PeoplePanel title="ลามากที่สุด" people={data.ranks.leave} tone="violet" empty="เดือนนี้ไม่มีคนลา" />
+                <PeoplePanel title="พักเกินเวลามากที่สุด" people={data.ranks.overBreak} tone="amber" empty="เดือนนี้ไม่มีใครพักเกิน" />
+              </>
+            ) : (
+              <>
+                <PeoplePanel title="ยังไม่มา" people={data.notArrived} tone="rose" empty="มากันครบแล้ว 🎉" />
+                <PeoplePanel title="มาสาย" people={data.late} tone="amber" empty="วันนี้ไม่มีใครสาย" />
+                <PeoplePanel title="ลาวันนี้" people={data.onLeave} tone="violet" empty="วันนี้ไม่มีคนลา" />
+                <PeoplePanel title="ออกไปทำธุระ" people={data.onErrand} tone="violet" empty="ไม่มีใครออกไปข้างนอก" />
+                <PeoplePanel title="งานนอกสถานที่" people={data.onField} tone="sky" empty="ไม่มีงานนอกสถานที่ที่กำลังทำ" />
+              </>
+            )}
           </div>
 
           {/* ---------- เทียบตามมิติ + แนวโน้ม ---------- */}
           <div className="grid gap-3 lg:grid-cols-2">
-            <DimPanel dim={dim} onChangeDim={setDim} data={data.dims[dim]} />
-            <TrendPanel trend={data.trend} />
+            <DimPanel dim={dim} onChangeDim={setDim} data={data.dims[dim]} unit={isMonth ? "คน-วัน" : ""} />
+            <TrendPanel trend={data.trend} title={isMonth ? "แนวโน้มรายวันในเดือนนี้" : "แนวโน้ม 14 วัน"} />
           </div>
         </>
       )}
@@ -293,10 +410,13 @@ function DimPanel({
   dim,
   onChangeDim,
   data,
+  unit,
 }: {
   dim: WallDim;
   onChangeDim: (d: WallDim) => void;
   data: { title: string; items: WallDimItem[] };
+  /** คำต่อท้ายตัวเลข — โหมดเดือนนับเป็น คน-วัน จึงต้องบอกให้ชัด */
+  unit: string;
 }) {
   const rows = [...data.items].sort((a, b) => b.staff - a.staff);
   return (
@@ -313,7 +433,9 @@ function DimPanel({
             </option>
           ))}
         </select>
-        <span className="text-xs text-slate-500">{rows.length} รายการ</span>
+        <span className="text-xs text-slate-500">
+          {rows.length} รายการ{unit ? ` · ${unit}` : ""}
+        </span>
       </div>
 
       {rows.length === 0 ? (
@@ -348,27 +470,31 @@ function DimPanel({
   );
 }
 
-function TrendPanel({ trend }: { trend: AttendanceWall["trend"] }) {
+function TrendPanel({ trend, title }: { trend: AttendanceWall["trend"]; title: string }) {
   const max = Math.max(1, ...trend.map((d) => d.arrived + d.absent));
   return (
     <div className="rounded-2xl bg-slate-900 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <span className="font-semibold text-slate-100">แนวโน้ม 14 วัน</span>
+        <span className="font-semibold text-slate-100">{title}</span>
         <span className="flex gap-3 text-xs">
           <span className="text-sky-400">■ มาทำงาน</span>
           <span className="text-rose-400">■ สาย</span>
           <span className="text-slate-500">■ ขาด</span>
         </span>
       </div>
-      <div className="flex h-48 items-end gap-1">
+      <div className="flex h-48 gap-1">
         {trend.map((d) => (
-          <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${thDate(d.date)} · มา ${d.arrived} · สาย ${d.late} · ขาด ${d.absent}`}>
-            <div className="flex w-full flex-col justify-end" style={{ height: "100%" }}>
-              <div className="w-full rounded-t bg-slate-700" style={{ height: `${(d.absent / max) * 100}%` }} />
-              <div className="w-full bg-rose-500" style={{ height: `${(d.late / max) * 100}%` }} />
-              <div className="w-full rounded-b bg-sky-500" style={{ height: `${(Math.max(0, d.arrived - d.late) / max) * 100}%` }} />
-            </div>
-            <span className="text-[10px] text-slate-500">{Number(d.date.slice(8, 10))}</span>
+          <div
+            key={d.date}
+            className="flex h-full flex-1 flex-col justify-end"
+            title={`${thDate(d.date)} · มา ${d.arrived} · สาย ${d.late} · ขาด ${d.absent}`}
+          >
+            <div className="w-full rounded-t bg-slate-700" style={{ height: `${(d.absent / max) * 100}%` }} />
+            <div className="w-full bg-rose-500" style={{ height: `${(d.late / max) * 100}%` }} />
+            <div className="w-full rounded-b bg-sky-500" style={{ height: `${(Math.max(0, d.arrived - d.late) / max) * 100}%` }} />
+            <span className="mt-1 text-center text-[10px] text-slate-500">
+              {Number(d.date.slice(8, 10))}
+            </span>
           </div>
         ))}
       </div>

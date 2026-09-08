@@ -13,7 +13,7 @@ import {
   listErrandPunchesOfDate,
   listFieldTasks,
 } from "./db";
-import { buildDailyReport } from "./reports";
+import { buildDailyReport, buildMonthlyReport } from "./reports";
 import type { Employee } from "./types";
 
 /**
@@ -46,10 +46,16 @@ export type WallDimItem = {
 
 export type WallDim = "branch" | "company" | "department" | "position";
 
+/** day = ภาพสดของวันนี้ · month = สะสมทั้งเดือน (นับเป็น คน-วัน) */
+export type WallMode = "day" | "month";
+
 export type AttendanceWall = {
   generatedAt: string;
+  mode: WallMode;
   date: string;
   isToday: boolean;
+  /** ช่วงที่นับจริง — โหมดเดือนตัดที่วันนี้ วันข้างหน้ายังไม่นับ */
+  period: { from: string; to: string; label: string };
   scope: { companyName: string | null; branchName: string | null };
   totals: {
     staff: number;
@@ -75,6 +81,13 @@ export type AttendanceWall = {
   notArrived: WallPerson[];
   late: WallPerson[];
   onLeave: WallPerson[];
+  /** อันดับคนที่ต้องดูแลในโหมดเดือน (โหมดวันเป็นลิสต์ว่าง) */
+  ranks: {
+    late: WallPerson[];
+    absent: WallPerson[];
+    leave: WallPerson[];
+    overBreak: WallPerson[];
+  };
   onErrand: WallPerson[];
   onField: WallPerson[];
   trend: { date: string; arrived: number; late: number; absent: number; incomplete: number }[];
@@ -103,6 +116,9 @@ function hhmm(iso: string): string {
 }
 
 export async function buildAttendanceWall(params: {
+  mode?: WallMode;
+  /** โหมดเดือน: YYYY-MM (ไม่ส่งมา = เดือนของวันที่เลือก) */
+  month?: string;
   date?: string;
   companyId?: string | null;
   branchId?: string | null;
@@ -114,6 +130,7 @@ export async function buildAttendanceWall(params: {
   const today = workDateOf(now);
   const date = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : today;
   const isToday = date === today;
+  if (params.mode === "month") return buildMonthWall({ ...params, now, today, date });
   const inScope = (branchId: string | null) =>
     !params.branchScope || (branchId !== null && params.branchScope.has(branchId));
 
@@ -293,8 +310,10 @@ export async function buildAttendanceWall(params: {
 
   return {
     generatedAt: now.toISOString(),
+    mode: "day" as const,
     date,
     isToday,
+    period: { from: date, to: date, label: thaiDate(date) },
     scope: {
       companyName: companies.find((c) => c.id === params.companyId)?.name ?? null,
       branchName: branches.find((b) => b.id === params.branchId)?.name ?? null,
@@ -304,8 +323,215 @@ export async function buildAttendanceWall(params: {
     notArrived: notArrived.sort((a, b) => a.empCode.localeCompare(b.empCode)),
     late: late.sort((a, b) => b.detail.localeCompare(a.detail)),
     onLeave: onLeave.sort((a, b) => a.empCode.localeCompare(b.empCode)),
+    ranks: { late: [], absent: [], leave: [], overBreak: [] },
     onErrand,
     onField,
+    trend,
+    companies: companies.map((c) => ({ id: c.id, name: c.name })),
+    branches: branches.map((b) => ({ id: b.id, name: b.name })),
+  };
+}
+
+/** ชื่อเดือนไทยแบบเต็ม ใช้เป็นหัวเรื่องของช่วงที่ดู */
+const TH_MONTH_NAME = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+];
+
+function thaiDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${TH_MONTH_NAME[m - 1]} ${y + 543}`;
+}
+
+/**
+ * โหมดเดือน: สะสมทั้งเดือนจนถึงวันนี้ ตัวเลขเป็น คน-วัน ไม่ใช่จำนวนคน
+ * (พนักงาน 1 คนที่สาย 3 วัน นับเป็น 3)
+ * ใช้ข้อมูลชุดเดียวกับรายงานรายเดือน ตัวเลขบนจอกับในรายงานจึงตรงกันเสมอ
+ */
+async function buildMonthWall(params: {
+  month?: string;
+  date: string;
+  today: string;
+  now: Date;
+  companyId?: string | null;
+  branchId?: string | null;
+  branchScope?: Set<string> | null;
+}): Promise<AttendanceWall> {
+  const { now, today, date } = params;
+  const ym =
+    params.month && /^\d{4}-\d{2}$/.test(params.month) ? params.month : date.slice(0, 7);
+  const [year, month] = ym.split("-").map(Number);
+  const inScope = (branchId: string | null) =>
+    !params.branchScope || (branchId !== null && params.branchScope.has(branchId));
+
+  const [report, allBranches, companies] = await Promise.all([
+    buildMonthlyReport(year, month, params.branchId ?? undefined, params.companyId),
+    listBranches(true, params.companyId),
+    listCompanies(true),
+  ]);
+
+  const people = report.employees.filter((r) => inScope(r.employee.branch_id));
+  const branches = allBranches.filter((b) => inScope(b.id));
+  const from = report.dates[0] ?? date;
+  const monthEnd = report.dates[report.dates.length - 1] ?? date;
+  const to = monthEnd < today ? monthEnd : today;
+
+  const totals: AttendanceWall["totals"] = {
+    staff: people.length,
+    arrived: 0,
+    notArrived: 0,
+    overdue: 0,
+    late: 0,
+    lateMinutes: 0,
+    incomplete: 0,
+    absent: 0,
+    off: 0,
+    holiday: 0,
+    onLeave: 0,
+    complete: 0,
+    onErrand: 0,
+    onField: 0,
+    overBreakMinutes: 0,
+    workMinutes: 0,
+    otMinutes: 0,
+  };
+
+  for (const r of people) {
+    const t = r.totals;
+    totals.arrived += t.workedDays;
+    totals.complete += t.completeDays;
+    totals.incomplete += t.incompleteDays;
+    totals.absent += t.absentDays;
+    totals.onLeave += t.leaveDays;
+    totals.off += t.offDays;
+    totals.late += t.lateDays;
+    totals.lateMinutes += t.lateMinutes;
+    totals.overBreakMinutes += t.overBreakMinutes;
+    totals.workMinutes += t.workMinutes;
+    totals.otMinutes += t.otMinutes;
+  }
+
+  const person = (r: (typeof people)[number], detail: string): WallPerson => ({
+    employeeId: r.employee.id,
+    empCode: r.employee.emp_code,
+    payrollCode: r.employee.payroll_code,
+    fullName: r.employee.full_name,
+    branchName: r.employee.branch_name ?? null,
+    companyName: r.companyName,
+    detail,
+  });
+
+  // อันดับคนที่ต้องดูแล — เอาเฉพาะคนที่มีตัวเลขจริง จะได้ไม่มีรายชื่อศูนย์มาปน
+  const rankBy = (
+    value: (r: (typeof people)[number]) => number,
+    detail: (r: (typeof people)[number]) => string,
+  ): WallPerson[] =>
+    people
+      .filter((r) => value(r) > 0)
+      .sort((a, b) => value(b) - value(a))
+      .slice(0, 15)
+      .map((r) => person(r, detail(r)));
+
+  const ranks = {
+    late: rankBy(
+      (r) => r.totals.lateDays,
+      (r) => `สาย ${r.totals.lateDays} วัน · รวม ${r.totals.lateMinutes} นาที`,
+    ),
+    absent: rankBy((r) => r.totals.absentDays, (r) => `ขาดงาน ${r.totals.absentDays} วัน`),
+    leave: rankBy((r) => r.totals.leaveDays, (r) => `ลา ${r.totals.leaveDays} วัน`),
+    overBreak: rankBy(
+      (r) => r.totals.overBreakMinutes,
+      (r) => `พักเกิน ${r.totals.overBreakMinutes} นาที · ${r.totals.overBreakDays} วัน`,
+    ),
+  };
+
+  // ---------- แยกตามมิติ (คน-วัน) ----------
+  const dimKey: Record<WallDim, (r: (typeof people)[number]) => { key: string; label: string }> = {
+    branch: (r) => ({
+      key: r.employee.branch_id ?? "none",
+      label: r.employee.branch_name ?? "ไม่ระบุสาขา",
+    }),
+    company: (r) => ({ key: r.companyName ?? "none", label: r.companyName ?? "ไม่ระบุบริษัท" }),
+    department: (r) => ({
+      key: r.employee.department_name ?? "none",
+      label: r.employee.department_name ?? "ไม่ระบุแผนก",
+    }),
+    position: (r) => ({
+      key: r.employee.position_name ?? "none",
+      label: r.employee.position_name ?? "ไม่ระบุตำแหน่ง",
+    }),
+  };
+
+  const dims = {} as AttendanceWall["dims"];
+  for (const dim of Object.keys(dimKey) as WallDim[]) {
+    const map = new Map<string, WallDimItem>();
+    for (const r of people) {
+      const { key, label } = dimKey[dim](r);
+      const item = map.get(key) ?? {
+        key,
+        label,
+        staff: 0,
+        arrived: 0,
+        late: 0,
+        absent: 0,
+        incomplete: 0,
+        lateMinutes: 0,
+        workMinutes: 0,
+      };
+      // โหมดเดือนเทียบ "วันที่มาจริง" กับ "วันที่ต้องมา" แถบจึงเป็นอัตราการมาทำงาน
+      item.staff += r.totals.workedDays + r.totals.absentDays;
+      item.arrived += r.totals.workedDays;
+      item.late += r.totals.lateDays;
+      item.absent += r.totals.absentDays;
+      item.incomplete += r.totals.incompleteDays;
+      item.lateMinutes += r.totals.lateMinutes;
+      item.workMinutes += r.totals.workMinutes;
+      map.set(key, item);
+    }
+    dims[dim] = { title: DIM_TITLE[dim], items: [...map.values()] };
+  }
+
+  const trend = await buildTrend({
+    from,
+    to,
+    companyId: params.companyId,
+    branchId: params.branchId,
+    branchScope: params.branchScope,
+  });
+
+  const isThisMonth = ym === today.slice(0, 7);
+  return {
+    generatedAt: now.toISOString(),
+    mode: "month" as const,
+    date,
+    isToday: isThisMonth,
+    period: {
+      from,
+      to,
+      label: `${TH_MONTH_NAME[month - 1]} ${year + 543}${isThisMonth ? ` (ถึง ${thaiDate(to)})` : ""}`,
+    },
+    scope: {
+      companyName: companies.find((c) => c.id === params.companyId)?.name ?? null,
+      branchName: branches.find((b) => b.id === params.branchId)?.name ?? null,
+    },
+    totals,
+    dims,
+    notArrived: [],
+    late: [],
+    onLeave: [],
+    onErrand: [],
+    onField: [],
+    ranks,
     trend,
     companies: companies.map((c) => ({ id: c.id, name: c.name })),
     branches: branches.map((b) => ({ id: b.id, name: b.name })),

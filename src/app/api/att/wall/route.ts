@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 /**
  * ข้อมูลจอ War Room ของระบบลงเวลา — หน้าจอเรียกซ้ำทุกนาที
  * /api/att/wall?date=YYYY-MM-DD&company=<id>&branch=<id>
+ * โหมดเดือน: ?mode=month&month=YYYY-MM (สะสมทั้งเดือนถึงวันนี้)
  */
 export async function GET(req: Request) {
   const [isAdmin, canRead] = await Promise.all([isAdminAuthed(), checkPermission("ATT_WALL", "read")]);
@@ -19,6 +20,8 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   try {
     const wall = await buildAttendanceWall({
+      mode: sp.get("mode") === "month" ? "month" : "day",
+      month: sp.get("month") ?? undefined,
       date: sp.get("date") ?? undefined,
       companyId: sp.get("company") || null,
       branchId: sp.get("branch") || null,

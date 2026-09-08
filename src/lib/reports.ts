@@ -6,7 +6,7 @@ import {
   type FieldSessionSummary,
   type PeriodTotals,
 } from "./attendance";
-import { dateRange, monthBounds } from "./datetime";
+import { dateRange, monthBounds, workDateOf } from "./datetime";
 import { listCompanies } from "./core-db";
 import {
   getDayRows,
@@ -272,6 +272,8 @@ export async function buildMonthlyReport(
   ]);
 
   const dates = dateRange(from, to);
+  // เดือนที่ยังไม่จบ: คิดถึงแค่วันนี้ วันข้างหน้ายังไม่เกิดขึ้นจึงไม่ใช่การขาดงาน
+  const lastCounted = to < workDateOf() ? to : workDateOf();
   const rowsByEmp = new Map<string, Map<string, AttendanceDayRow>>();
   for (const r of dayRows) {
     if (!rowsByEmp.has(r.employee_id)) rowsByEmp.set(r.employee_id, new Map());
@@ -293,6 +295,7 @@ export async function buildMonthlyReport(
   const result: MonthlyEmployeeRow[] = employees.map((emp) => {
     const byDate = new Map<string, DaySummary>();
     for (const date of dates) {
+      if (date > lastCounted) continue;
       const row = rowsByEmp.get(emp.id)?.get(date) ?? emptyDayRow(emp, date, null);
       // กะอาจต่างกันทุกวันตามตารางเวร จึง resolve ทีละวัน (ข้อมูลถูก preload ไว้แล้ว ไม่ยิงฐานข้อมูลซ้ำ)
       const daySettings = resolver.resolve(row.branch_id ?? emp.branch_id, emp.id, date);
