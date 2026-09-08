@@ -11,6 +11,7 @@ const NAV = [
   { href: "/marketing/dashboard", label: "6. Dashboard" },
   { href: "/marketing/memos", label: "7. Memo" },
   { href: "/marketing/memos/status", label: "8. เปลี่ยนสถานะ Memo" },
+  { href: "/marketing/wall", label: "จอ War Room" },
 ];
 
 export default function MarketingHeader({ user }: { user: SessionUser }) {

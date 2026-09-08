@@ -7,6 +7,7 @@ const NAV = [
   { href: "/booking/search", label: "1.3 สอบถาม", menuCode: "BOOK_SEARCH" },
   { href: "/booking/dashboard", label: "1.4 Dashboard", menuCode: "BOOK_DASH" },
   { href: "/booking/stock", label: "1.5 สอบถามสต๊อกรถ", menuCode: "BOOK_STOCK" },
+  { href: "/booking/wall", label: "จอ War Room", menuCode: "BOOK_WALL" },
 ];
 
 export default function BookingHeader({
