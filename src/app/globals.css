@@ -14,6 +14,11 @@ body {
 body {
   @apply bg-slate-100 text-slate-800 antialiased;
   font-family: "Sarabun", "Noto Sans Thai", "Leelawadee UI", Tahoma, system-ui, sans-serif;
+  /*
+   * ตัดคำที่ยาวเกินบรรทัดได้ เช่น ข้อความ error ที่มี connection string หรือ URL ยาว ๆ
+   * ไม่งั้นสตริงเดียวจะดันทั้งหน้าให้เลื่อนซ้าย-ขวาบนมือถือ
+   */
+  overflow-wrap: break-word;
   /* กันหน้าเลื่อนซ้าย-ขวาทั้งหน้าเมื่อมีตารางกว้าง ๆ (ตารางเลื่อนในกรอบของตัวเองแทน) */
   overflow-x: hidden;
 }

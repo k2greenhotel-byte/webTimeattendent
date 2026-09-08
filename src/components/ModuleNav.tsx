@@ -6,6 +6,8 @@ export type NavLink = { href: string; label: string };
 type Props = {
   /** ชื่อโปรแกรม เช่น "ระบบกิจกรรมการตลาด" */
   title: string;
+  /** ถ้าใส่ ชื่อโปรแกรมจะกดกลับไปหน้าแรกของโปรแกรมได้ */
+  titleHref?: string;
   /** บรรทัดล่าง เช่น รหัสพนักงาน · บริษัท · สาขา */
   subtitle?: React.ReactNode;
   /** ชื่อผู้ใช้ที่ล็อกอินอยู่ (ต่อท้ายชื่อโปรแกรมบนจอใหญ่) */
@@ -26,6 +28,7 @@ type Props = {
  */
 export default function ModuleNav({
   title,
+  titleHref,
   subtitle,
   userName,
   links,
@@ -33,6 +36,13 @@ export default function ModuleNav({
   onLogout = logoutAction,
 }: Props) {
   const allLinks = appsLink ? [...links, appsLink] : links;
+  const titleNode = titleHref ? (
+    <Link href={titleHref} className="hover:underline">
+      {title}
+    </Link>
+  ) : (
+    title
+  );
 
   return (
     <header className="no-print sticky top-0 z-30 border-b border-slate-200 bg-white">
@@ -88,7 +98,7 @@ export default function ModuleNav({
       <div className="mx-auto hidden max-w-7xl flex-wrap items-center gap-3 px-4 py-3 lg:flex">
         <div className="mr-auto min-w-0">
           <p className="text-sm font-semibold text-slate-800">
-            {title}
+            {titleNode}
             {userName && <span className="ml-2 font-normal text-slate-500">· {userName}</span>}
           </p>
           {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}

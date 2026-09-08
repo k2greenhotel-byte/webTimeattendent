@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { logoutAction } from "@/app/login/actions";
+import ModuleNav from "@/components/ModuleNav";
 import type { SessionUser } from "@/lib/types";
 
 const NAV = [
@@ -19,45 +18,21 @@ export default function ApprovalHeader({
   readableMenus: string[];
 }) {
   return (
-    <header className="no-print border-b border-slate-200 bg-white">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
-        <div className="mr-auto">
-          <p className="text-sm font-semibold text-slate-800">
-            ระบบอนุมัติกลาง
-            <span className="ml-2 font-normal text-slate-500">· {user.full_name}</span>
-          </p>
-          <p className="text-xs text-slate-500">
-            {user.company_name ?? "องค์กร"}
-            {user.branch_name ? ` · สาขา ${user.branch_name}` : ""}
-          </p>
-        </div>
-
-        <nav className="flex flex-wrap items-center gap-1">
-          {NAV.filter((l) => readableMenus.includes(l.menu)).map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-            >
-              {l.label}
-            </Link>
-          ))}
-          <Link
-            href="/apps"
-            className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
-          >
-            รวมโปรแกรม
-          </Link>
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              className="rounded-lg px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50"
-            >
-              ออกจากระบบ
-            </button>
-          </form>
-        </nav>
-      </div>
-    </header>
+    <ModuleNav
+      title="ระบบอนุมัติกลาง"
+      titleHref="/approvals"
+      userName={user.full_name}
+      subtitle={
+        <>
+          {user.company_name ?? "องค์กร"}
+          {user.branch_name ? ` · สาขา ${user.branch_name}` : ""}
+        </>
+      }
+      links={NAV.filter((l) => readableMenus.includes(l.menu)).map((l) => ({
+        href: l.href,
+        label: l.label,
+      }))}
+      appsLink={{ href: "/apps", label: "รวมโปรแกรม" }}
+    />
   );
 }
