@@ -5,7 +5,7 @@ import { useState } from "react";
 import { adminUpdateLeaveForm } from "@/app/hr/actions";
 import type { ApvRejectReason } from "@/lib/approval-types";
 import { formatStampThai } from "@/lib/datetime";
-import { daysInRange, formatServiceMonths } from "@/lib/leave";
+import { daysInRange, formatServiceMonths, type LeaveEntitlementSummary } from "@/lib/leave";
 import {
   HR_MANAGE_STATUS_ORDER,
   LEAVE_STATUS_LABEL,
@@ -13,7 +13,7 @@ import {
   type LeaveStatus,
   type LeaveType,
 } from "@/lib/leave-types";
-import { LeaveStatusBadge, LeaveTypeBadge } from "./StatusBadges";
+import { EntitlementLine, LeaveStatusBadge, LeaveTypeBadge } from "./StatusBadges";
 
 const TONE: Record<string, string> = {
   pending: "border-amber-300 bg-amber-50",
@@ -38,12 +38,14 @@ export default function LeaveAdminEditCard({
   reasons,
   backTo,
   canEdit,
+  entitlement,
 }: {
   row: LeaveRequestRow;
   types: LeaveType[];
   reasons: ApvRejectReason[];
   backTo: string;
   canEdit: boolean;
+  entitlement?: LeaveEntitlementSummary | null;
 }) {
   const [typeId, setTypeId] = useState(row.type_id);
   const [startDate, setStartDate] = useState(row.start_date);
@@ -82,6 +84,8 @@ export default function LeaveAdminEditCard({
             {row.branch_name ? ` · สาขา ${row.branch_name}` : ""}
             {row.service_months !== null ? ` · อายุงาน ${formatServiceMonths(row.service_months)}` : ""}
           </p>
+
+          <EntitlementLine entitlement={entitlement ?? null} />
 
           <p className="text-xs text-slate-500">
             แจ้งเมื่อ {formatStampThai(row.reported_at)} น.

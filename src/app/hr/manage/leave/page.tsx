@@ -2,8 +2,8 @@ import Link from "next/link";
 import LeaveAdminEditCard from "@/components/hr/LeaveAdminEditCard";
 import { listRejectReasons } from "@/lib/approval-db";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
-import { groupByCompany } from "@/lib/leave";
-import { listLeaveRequests, listLeaveTypes } from "@/lib/leave-db";
+import { entitlementKey, groupByCompany } from "@/lib/leave";
+import { bulkEntitlementInfo, listLeaveRequests, listLeaveTypes } from "@/lib/leave-db";
 import { LEAVE_STATUS_LABEL, LEAVE_STATUS_ORDER, type LeaveStatus } from "@/lib/leave-types";
 import { checkPermission, requirePermission } from "@/lib/session";
 
@@ -51,6 +51,16 @@ export default async function LeaveManagePage({
 
   const groups = groupByCompany(rows);
   const companyOptions = groups.map((g) => ({ id: g.companyId, name: g.companyName }));
+
+  const typeDefaults = Object.fromEntries(types.map((t) => [t.id, t.max_days_per_year]));
+  const entitlements = await bulkEntitlementInfo(
+    rows.map((r) => ({
+      employeeId: r.employee_id,
+      typeId: r.type_id,
+      year: Number(r.start_date.slice(0, 4)),
+    })),
+    typeDefaults,
+  );
 
   return (
     <main className="mx-auto max-w-7xl space-y-4 p-4">
@@ -149,6 +159,13 @@ export default async function LeaveManagePage({
                   reasons={reasons}
                   backTo="/hr/manage/leave"
                   canEdit={canEdit}
+                  entitlement={
+                    row.employee_id
+                      ? entitlements.get(
+                          entitlementKey(row.employee_id, row.type_id, Number(row.start_date.slice(0, 4))),
+                        ) ?? null
+                      : null
+                  }
                 />
               ))}
             </div>

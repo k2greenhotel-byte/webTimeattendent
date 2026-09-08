@@ -1,3 +1,4 @@
+import type { LeaveEntitlementSummary } from "@/lib/leave";
 import {
   ADVANCE_STATUS_CLASS,
   ADVANCE_STATUS_LABEL,
@@ -23,6 +24,27 @@ export function LeaveTypeBadge({ icon, name }: { icon: string | null; name: stri
       {icon ? `${icon} ` : ""}
       {name}
     </span>
+  );
+}
+
+/** สรุปสิทธิ์การลาปีนี้ของประเภทนี้ — ได้รับ/ใช้ไป/คงเหลือ แสดงในหน้าอนุมัติและหน้าฝ่ายบุคคล */
+export function EntitlementLine({ entitlement }: { entitlement: LeaveEntitlementSummary | null }) {
+  if (!entitlement) return null;
+  const { granted, used, remaining } = entitlement;
+
+  return (
+    <p className="text-xs text-slate-500">
+      สิทธิ์ปีนี้: ได้รับ {granted === null ? "ไม่จำกัด" : `${granted} วัน`} · ใช้ไป {used} วัน
+      {remaining !== null && (
+        <>
+          {" "}
+          · คงเหลือ{" "}
+          <span className={remaining < 0 ? "font-medium text-rose-600" : "font-medium text-slate-700"}>
+            {remaining} วัน
+          </span>
+        </>
+      )}
+    </p>
   );
 }
 

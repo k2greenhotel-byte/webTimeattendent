@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 import { decideLeaveForm } from "@/app/hr/actions";
 import { formatThaiDate, formatTime } from "@/lib/datetime";
-import { formatServiceMonths, leaveDecisionOptions, leaveFlags, leaveRangeText } from "@/lib/leave";
+import {
+  formatServiceMonths,
+  leaveDecisionOptions,
+  leaveFlags,
+  leaveRangeText,
+  type LeaveEntitlementSummary,
+} from "@/lib/leave";
 import {
   LEAVE_STATUS_HINT,
   LEAVE_STATUS_LABEL,
@@ -12,7 +18,7 @@ import {
   type LeaveStatus,
 } from "@/lib/leave-types";
 import type { ApvRejectReason } from "@/lib/approval-types";
-import { LeaveFlagList, LeaveStatusBadge, LeaveTypeBadge } from "./StatusBadges";
+import { EntitlementLine, LeaveFlagList, LeaveStatusBadge, LeaveTypeBadge } from "./StatusBadges";
 
 const TONE: Record<string, string> = {
   approved_hr: "border-emerald-300 bg-emerald-50",
@@ -37,12 +43,14 @@ export default function LeaveDecisionCard({
   reasons,
   backTo,
   canDecide,
+  entitlement,
 }: {
   row: LeaveRequestRow;
   today: string;
   reasons: ApvRejectReason[];
   backTo: string;
   canDecide: boolean;
+  entitlement?: LeaveEntitlementSummary | null;
 }) {
   const [status, setStatus] = useState<LeaveStatus | "">("");
   const flags = leaveFlags(row, today);
@@ -71,6 +79,8 @@ export default function LeaveDecisionCard({
             {row.branch_name ? ` · สาขา ${row.branch_name}` : ""}
             {row.service_months !== null ? ` · อายุงาน ${formatServiceMonths(row.service_months)}` : ""}
           </p>
+
+          <EntitlementLine entitlement={entitlement ?? null} />
 
           <p className="text-sm text-slate-700">
             {leaveRangeText(row)}

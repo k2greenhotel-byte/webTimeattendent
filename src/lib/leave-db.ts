@@ -1,7 +1,7 @@
 import "server-only";
 import { logAudit } from "./db";
 import type { LeaveAdminEdit, LeaveDecisionInput, AdvanceDecisionInput } from "./leave";
-import { resolveApprovedAmount } from "./leave";
+import { entitlementKey, resolveApprovedAmount, summarizeEntitlement, type LeaveEntitlementSummary } from "./leave";
 import type {
   AdvanceRequestRow,
   AdvanceStatus,
@@ -115,6 +115,127 @@ export async function usedLeaveDays(
     .lte("start_date", `${year}-12-31`);
   if (error) return 0;
   return (data ?? []).reduce((sum, r) => sum + num(r.total_days), 0);
+}
+
+// ---------- สิทธิ์การลารายบุคคล (โควตา) ----------
+
+/** ค่าที่ตั้งเฉพาะคนของหลายพนักงานพร้อมกัน ปีเดียวกัน (type_id -> วันที่ได้รับ) — ใช้ในหน้าตั้งค่า */
+export async function listEntitlementsForEmployees(
+  employeeIds: string[],
+  year: number,
+): Promise<Map<string, Record<string, number>>> {
+  const map = new Map<string, Record<string, number>>();
+  if (employeeIds.length === 0) return map;
+
+  const { data, error } = await getSupabase()
+    .from("hr_leave_entitlements")
+    .select("employee_id, type_id, granted_days")
+    .in("employee_id", employeeIds)
+    .eq("year", year);
+  if (error) throw new Error(`อ่านสิทธิ์การลาไม่สำเร็จ: ${error.message}`);
+
+  for (const row of data ?? []) {
+    const empId = row.employee_id as string;
+    const rec = map.get(empId) ?? {};
+    rec[row.type_id as string] = num(row.granted_days);
+    map.set(empId, rec);
+  }
+  return map;
+}
+
+/** วันลาที่ใช้ไปแล้วของหลายพนักงานพร้อมกัน ปีเดียวกัน (type_id -> วันที่ใช้ไป) */
+export async function usedLeaveDaysBulk(
+  employeeIds: string[],
+  year: number,
+): Promise<Map<string, Record<string, number>>> {
+  const map = new Map<string, Record<string, number>>();
+  if (employeeIds.length === 0) return map;
+
+  const { data, error } = await getSupabase()
+    .from("hr_leave_requests")
+    .select("employee_id, type_id, total_days")
+    .in("employee_id", employeeIds)
+    .in("status", ["pending", "need_docs", "escalated", "approved_hr", "approved_exec"])
+    .gte("start_date", `${year}-01-01`)
+    .lte("start_date", `${year}-12-31`);
+  if (error) throw new Error(`อ่านวันลาที่ใช้ไปไม่สำเร็จ: ${error.message}`);
+
+  for (const row of data ?? []) {
+    const empId = row.employee_id as string | null;
+    if (!empId) continue;
+    const rec = map.get(empId) ?? {};
+    const typeId = row.type_id as string;
+    rec[typeId] = (rec[typeId] ?? 0) + num(row.total_days);
+    map.set(empId, rec);
+  }
+  return map;
+}
+
+/** บันทึกสิทธิ์เฉพาะคน — grantedDays เป็น null = ลบค่าที่ตั้งไว้ กลับไปใช้โควตาเริ่มต้นของประเภท */
+export async function upsertEntitlement(
+  employeeId: string,
+  typeId: string,
+  year: number,
+  grantedDays: number | null,
+): Promise<void> {
+  const supabase = getSupabase();
+
+  if (grantedDays === null) {
+    const { error } = await supabase
+      .from("hr_leave_entitlements")
+      .delete()
+      .eq("employee_id", employeeId)
+      .eq("type_id", typeId)
+      .eq("year", year);
+    if (error) throw new Error(`ลบสิทธิ์การลาไม่สำเร็จ: ${error.message}`);
+    return;
+  }
+
+  const { error } = await supabase
+    .from("hr_leave_entitlements")
+    .upsert(
+      { employee_id: employeeId, type_id: typeId, year, granted_days: grantedDays },
+      { onConflict: "employee_id,type_id,year" },
+    );
+  if (error) throw new Error(`บันทึกสิทธิ์การลาไม่สำเร็จ: ${error.message}`);
+}
+
+/**
+ * สรุปสิทธิ์คงเหลือ (ได้รับ/ใช้ไป/คงเหลือ) ของหลายใบแจ้งลาพร้อมกัน — ใช้ในหน้าอนุมัติ/หน้าฝ่ายบุคคล
+ * ที่แสดงหลายใบในหน้าเดียว จึง query รวมทีเดียวแทนการ query ทีละใบ
+ * คืนเป็น map คีย์จาก entitlementKey(employeeId, typeId, year)
+ */
+export async function bulkEntitlementInfo(
+  rows: { employeeId: string | null; typeId: string; year: number }[],
+  typeDefaults: Record<string, number | null>,
+): Promise<Map<string, LeaveEntitlementSummary>> {
+  const result = new Map<string, LeaveEntitlementSummary>();
+
+  const employeeIdsByYear = new Map<number, Set<string>>();
+  for (const r of rows) {
+    if (!r.employeeId) continue;
+    const set = employeeIdsByYear.get(r.year) ?? new Set<string>();
+    set.add(r.employeeId);
+    employeeIdsByYear.set(r.year, set);
+  }
+
+  for (const [year, employeeIdSet] of employeeIdsByYear) {
+    const employeeIds = [...employeeIdSet];
+    const [entitlements, used] = await Promise.all([
+      listEntitlementsForEmployees(employeeIds, year),
+      usedLeaveDaysBulk(employeeIds, year),
+    ]);
+
+    for (const r of rows) {
+      if (!r.employeeId || r.year !== year) continue;
+      const key = entitlementKey(r.employeeId, r.typeId, r.year);
+      if (result.has(key)) continue;
+      const granted = entitlements.get(r.employeeId)?.[r.typeId] ?? typeDefaults[r.typeId] ?? null;
+      const usedDays = used.get(r.employeeId)?.[r.typeId] ?? 0;
+      result.set(key, summarizeEntitlement(granted, usedDays));
+    }
+  }
+  return result;
 }
 
 // ---------- ใบแจ้งลา ----------

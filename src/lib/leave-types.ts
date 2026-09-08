@@ -260,6 +260,19 @@ export type AdvanceRequestRow = AdvanceRequest & {
   reason_name: string | null;
 };
 
+// ---------- สิทธิ์การลารายบุคคล (โควตา) ----------
+
+/** ค่าที่ตั้งเฉพาะคน (แทนโควตาเริ่มต้นของประเภท) เฉพาะปีนั้น */
+export type LeaveEntitlement = {
+  id: string;
+  employee_id: string;
+  type_id: string;
+  year: number;
+  granted_days: number;
+  created_at: string;
+  updated_at: string;
+};
+
 /** ชนิดไฟล์ที่รับได้ในใบแจ้งลา (รูปถ่ายใบรับรองแพทย์ หรือไฟล์ PDF) */
 export const HR_FILE_ACCEPT = "image/*,application/pdf";
 

@@ -318,6 +318,29 @@ export function validateLeaveAdminEdit(
   return null;
 }
 
+// ---------- สิทธิ์การลารายบุคคล (โควตา) ----------
+
+export type LeaveEntitlementSummary = {
+  /** วันที่ได้รับ — null = ไม่จำกัด (ไม่มีทั้งค่าตั้งเฉพาะคนและโควตาเริ่มต้นของประเภท) */
+  granted: number | null;
+  used: number;
+  /** วันคงเหลือ — null เมื่อไม่จำกัดโควตา ติดลบ = ใช้เกินสิทธิ์ */
+  remaining: number | null;
+};
+
+export function summarizeEntitlement(granted: number | null, used: number): LeaveEntitlementSummary {
+  return {
+    granted,
+    used: round2(used),
+    remaining: granted === null ? null : round2(granted - used),
+  };
+}
+
+/** กุญแจอ้างอิงสิทธิ์คงเหลือของ (พนักงาน, ประเภทการลา, ปี) หนึ่งชุด */
+export function entitlementKey(employeeId: string, typeId: string, year: number): string {
+  return `${employeeId}|${typeId}|${year}`;
+}
+
 // ---------- ยื่นใบขอเบิกเงินเดือน ----------
 
 export type AdvanceInput = {

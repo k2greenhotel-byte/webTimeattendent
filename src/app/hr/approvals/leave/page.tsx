@@ -5,8 +5,8 @@ import LeaveDecisionCard from "@/components/hr/LeaveDecisionCard";
 import LeaveTable from "@/components/hr/LeaveTable";
 import { listRejectReasons } from "@/lib/approval-db";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
-import { groupByCompany, summarizeLeaveInbox } from "@/lib/leave";
-import { listLeaveRequests, listLeaveTypes } from "@/lib/leave-db";
+import { entitlementKey, groupByCompany, summarizeLeaveInbox } from "@/lib/leave";
+import { bulkEntitlementInfo, listLeaveRequests, listLeaveTypes } from "@/lib/leave-db";
 import { checkPermission, isApproverAuthed, requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +52,16 @@ export default async function LeaveApprovalPage({
 
   const summary = summarizeLeaveInbox(pending, today);
   const groups = groupByCompany(pending);
+
+  const typeDefaults = Object.fromEntries(types.map((t) => [t.id, t.max_days_per_year]));
+  const entitlements = await bulkEntitlementInfo(
+    [...pending, ...decided].map((r) => ({
+      employeeId: r.employee_id,
+      typeId: r.type_id,
+      year: Number(r.start_date.slice(0, 4)),
+    })),
+    typeDefaults,
+  );
 
   const cards = [
     { label: "รออนุมัติ", value: String(summary.pending), tone: "text-amber-600" },
@@ -163,6 +173,13 @@ export default async function LeaveApprovalPage({
                   reasons={reasons}
                   backTo="/hr/approvals/leave"
                   canDecide={canDecide}
+                  entitlement={
+                    row.employee_id
+                      ? entitlements.get(
+                          entitlementKey(row.employee_id, row.type_id, Number(row.start_date.slice(0, 4))),
+                        ) ?? null
+                      : null
+                  }
                 />
               ))}
             </div>

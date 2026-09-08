@@ -14,10 +14,12 @@ import {
   evaluateLeave,
   formatServiceMonths,
   groupByCompany,
+  entitlementKey,
   isCertOverdue,
   leaveDecisionOptions,
   leaveFlags,
   leaveRangeText,
+  summarizeEntitlement,
   resolveApprovedAmount,
   serviceMonths,
   summarizeAdvanceByKey,
@@ -910,5 +912,37 @@ describe("จัดอันดับ N อันดับแรก", () => {
     const rows = [{ v: 3 }, { v: 1 }, { v: 2 }];
     topN(rows, (r) => r.v, 2);
     expect(rows.map((r) => r.v)).toEqual([3, 1, 2]);
+  });
+});
+
+// ---------- สิทธิ์การลารายบุคคล (โควตา) ----------
+
+describe("สรุปสิทธิ์การลาคงเหลือ", () => {
+  it("คำนวณคงเหลือจากที่ได้รับลบใช้ไป", () => {
+    expect(summarizeEntitlement(6, 2)).toEqual({ granted: 6, used: 2, remaining: 4 });
+  });
+
+  it("ไม่จำกัดโควตา (granted เป็น null) ไม่มีค่าคงเหลือ", () => {
+    expect(summarizeEntitlement(null, 5)).toEqual({ granted: null, used: 5, remaining: null });
+  });
+
+  it("ใช้เกินสิทธิ์ คงเหลือติดลบได้", () => {
+    expect(summarizeEntitlement(3, 5)).toEqual({ granted: 3, used: 5, remaining: -2 });
+  });
+
+  it("ปัดเศษทศนิยมของค่าที่ใช้ไปและคงเหลือ", () => {
+    expect(summarizeEntitlement(6, 2.25)).toEqual({ granted: 6, used: 2.25, remaining: 3.75 });
+  });
+});
+
+describe("กุญแจอ้างอิงสิทธิ์การลา", () => {
+  it("ประกอบจากพนักงาน ประเภท และปี", () => {
+    expect(entitlementKey("e1", "t1", 2026)).toBe("e1|t1|2026");
+  });
+
+  it("พนักงาน/ประเภท/ปีต่างกัน ได้กุญแจต่างกัน", () => {
+    expect(entitlementKey("e1", "t1", 2026)).not.toBe(entitlementKey("e2", "t1", 2026));
+    expect(entitlementKey("e1", "t1", 2026)).not.toBe(entitlementKey("e1", "t2", 2026));
+    expect(entitlementKey("e1", "t1", 2026)).not.toBe(entitlementKey("e1", "t1", 2027));
   });
 });
