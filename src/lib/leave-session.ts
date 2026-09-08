@@ -30,11 +30,11 @@ export function requireAdvanceApprover(): Promise<SessionUser> {
 }
 
 /**
- * ประตูหน้าฝ่ายบุคคลแก้ไขใบแจ้งลาของพนักงานคนอื่น — สิทธิ์สูงกว่าหน้าอนุมัติปกติ
- * (แก้ได้ทุกฟิลด์ทุกสถานะ ไม่ใช่แค่ตัดสินใบที่ยังเปิดอยู่) จึงผ่านประตูรหัสผ่านเดียวกันด้วย
+ * ประตูหน้าฝ่ายบุคคลแก้ไขใบแจ้งลาของพนักงานคนอื่น — ใช้สิทธิ์เมนูอย่างเดียว
+ * ไม่ต้องยืนยันรหัสผ่านซ้ำเหมือนหน้าอนุมัติปกติ เพราะเป็นการแก้ไขข้อมูลของฝ่ายบุคคลโดยตรง
  */
 export function requireLeaveAdmin(): Promise<SessionUser> {
-  return requireHrApprover("HR_LEAVE_MANAGE", "/hr/manage/leave");
+  return requirePermission("HR_LEAVE_MANAGE", "write");
 }
 
 /**

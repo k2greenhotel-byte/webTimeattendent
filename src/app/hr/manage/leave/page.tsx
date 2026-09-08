@@ -1,13 +1,11 @@
 import Link from "next/link";
-import { hrApproverLogoutAction } from "@/app/hr/actions";
-import HrApproverGate from "@/components/hr/ApproverGate";
 import LeaveAdminEditCard from "@/components/hr/LeaveAdminEditCard";
 import { listRejectReasons } from "@/lib/approval-db";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
 import { groupByCompany } from "@/lib/leave";
 import { listLeaveRequests, listLeaveTypes } from "@/lib/leave-db";
 import { LEAVE_STATUS_LABEL, LEAVE_STATUS_ORDER, type LeaveStatus } from "@/lib/leave-types";
-import { checkPermission, isApproverAuthed, requirePermission } from "@/lib/session";
+import { checkPermission, requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +28,8 @@ export default async function LeaveManagePage({
     err?: string;
   }>;
 }) {
-  const user = await requirePermission("HR_LEAVE_MANAGE", "read");
+  await requirePermission("HR_LEAVE_MANAGE", "read");
   const params = await searchParams;
-
-  if (!(await isApproverAuthed())) {
-    return <HrApproverGate fullName={user.full_name} kind="manage" title="แก้ไขข้อมูลการลาพนักงาน" />;
-  }
 
   const today = workDateOf();
   const status = (LEAVE_STATUS_ORDER as string[]).includes(params.status ?? "")
@@ -72,12 +66,6 @@ export default async function LeaveManagePage({
           <Link href="/hr/approvals/leave" className="text-sm text-brand-600 hover:underline">
             ← หน้าอนุมัติการลา
           </Link>
-          <form action={hrApproverLogoutAction}>
-            <input type="hidden" name="kind" value="manage" />
-            <button type="submit" className="btn-secondary text-sm">
-              ออกจากโหมดอนุมัติ
-            </button>
-          </form>
         </div>
       </div>
 
