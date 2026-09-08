@@ -6,6 +6,7 @@ const NAV = [
   { href: "/claim/updates", label: "1.5 Update งานเคลม", menuCode: "CLM_UPDATE" },
   { href: "/claim/search", label: "2. สอบถาม", menuCode: "CLM_SEARCH" },
   { href: "/claim/dashboard", label: "3. Dashboard", menuCode: "CLM_DASH" },
+  { href: "/claim/wall", label: "จอ War Room", menuCode: "CLM_WALL" },
 ];
 
 export default function ClaimHeader({

@@ -1,0 +1,77 @@
+import "server-only";
+import { workDateOf } from "./datetime";
+import { buildStaffSummaries, buildTaskSummaries } from "./salework";
+import { listItemStats, listWorkOwners } from "./salework-db";
+import type { SaleWorkWall, WallRow } from "./wall-types";
+
+/**
+ * ข้อมูลจอ War Room ของบันทึกงานประจำวันพนักงานขาย
+ *
+ * ตอบคำถามที่หัวหน้าฝ่ายขายต้องรู้ตอนนี้:
+ *   1. วันนี้ใครยังไม่ส่งใบงาน — ต้องตามก่อนหมดวัน
+ *   2. งานที่ต้องทำวันนี้ทำไปได้กี่ % แล้ว
+ *   3. คนไหน/งานประเภทไหนทำได้มากที่สุดวันนี้
+ *
+ * ยอดรวมใช้ buildStaffSummaries / buildTaskSummaries จาก salework.ts
+ * ชุดเดียวกับหน้า Dashboard
+ */
+
+const TOP_N = 10;
+
+export type { SaleWorkWall };
+
+export async function buildSaleWorkWall(input: {
+  branchId?: string | null;
+}): Promise<SaleWorkWall> {
+  const today = workDateOf();
+
+  const [rows, owners] = await Promise.all([
+    listItemStats({ from: today, to: today, branch_id: input.branchId ?? null }),
+    listWorkOwners(),
+  ]);
+
+  const staff = buildStaffSummaries(rows);
+  const tasks = buildTaskSummaries(rows);
+
+  // ใครส่งใบงานแล้ววันนี้ — นับจากรายการที่มี submitted_at
+  const submittedOwners = new Set(
+    rows.filter((r) => r.submitted_at).map((r) => r.owner_id ?? r.owner_name),
+  );
+  const notReportedOwners = owners.filter((o) => !submittedOwners.has(o.id));
+
+  const itemsTotalToday = rows.length;
+  const itemsDoneToday = rows.filter((r) => r.done).length;
+
+  const notReported: WallRow[] = notReportedOwners.slice(0, TOP_N).map((o) => ({
+    key: o.id,
+    title: o.name,
+    detail: "ยังไม่ส่งใบงานวันนี้",
+    right: "รอส่ง",
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    today,
+    counts: {
+      staffTotal: owners.length,
+      reportedToday: submittedOwners.size,
+      notReportedToday: notReportedOwners.length,
+      itemsDoneToday,
+      itemsTotalToday,
+    },
+    donePct: itemsTotalToday > 0 ? Math.round((itemsDoneToday / itemsTotalToday) * 100) : 0,
+    notReported,
+    byStaff: staff
+      .map((s) => ({
+        label: s.owner_name,
+        value: s.doneCount,
+        sub: `${s.donePct}% ของงานในใบ`,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, TOP_N),
+    byTask: tasks
+      .map((t) => ({ label: t.task_name, value: t.doneCount }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, TOP_N),
+  };
+}

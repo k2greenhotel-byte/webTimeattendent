@@ -7,6 +7,7 @@ const NAV = [
   { href: "/salework/dashboard", label: "3. Dashboard", menuCode: "SW_DASH" },
   { href: "/salework/setup", label: "4. ตั้งค่าประเภทงาน", menuCode: "SW_SETUP" },
   { href: "/salework/mapping", label: "5. จับคู่กับระบบขาย", menuCode: "SW_MAP" },
+  { href: "/salework/wall", label: "จอ War Room", menuCode: "SW_WALL" },
 ];
 
 export default function SaleWorkHeader({

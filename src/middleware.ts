@@ -58,6 +58,7 @@ export const config = {
   matcher: [
     "/punch/:path*",
     "/apps",
+    "/wall",
     "/approvals",
     "/approvals/:path*",
     "/customers",

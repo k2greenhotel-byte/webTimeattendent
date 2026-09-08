@@ -99,3 +99,61 @@ export type ProcurementWall = {
   byBranch: WallRank[];
   byType: WallRank[];
 };
+
+// ---------- ขอลา / ขอเบิกเงินเดือน ----------
+
+export type HrWall = {
+  generatedAt: string;
+  today: string;
+  counts: {
+    pendingLeave: number;
+    pendingAdvance: number;
+    onLeaveToday: number;
+    leaveThisMonth: number;
+    certOverdue: number;
+    lateNotice: number;
+  };
+  money: { advancePending: number; advanceThisMonth: number };
+  pending: WallRow[];
+  onLeaveToday: WallRow[];
+  byType: WallRank[];
+  byBranch: WallRank[];
+};
+
+// ---------- แจ้งเคลม ----------
+
+export type ClaimWall = {
+  generatedAt: string;
+  today: string;
+  counts: {
+    open: number;
+    overdue: number;
+    waitingMaker: number;
+    waitingDelivery: number;
+    openedToday: number;
+    openedThisMonth: number;
+  };
+  overdue: WallRow[];
+  waitingMaker: WallRow[];
+  byBranch: WallRank[];
+  byMaker: WallRank[];
+};
+
+// ---------- งานประจำวันพนักงานขาย ----------
+
+export type SaleWorkWall = {
+  generatedAt: string;
+  today: string;
+  counts: {
+    staffTotal: number;
+    reportedToday: number;
+    notReportedToday: number;
+    itemsDoneToday: number;
+    itemsTotalToday: number;
+  };
+  /** เปอร์เซ็นต์งานที่ทำครบของวันนี้ */
+  donePct: number;
+  notReported: WallRow[];
+  byStaff: WallRank[];
+  byTask: WallRank[];
+};

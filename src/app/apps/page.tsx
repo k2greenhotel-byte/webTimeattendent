@@ -48,6 +48,9 @@ export default async function AppsPage({
 
         {/* จอเล็กจัดปุ่มเป็น 2 คอลัมน์ ข้อความไทยจะได้ไม่ถูกบีบจนตัดหลายบรรทัด */}
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <Link href="/wall" className="btn-secondary w-full sm:w-auto">
+            จอ War Room รวม
+          </Link>
           <Link href="/select-context" className="btn-secondary w-full sm:w-auto">
             เปลี่ยนบริษัท/สาขา
           </Link>
