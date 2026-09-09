@@ -24,6 +24,7 @@ const SCREENS: { menu: string; key: WallScreen["key"]; label: string }[] = [
   { menu: "HR_WALL", key: "hr", label: "ลา/เบิกเงิน" },
   { menu: "SW_WALL", key: "salework", label: "งานประจำวัน" },
   { menu: "INSP_WALL", key: "inspection", label: "ตรวจสาขา" },
+  { menu: "HTL_WALL", key: "hotel", label: "ตรวจเช็คโรงแรม" },
   { menu: "DB2_WALL", key: "db2", label: "ยอดขาย Db2" },
 ];
 

@@ -212,3 +212,44 @@ export type InspectionWall = {
   /** คะแนนเฉลี่ยรายสาขา (สูงสุดก่อน) */
   byBranch: WallRank[];
 };
+// ---------- ตรวจเช็คโรงแรมประจำวัน ----------
+
+/** งานประจำวัน — ไม่ได้ตรวจสาขานี้เกินกี่วันถือว่าหลุดคิว */
+export const HTL_STALE_DAYS = 2;
+
+export type HotelWall = {
+  generatedAt: string;
+  today: string;
+  period: WallPeriodInfo;
+  counts: {
+    branchesTotal: number;
+    /** สาขาที่ส่งผลตรวจอาคารของวันนี้แล้ว */
+    checkedToday: number;
+    /** ห้องพักทั้งหมดที่เปิดใช้งาน และที่ตรวจไปแล้ววันนี้ */
+    roomsTotal: number;
+    roomsCheckedToday: number;
+    roundsInPeriod: number;
+    draft: number;
+    openIssues: number;
+    urgentOpen: number;
+    overdueIssues: number;
+    fixedInPeriod: number;
+    noRepairDoc: number;
+  };
+  /** เปอร์เซ็นต์ข้อที่ตรวจแล้วปกติ ในช่วงที่เลือก */
+  passPct: number;
+  /** ข้อเร่งด่วนที่ยังไม่ได้แก้ */
+  urgentIssues: WallRow[];
+  /** ข้อที่เลยกำหนดแก้ไขแล้ว */
+  overdueIssues: WallRow[];
+  /** สาขาที่ยังไม่ได้ส่งผลตรวจอาคารของวันนี้ */
+  notCheckedToday: WallRow[];
+  /** ห้องพักที่ยังไม่ได้ตรวจวันนี้ */
+  notCheckedRoomsToday: WallRow[];
+  /** ข้อไม่ปกติที่ยังค้าง แยกตามประเภทงาน */
+  byGroup: WallRank[];
+  /** ข้อไม่ปกติที่ยังค้าง แยกตามสาขา */
+  byBranch: WallRank[];
+  /** แนวโน้มเปอร์เซ็นต์ผ่านรายวันในช่วงที่เลือก */
+  trend: WallRank[];
+};

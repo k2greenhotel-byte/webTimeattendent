@@ -15,6 +15,7 @@ import {
   URGENCY_ORDER,
   type PrType,
   type RepairRow,
+  type Urgency,
 } from "@/lib/procurement-types";
 import type { Company } from "@/lib/core-types";
 import type { Branch } from "@/lib/types";
@@ -37,6 +38,7 @@ export default function RepairForm({
   defaultCompanyId,
   defaultBranchId,
   defaultRecorderName,
+  prefill,
   action,
   submitLabel,
 }: {
@@ -48,6 +50,8 @@ export default function RepairForm({
   defaultCompanyId?: string | null;
   defaultBranchId?: string | null;
   defaultRecorderName?: string;
+  /** ค่าตั้งต้นของใบใหม่ที่ส่งมาจากโปรแกรมอื่น เช่น กด "เปิดใบแจ้งซ่อม" จากผลตรวจเช็คโรงแรม */
+  prefill?: { item_name?: string; damage_detail?: string; urgency?: Urgency };
   action: (formData: FormData) => void | Promise<void>;
   submitLabel: string;
 }) {
@@ -129,7 +133,7 @@ export default function RepairForm({
           <input
             id="item_name"
             name="item_name"
-            defaultValue={repair?.item_name ?? ""}
+            defaultValue={repair?.item_name ?? prefill?.item_name ?? ""}
             className="input"
             placeholder="เช่น แอร์ห้องประชุมไม่เย็น"
             maxLength={200}
@@ -161,7 +165,7 @@ export default function RepairForm({
           <select
             id="urgency"
             name="urgency"
-            defaultValue={repair?.urgency ?? "d2_5"}
+            defaultValue={repair?.urgency ?? prefill?.urgency ?? "d2_5"}
             className="input"
           >
             {URGENCY_ORDER.map((u) => (
@@ -179,7 +183,7 @@ export default function RepairForm({
           <textarea
             id="damage_detail"
             name="damage_detail"
-            defaultValue={repair?.damage_detail ?? ""}
+            defaultValue={repair?.damage_detail ?? prefill?.damage_detail ?? ""}
             className="input min-h-20"
             rows={3}
             placeholder="อาการที่พบ เกิดขึ้นตอนไหน กระทบงานอย่างไร"
