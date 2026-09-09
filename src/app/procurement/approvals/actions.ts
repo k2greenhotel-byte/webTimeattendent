@@ -75,9 +75,11 @@ export async function createApprovalForm(form: FormData): Promise<void> {
 
   const kind = pick(form, "kind", DOC_KIND_ORDER);
   const docId = str(form, "doc_id");
-  const path = kind && docId ? `/procurement/approvals/${kind}/${docId}` : "/procurement/approvals";
+  // กดอนุมัติจากกล่องรออนุมัติกลางได้ด้วย จึงต้องรู้ว่าจะพากลับไปหน้าไหน
+  const backTo = str(form, "back") || "/procurement/approvals";
+  const path = kind && docId ? `/procurement/approvals/${kind}/${docId}` : backTo;
 
-  if (!kind || !docId) back("/procurement/approvals", "ไม่พบเอกสารที่ต้องการอนุมัติ", true);
+  if (!kind || !docId) back(backTo, "ไม่พบเอกสารที่ต้องการอนุมัติ", true);
 
   const target = await getDoc(docId);
   const decision = pick(form, "decision", APPROVE_DECISION_ORDER);
@@ -121,5 +123,6 @@ export async function createApprovalForm(form: FormData): Promise<void> {
   revalidatePath(
     kind === "repair" ? `/procurement/repairs/${docId}` : `/procurement/purchases/${docId}`,
   );
-  back("/procurement/approvals", `บันทึกใบอนุมัติเลขที่ ${docNo} เรียบร้อยแล้ว`);
+  revalidatePath("/approvals");
+  back(backTo, `บันทึกใบอนุมัติเลขที่ ${docNo} เรียบร้อยแล้ว`);
 }

@@ -1,15 +1,24 @@
 import Link from "next/link";
 import ApvApproverGate from "@/components/approval/ApproverGate";
+import PrDecideCard from "@/components/approval/PrDecideCard";
 import RequestTable from "@/components/approval/RequestTable";
-import AdvanceTable from "@/components/hr/AdvanceTable";
-import LeaveTable from "@/components/hr/LeaveTable";
+import AdvanceDecisionCard from "@/components/hr/AdvanceDecisionCard";
+import LeaveDecisionCard from "@/components/hr/LeaveDecisionCard";
 import { apvApproverLogoutAction } from "@/app/approvals/actions";
 import { formatBaht, sortByUrgency, splitByAuthority, summarizeInbox } from "@/lib/approval";
-import { countEndorsedBy, listPrPending, listRequests, listTypes } from "@/lib/approval-db";
+import {
+  countEndorsedBy,
+  listPrPending,
+  listRejectReasons,
+  listRequests,
+  listTypes,
+} from "@/lib/approval-db";
 import { authorityFor, getLimits } from "@/lib/approval-session";
 import type { ApvRequestRow } from "@/lib/approval-types";
 import { formatThaiDate, workDateOf } from "@/lib/datetime";
-import { listHrPending } from "@/lib/leave-db";
+import { entitlementKey } from "@/lib/leave";
+import { bulkEntitlementInfo, listHrPending, listLeaveTypes } from "@/lib/leave-db";
+import { advanceAuthorityFor } from "@/lib/leave-session";
 import { checkPermission, isApproverAuthed, requirePermission } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -30,20 +39,52 @@ export default async function ApprovalInboxPage({
   const canDecideAtAll = await checkPermission("APV_INBOX", "write");
   const today = workDateOf();
 
-  // เมนูขอลา/ขอเบิกเงินเป็นของโปรแกรม HR — แสดงเฉพาะคนที่มีสิทธิ์เข้าหน้าอนุมัติของโปรแกรมนั้น
-  const [canSeeLeave, canSeeAdvance] = await Promise.all([
-    checkPermission("HR_LEAVE_APPROVE", "read"),
-    checkPermission("HR_ADV_APPROVE", "read"),
-  ]);
+  // เมนูขอลา/ขอเบิกเงิน/จัดซื้อเป็นของคนละโปรแกรม — สิทธิ์ "ดู" กับ "กดตัดสิน" แยกกันคนละใบ
+  // จึงต้องถามทีละโปรแกรม คนที่ดูได้แต่ยังไม่มีสิทธิ์กด จะเห็นรายการแต่ไม่มีปุ่มบันทึก
+  const [canSeeLeave, canSeeAdvance, canSeePr, canDecideLeave, canDecideAdvance, canDecidePr] =
+    await Promise.all([
+      checkPermission("HR_LEAVE_APPROVE", "read"),
+      checkPermission("HR_ADV_APPROVE", "read"),
+      checkPermission("PR_APPROVE", "read"),
+      checkPermission("HR_LEAVE_APPROVE", "write"),
+      checkPermission("HR_ADV_APPROVE", "write"),
+      checkPermission("PR_APPROVE", "write"),
+    ]);
 
-  const [limits, types, open, endorsedByMe, pr, hr] = await Promise.all([
+  const [limits, types, open, endorsedByMe, pr, hr, reasons, leaveTypes] = await Promise.all([
     getLimits(),
     listTypes(true),
     listRequests({ statuses: ["pending", "endorsed"], typeId: params.type || undefined }),
     countEndorsedBy(user.id),
     listPrPending(),
     listHrPending(),
+    listRejectReasons(true),
+    listLeaveTypes(true),
   ]);
+
+  // สิทธิ์วันลาคงเหลือของแต่ละใบ — การ์ดอนุมัติต้องโชว์ให้เห็นก่อนกด ไม่งั้นอนุมัติเกินสิทธิ์
+  const leaveEntitlements = canSeeLeave
+    ? await bulkEntitlementInfo(
+        hr.leave.map((r) => ({
+          employeeId: r.employee_id,
+          typeId: r.type_id,
+          year: Number(r.start_date.slice(0, 4)),
+        })),
+        Object.fromEntries(leaveTypes.map((t) => [t.id, t.max_days_per_year])),
+      )
+    : new Map();
+
+  // วงเงินอนุมัติต่างกันตามบริษัทของใบขอ จึง resolve ทีละบริษัทที่มีใบค้างจริง
+  const advanceCompanyIds = [...new Set(hr.advance.map((r) => r.company_id ?? ""))];
+  const advanceAuthority = new Map(
+    canSeeAdvance
+      ? await Promise.all(
+          advanceCompanyIds.map(
+            async (id) => [id, await advanceAuthorityFor(user, id || null)] as const,
+          ),
+        )
+      : [],
+  );
 
   const { canDecide, overLimit } = splitByAuthority(open, (row) => authorityFor(limits, user, row));
   const summary = summarizeInbox(canDecide, overLimit, endorsedByMe, today);
@@ -57,8 +98,15 @@ export default async function ApprovalInboxPage({
     endorsed: sortByUrgency(endorsedRows),
   };
 
+  // ใบจากโปรแกรมอื่นที่มารออยู่ในหน้านี้ด้วย — นับเฉพาะส่วนที่ผู้ใช้คนนี้มีสิทธิ์เห็น
+  const fromModules =
+    (canSeePr ? pr.rows.length : 0) +
+    (canSeeLeave ? hr.leave.length : 0) +
+    (canSeeAdvance ? hr.advance.length : 0);
+
   const cards = [
     { label: "รอฉันตัดสิน", value: String(summary.mine), tone: "text-brand-600" },
+    { label: "จากโปรแกรมอื่น", value: String(fromModules), tone: "text-orange-600" },
     { label: "เกินอำนาจฉัน", value: String(summary.overLimit), tone: "text-amber-600" },
     { label: "ฉันเสนอขึ้นไป (ยังไม่จบ)", value: String(summary.endorsedByMe), tone: "text-sky-600" },
     { label: "เลยกำหนดต้องการ", value: String(summary.overdue), tone: "text-rose-600" },
@@ -87,7 +135,8 @@ export default async function ApprovalInboxPage({
         <div>
           <h1 className="text-xl font-bold text-slate-800">กล่องรออนุมัติ</h1>
           <p className="text-sm text-slate-500">
-            {formatThaiDate(today)} · เรื่องที่อยู่ในอำนาจของคุณกดอนุมัติได้เลย
+            {formatThaiDate(today)} · รวมทุกเรื่องที่รอคุณอนุมัติไว้ที่เดียว — เรื่องส่วนกลาง
+            ใบขอซ่อม/จัดซื้อ ใบลา และใบขอเบิกเงิน กดตัดสินได้ครบในหน้านี้
             เรื่องที่เกินอำนาจให้กด &quot;เสนอผู้มีอำนาจสูงกว่า&quot;
           </p>
         </div>
@@ -111,7 +160,7 @@ export default async function ApprovalInboxPage({
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map((c) => (
           <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-xs text-slate-500">{c.label}</p>
@@ -171,101 +220,46 @@ export default async function ApprovalInboxPage({
         />
       </section>
 
-      {/* ใบขอซ่อม/ขอซื้อจากโมดูลจัดซื้อ — แสดงรวมให้เห็นครบในที่เดียว */}
-      <section className="card space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="font-semibold text-slate-800">
-              ใบขอซ่อม / ขอจัดซื้อ ที่รออนุมัติ ({pr.rows.length})
-            </h2>
-            <p className="text-sm text-slate-500">
-              มาจากโปรแกรมจัดซื้อจัดจ้างแจ้งซ่อม — กดแล้วไปพิจารณาที่หน้าอนุมัติของโปรแกรมนั้น
-            </p>
+      {/* ใบขอซ่อม/ขอซื้อจากโมดูลจัดซื้อ — ตัดสินได้ในที่เดียว ไม่ต้องเด้งไปหน้าโปรแกรมนั้น */}
+      {canSeePr && (
+        <section className="card space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="font-semibold text-slate-800">
+                ใบขอซ่อม / ขอจัดซื้อ ที่รออนุมัติ ({pr.rows.length})
+              </h2>
+              <p className="text-sm text-slate-500">
+                มาจากโปรแกรมจัดซื้อจัดจ้างแจ้งซ่อม — เลือกผลแล้วกดบันทึกได้เลย
+              </p>
+            </div>
+            <Link href="/procurement/approvals" className="text-sm text-brand-600 hover:underline">
+              เปิดหน้าอนุมัติซ่อม/จัดซื้อ →
+            </Link>
           </div>
-          <Link href="/procurement/approvals" className="text-sm text-brand-600 hover:underline">
-            เปิดหน้าอนุมัติซ่อม/จัดซื้อ →
-          </Link>
-        </div>
 
-        {pr.failed ? (
-          <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            อ่านข้อมูลจากโปรแกรมจัดซื้อไม่ได้ชั่วคราว — เรื่องอื่นในกล่องยังใช้งานได้ตามปกติ
-          </p>
-        ) : pr.rows.length === 0 ? (
-          <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบขอซ่อม/ขอซื้อรออนุมัติ</p>
-        ) : (
-          <>
-            {/* จอเล็ก: การ์ด (แพตเทิร์นเดียวกับ RequestTable/LeaveTable/AdvanceTable) */}
-            <div className="space-y-2 md:hidden">
+          {pr.failed ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              อ่านข้อมูลจากโปรแกรมจัดซื้อไม่ได้ชั่วคราว — เรื่องอื่นในกล่องยังใช้งานได้ตามปกติ
+            </p>
+          ) : pr.rows.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบขอซ่อม/ขอซื้อรออนุมัติ</p>
+          ) : (
+            <div className="space-y-2">
               {pr.rows.map((row) => (
-                <Link
+                <PrDecideCard
                   key={`${row.kind}-${row.id}`}
-                  href={`/procurement/approvals/${row.kind}/${row.id}`}
-                  className="block rounded-xl border border-slate-200 p-3 hover:border-brand-300"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium text-slate-800">{row.item_name}</p>
-                    <span className="badge bg-orange-50 text-orange-700">
-                      {row.kind === "repair" ? "🛠 ซ่อม" : "🧾 ซื้อ"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {row.doc_no} · {row.created_by_name ?? "-"}
-                    {row.branch_name ? ` · ${row.branch_name}` : ""}
-                  </p>
-                  <p className="mt-2 font-semibold text-slate-800">
-                    {formatBaht(row.requested_amount)}
-                  </p>
-                </Link>
+                  row={row}
+                  today={today}
+                  canDecide={canDecidePr}
+                />
               ))}
             </div>
+          )}
+        </section>
+      )}
 
-            {/* จอใหญ่: ตาราง */}
-            <div className="hidden overflow-x-auto md:block">
-              <table className="table-report">
-                <thead>
-                  <tr>
-                    <th>เลขที่</th>
-                    <th>ประเภท</th>
-                    <th className="text-left">รายการ</th>
-                    <th>ผู้ขอ</th>
-                    <th>สาขา</th>
-                    <th>จำนวนเงิน</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pr.rows.map((row) => (
-                    <tr key={`${row.kind}-${row.id}`}>
-                      <td className="whitespace-nowrap font-medium">{row.doc_no}</td>
-                      <td>
-                        <span className="badge bg-orange-50 text-orange-700">
-                          {row.kind === "repair" ? "🛠 ใบขอซ่อม" : "🧾 ใบขอจัดซื้อ"}
-                        </span>
-                      </td>
-                      <td className="whitespace-normal text-left">{row.item_name}</td>
-                      <td className="text-xs">{row.created_by_name ?? "-"}</td>
-                      <td className="text-xs text-slate-500">{row.branch_name ?? "-"}</td>
-                      <td className="font-semibold">{formatBaht(row.requested_amount)}</td>
-                      <td>
-                        <Link
-                          href={`/procurement/approvals/${row.kind}/${row.id}`}
-                          className="text-sm text-brand-600 hover:underline"
-                        >
-                          พิจารณา
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* ใบแจ้งลา/หยุดงาน/เข้างานสาย จากโปรแกรมขอลา — โปรแกรมนั้นเป็นเจ้าของสถานะเอง หน้านี้อ่านมาแสดงและลิงก์ไป
-          ใช้ LeaveTable ตัวเดียวกับที่โปรแกรม HR ใช้เอง จะได้จอเล็กเป็นการ์ดเหมือนกันทั้งระบบ */}
+      {/* ใบแจ้งลา/หยุดงาน/เข้างานสาย — ใช้การ์ดตัวเดียวกับหน้าอนุมัติของโปรแกรม HR
+          กฎการตัดสินและ audit จึงเป็นชุดเดียวกัน ไม่ว่าจะกดจากหน้าไหน */}
       {canSeeLeave && (
         <section className="card space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -274,7 +268,7 @@ export default async function ApprovalInboxPage({
                 ใบแจ้งลา / หยุดงาน / เข้างานสาย ที่รออนุมัติ ({hr.leave.length})
               </h2>
               <p className="text-sm text-slate-500">
-                มาจากโปรแกรมขอลา/ขอเบิกเงินเดือน — กดแล้วไปพิจารณาที่หน้าอนุมัติของโปรแกรมนั้น
+                มาจากโปรแกรมขอลา/ขอเบิกเงินเดือน — เลือกผลท้ายรายการแล้วกดบันทึกได้เลย
               </p>
             </div>
             <Link href="/hr/approvals/leave" className="text-sm text-brand-600 hover:underline">
@@ -286,18 +280,37 @@ export default async function ApprovalInboxPage({
             <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
               อ่านข้อมูลจากโปรแกรมขอลาไม่ได้ชั่วคราว — เรื่องอื่นในกล่องยังใช้งานได้ตามปกติ
             </p>
+          ) : hr.leave.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบแจ้งลารออนุมัติ</p>
           ) : (
-            <LeaveTable
-              rows={hr.leave}
-              today={today}
-              actionLabel="พิจารณา"
-              emptyText="ไม่มีใบแจ้งลารออนุมัติ"
-            />
+            <div className="space-y-2">
+              {hr.leave.map((row) => (
+                <LeaveDecisionCard
+                  key={row.id}
+                  row={row}
+                  today={today}
+                  reasons={reasons}
+                  backTo="/approvals"
+                  canDecide={canDecideLeave}
+                  entitlement={
+                    row.employee_id
+                      ? (leaveEntitlements.get(
+                          entitlementKey(
+                            row.employee_id,
+                            row.type_id,
+                            Number(row.start_date.slice(0, 4)),
+                          ),
+                        ) ?? null)
+                      : null
+                  }
+                />
+              ))}
+            </div>
           )}
         </section>
       )}
 
-      {/* ใบขอเบิกเงินเดือนจากโปรแกรมขอลา — ใช้ AdvanceTable ตัวเดียวกับโปรแกรม HR */}
+      {/* ใบขอเบิกเงินเดือน — ใช้การ์ดตัวเดียวกับโปรแกรม HR วงเงินอนุมัติคิดจาก apv_limits ชุดเดิม */}
       {canSeeAdvance && (
         <section className="card space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -306,7 +319,7 @@ export default async function ApprovalInboxPage({
                 ใบขอเบิกเงินเดือน ที่รออนุมัติ ({hr.advance.length})
               </h2>
               <p className="text-sm text-slate-500">
-                อนุมัติเต็มจำนวน อนุมัติบางส่วน หรือไม่อนุมัติได้ที่หน้าอนุมัติของโปรแกรมนั้น
+                อนุมัติเต็มจำนวน อนุมัติบางส่วน หรือไม่อนุมัติ ได้ในที่เดียว
               </p>
             </div>
             <Link href="/hr/approvals/advance" className="text-sm text-brand-600 hover:underline">
@@ -318,8 +331,24 @@ export default async function ApprovalInboxPage({
             <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
               อ่านข้อมูลจากโปรแกรมขอเบิกเงินไม่ได้ชั่วคราว
             </p>
+          ) : hr.advance.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500">ไม่มีใบขอเบิกเงินรออนุมัติ</p>
           ) : (
-            <AdvanceTable rows={hr.advance} actionLabel="พิจารณา" emptyText="ไม่มีใบขอเบิกเงินรออนุมัติ" />
+            <div className="space-y-2">
+              {hr.advance.map((row) => {
+                const authority = advanceAuthority.get(row.company_id ?? "");
+                return (
+                  <AdvanceDecisionCard
+                    key={row.id}
+                    row={row}
+                    reasons={reasons}
+                    backTo="/approvals"
+                    canDecide={canDecideAdvance}
+                    limitText={authority ? `อำนาจอนุมัติของคุณ: ${authority.reason}` : null}
+                  />
+                );
+              })}
+            </div>
           )}
         </section>
       )}
