@@ -41,7 +41,8 @@ export default function DocTable({
   showKind?: boolean;
   showJobStatus?: boolean;
   hrefOf?: (row: PrDocRow) => string;
-  actionLabel?: string;
+  /** ป้ายปุ่มท้ายแถว — ส่งเป็นฟังก์ชันได้ถ้าแต่ละแถวใช้คำต่างกัน */
+  actionLabel?: string | ((row: PrDocRow) => string);
 }) {
   if (rows.length === 0) return <p className="text-sm text-slate-500">{emptyText}</p>;
 
@@ -113,7 +114,7 @@ export default function DocTable({
                 href={hrefOf(row)}
                 className="btn-secondary mt-3 w-full text-brand-600"
               >
-                {actionLabel}
+                {typeof actionLabel === "function" ? actionLabel(row) : actionLabel}
               </Link>
             )}
           </li>
@@ -192,7 +193,7 @@ export default function DocTable({
                 {actionLabel && (
                   <td>
                     <Link href={hrefOf(row)} className="font-medium text-brand-600 hover:underline">
-                      {actionLabel}
+                      {typeof actionLabel === "function" ? actionLabel(row) : actionLabel}
                     </Link>
                   </td>
                 )}

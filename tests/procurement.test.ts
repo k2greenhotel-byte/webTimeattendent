@@ -377,6 +377,32 @@ describe("validateApproval", () => {
     expect(validateApproval(approval(), null)).toContain("ไม่พบเอกสาร");
     expect(validateApproval(approval(), doc({ doc_status: "cancelled" }))).toContain("ยกเลิก");
   });
+
+  // ---------- เปลี่ยนใจภายหลัง (ปุ่มแก้ไขผลอนุมัติ) ----------
+
+  it("เอกสารที่อนุมัติแล้วแต่ยังไม่จ่ายเงิน เปลี่ยนเป็นไม่อนุมัติได้", () => {
+    const approved = doc({ approve_status: "approved", approved_amount: 3000, actual_amount: 0 });
+    expect(
+      validateApproval(approval({ decision: "rejected", reject_reason: "price_high" }), approved),
+    ).toBeNull();
+  });
+
+  it("จ่ายเงินไปแล้ว เปลี่ยนเป็นไม่อนุมัติหรือให้หาราคาใหม่ไม่ได้", () => {
+    const paid = doc({ approve_status: "approved", approved_amount: 3000, actual_amount: 3000 });
+    expect(
+      validateApproval(approval({ decision: "rejected", reject_reason: "price_high" }), paid),
+    ).toContain("จ่ายเงินไปแล้ว");
+    expect(validateApproval(approval({ decision: "recheck" }), paid)).toContain("จ่ายเงินไปแล้ว");
+  });
+
+  it("จ่ายบางส่วนแล้ว ยังปรับยอดที่อนุมัติขึ้นหรือเท่าเดิมได้ แต่ลดต่ำกว่ายอดที่จ่ายไม่ได้", () => {
+    const partly = doc({ approve_status: "approved", approved_amount: 3000, actual_amount: 2000 });
+    expect(validateApproval(approval({ approved_amount: 2500 }), partly)).toBeNull();
+    expect(validateApproval(approval({ approved_amount: 2000 }), partly)).toBeNull();
+    expect(validateApproval(approval({ approved_amount: 1500 }), partly)).toContain(
+      "ต่ำกว่ายอดที่จ่ายไปแล้ว",
+    );
+  });
 });
 
 describe("validatePayment (ใบเบิกเงินสดย่อย)", () => {

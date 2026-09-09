@@ -619,10 +619,19 @@ export async function createApproval(input: ApprovalInput): Promise<ApprovalRow>
 
   // อนุมัติผ่าน = ตราเลขที่และวันที่อนุมัติลงบนเอกสารต้นทาง เพื่อให้พิมพ์เอกสารประกอบการจ่ายเงินได้ครบ
   // ไม่ผ่าน/ให้หาราคาใหม่ = ล้างเลขที่เดิมทิ้ง จะได้ไม่มีเลขอนุมัติค้างบนเอกสารที่ยังไม่ผ่าน
+  /*
+   * ตราเลขที่ วันที่ และชื่อผู้อนุมัติลงบนเอกสารต้นทาง เมื่อผลเป็น "อนุมัติ"
+   * ผลอื่น (ไม่อนุมัติ / ให้หาราคาใหม่) ต้องล้างทั้งสามช่อง — ไม่ใช่แค่เลขที่
+   * ไม่งั้นเอกสารที่เปลี่ยนใจเป็นไม่อนุมัติจะยังพิมพ์ชื่อผู้อนุมัติคนเดิมติดมาด้วย
+   */
   const approvalStamp =
     input.decision === "approved"
-      ? { approval_no: doc_no, approved_date: input.approve_date }
-      : { approval_no: null, approved_date: null };
+      ? {
+          approval_no: doc_no,
+          approved_date: input.approve_date,
+          approved_by: input.approver_name,
+        }
+      : { approval_no: null, approved_date: null, approved_by: null };
 
   const { error: targetError } = await supabase
     .from(table)

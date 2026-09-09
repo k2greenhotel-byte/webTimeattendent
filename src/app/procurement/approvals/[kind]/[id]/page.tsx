@@ -27,11 +27,14 @@ export const dynamic = "force-dynamic";
 /** หน้าจอ 3.1 — พิจารณาอนุมัติเอกสารหนึ่งใบ พร้อมประวัติการอนุมัติที่ผ่านมา */
 export default async function ApprovalDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ kind: string; id: string }>;
+  searchParams: Promise<{ edit?: string; msg?: string; err?: string }>;
 }) {
   const user = await requirePermission("PR_APPROVE", "write");
   const { kind, id } = await params;
+  const query = await searchParams;
 
   if (kind !== "repair" && kind !== "purchase") notFound();
 
@@ -45,6 +48,15 @@ export default async function ApprovalDetailPage({
     kind === "repair" ? listRepairPhotos(id) : listPurchasePhotos(id),
     listApprovalsOfDoc(kind, id),
   ]);
+
+  /*
+   * เอกสารที่เคยมีผลอนุมัติแล้ว ไม่เปิดฟอร์มค้างไว้ให้กดทับโดยไม่ตั้งใจ
+   * แสดงผลเดิมพร้อมปุ่ม "แก้ไขผลการอนุมัติ" แทน กดแล้วค่อยเปิดฟอร์ม (?edit=1)
+   * ส่วนเอกสารที่ยังรอพิจารณา เปิดฟอร์มให้เลยเพราะนั่นคืองานหลักของหน้านี้
+   */
+  const decided = doc.approve_status === "approved" || doc.approve_status === "rejected";
+  const showForm = !decided || query.edit === "1";
+  const paid = doc.actual_amount > 0;
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-3 sm:p-4">
@@ -114,10 +126,54 @@ export default async function ApprovalDetailPage({
         )}
       </section>
 
+      {query.msg && (
+        <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{query.msg}</p>
+      )}
+      {query.err && (
+        <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{query.err}</p>
+      )}
+
       {doc.doc_status === "cancelled" ? (
         <p className="card text-sm text-rose-700">เอกสารนี้ถูกยกเลิกแล้ว อนุมัติไม่ได้</p>
+      ) : showForm ? (
+        <ApprovalForm
+          doc={doc}
+          approverName={user.full_name}
+          action={createApprovalForm}
+          editing={decided}
+        />
       ) : (
-        <ApprovalForm doc={doc} approverName={user.full_name} action={createApprovalForm} />
+        <section className="card space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="flex flex-wrap items-center gap-2 font-semibold text-slate-800">
+                ผลการพิจารณา <ApproveStatusBadge status={doc.approve_status} />
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {doc.approval_no ? `ใบอนุมัติเลขที่ ${doc.approval_no}` : "—"}
+                {doc.approved_date ? ` · วันที่ ${formatThaiDate(doc.approved_date)}` : ""}
+                {doc.approved_by ? ` · โดย ${doc.approved_by}` : ""}
+              </p>
+              <p className="text-sm text-slate-600">
+                อนุมัติให้เบิก {formatBaht(doc.approved_amount)}
+                {doc.reject_reason ? ` · ${REJECT_REASON_LABEL[doc.reject_reason]}` : ""}
+              </p>
+            </div>
+
+            <Link
+              href={`/procurement/approvals/${kind}/${id}?edit=1`}
+              className="btn-primary w-full sm:w-auto"
+            >
+              ✏️ แก้ไขผลการอนุมัติ
+            </Link>
+          </div>
+
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            {paid
+              ? `เอกสารนี้จ่ายเงินไปแล้ว ${formatBaht(doc.actual_amount)} — แก้ไขได้เฉพาะยอดที่อนุมัติ (ไม่ต่ำกว่ายอดที่จ่ายไปแล้ว) จะเปลี่ยนเป็นไม่อนุมัติต้องไปลบใบเบิกจ่ายก่อน`
+              : "ยังไม่ได้จ่ายเงิน — เปลี่ยนใจเป็นไม่อนุมัติหรือให้หาราคาใหม่ได้"}
+          </p>
+        </section>
       )}
 
       {history.length > 0 && (

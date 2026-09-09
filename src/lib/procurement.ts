@@ -300,7 +300,7 @@ export function validatePurchase(input: PurchaseInput): string | null {
 /** ใบอนุมัติ (หน้าจอ 3.1) */
 export function validateApproval(
   input: ApprovalInput,
-  target: Pick<PrDocRow, "requested_amount" | "doc_status"> | null,
+  target: Pick<PrDocRow, "requested_amount" | "doc_status" | "actual_amount"> | null,
 ): string | null {
   if (!target) return "ไม่พบเอกสารที่ขออนุมัติ อาจถูกลบไปแล้ว";
   if (target.doc_status === "cancelled") return "เอกสารนี้ถูกยกเลิกแล้ว อนุมัติไม่ได้";
@@ -312,11 +312,26 @@ export function validateApproval(
     return "กรุณาเลือกสาเหตุของการไม่อนุมัติ";
   }
 
+  /*
+   * เปลี่ยนใจได้ตราบใดที่ยังไม่จ่ายเงิน — แต่ถ้าจ่ายไปแล้วต้องกันไว้
+   * เพราะการถอนอนุมัติจะทำให้ยอดที่จ่ายจริงค้างอยู่บนเอกสารที่ "ไม่อนุมัติ" ซึ่งอ่านไม่รู้เรื่อง
+   * และงบก็ไม่ตรง ต้องไปลบ/แก้ใบเบิกจ่ายให้เรียบร้อยก่อน
+   */
+  const paid = target.actual_amount;
+  if (paid > 0 && (input.decision === "rejected" || input.decision === "recheck")) {
+    return `เอกสารนี้จ่ายเงินไปแล้ว ${paid.toLocaleString("th-TH")} บาท จึงเปลี่ยนผลเป็น "${
+      APPROVE_STATUS_LABEL[input.decision]
+    }" ไม่ได้ — ต้องไปลบหรือแก้ใบเบิกจ่ายที่อ้างเอกสารนี้ก่อน`;
+  }
+
   if (input.decision === "approved") {
     const problem = checkAmount("จำนวนเงินที่อนุมัติเบิก", input.approved_amount);
     if (problem) return problem;
     if (input.approved_amount > target.requested_amount) {
       return "จำนวนเงินที่อนุมัติเบิกต้องไม่เกินจำนวนเงินที่ขอเบิก";
+    }
+    if (paid > 0 && input.approved_amount < paid) {
+      return `ลดยอดที่อนุมัติต่ำกว่ายอดที่จ่ายไปแล้ว (${paid.toLocaleString("th-TH")} บาท) ไม่ได้`;
     }
   }
 
