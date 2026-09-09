@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import AttWallBoard from "@/components/att/AttWallBoard";
 import BookingWallBoard from "@/components/booking/BookingWallBoard";
 import ClaimWallBoard from "@/components/claim/ClaimWallBoard";
+import Db2WallBoard from "@/components/db2/WallBoard";
 import HrWallBoard from "@/components/hr/HrWallBoard";
+import InspectionWallBoard from "@/components/inspection/InspectionWallBoard";
 import LeadWallBoard from "@/components/lead/LeadWallBoard";
 import MarketingWallBoard from "@/components/marketing/MarketingWallBoard";
 import ProcurementWallBoard from "@/components/procurement/ProcurementWallBoard";
@@ -18,7 +20,17 @@ import SaleWorkWallBoard from "@/components/salework/SaleWorkWallBoard";
  */
 
 export type WallScreen = {
-  key: "att" | "marketing" | "booking" | "lead" | "procurement" | "claim" | "hr" | "salework";
+  key:
+    | "att"
+    | "marketing"
+    | "booking"
+    | "lead"
+    | "procurement"
+    | "claim"
+    | "hr"
+    | "salework"
+    | "inspection"
+    | "db2";
   label: string;
 };
 
@@ -32,11 +44,16 @@ export default function WallRotator({
   branches,
   companies,
   activityTypes,
+  inspectionCompanies,
+  inspectionTemplates,
 }: {
   screens: WallScreen[];
   branches: Option[];
   companies: Option[];
   activityTypes: Option[];
+  /** บริษัทในระบบส่วนกลาง — คนละชุดกับ companies ที่เป็นบริษัทผู้ขอเบิกของงานการตลาด */
+  inspectionCompanies: Option[];
+  inspectionTemplates: Option[];
 }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -126,6 +143,10 @@ export default function WallRotator({
       {current.key === "claim" && <ClaimWallBoard branches={branches} />}
       {current.key === "hr" && <HrWallBoard branches={branches} />}
       {current.key === "salework" && <SaleWorkWallBoard branches={branches} />}
+      {current.key === "inspection" && (
+        <InspectionWallBoard companies={inspectionCompanies} templates={inspectionTemplates} />
+      )}
+      {current.key === "db2" && <Db2WallBoard />}
     </div>
   );
 }

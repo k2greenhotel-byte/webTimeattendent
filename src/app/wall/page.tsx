@@ -1,5 +1,7 @@
 import WallRotator, { type WallScreen } from "@/components/wall/WallRotator";
+import { listCompanies } from "@/lib/core-db";
 import { listBranches } from "@/lib/db";
+import { listTemplates } from "@/lib/inspection-db";
 import { listMaster } from "@/lib/marketing-db";
 import { getMyPermissions, requireUser } from "@/lib/session";
 
@@ -21,6 +23,8 @@ const SCREENS: { menu: string; key: WallScreen["key"]; label: string }[] = [
   { menu: "CLM_WALL", key: "claim", label: "เคลม" },
   { menu: "HR_WALL", key: "hr", label: "ลา/เบิกเงิน" },
   { menu: "SW_WALL", key: "salework", label: "งานประจำวัน" },
+  { menu: "INSP_WALL", key: "inspection", label: "ตรวจสาขา" },
+  { menu: "DB2_WALL", key: "db2", label: "ยอดขาย Db2" },
 ];
 
 export default async function CombinedWallPage() {
@@ -33,11 +37,14 @@ export default async function CombinedWallPage() {
     label: s.label,
   }));
 
-  const [branches, companies, activityTypes] = await Promise.all([
-    listBranches(),
-    listMaster("company", { includeInactive: true }),
-    listMaster("activityType", { includeInactive: true }),
-  ]);
+  const [branches, companies, activityTypes, coreCompanies, inspectionTemplates] =
+    await Promise.all([
+      listBranches(),
+      listMaster("company", { includeInactive: true }),
+      listMaster("activityType", { includeInactive: true }),
+      listCompanies(true),
+      listTemplates(),
+    ]);
 
   return (
     <WallRotator
@@ -45,6 +52,8 @@ export default async function CombinedWallPage() {
       branches={branches.map((b) => ({ id: b.id, name: b.name }))}
       companies={companies.map((c) => ({ id: c.id, name: c.name }))}
       activityTypes={activityTypes.map((t) => ({ id: t.id, name: t.name }))}
+      inspectionCompanies={coreCompanies.map((c) => ({ id: c.id, name: c.name }))}
+      inspectionTemplates={inspectionTemplates.map((t) => ({ id: t.id, name: t.name }))}
     />
   );
 }

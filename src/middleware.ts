@@ -98,5 +98,8 @@ export const config = {
     "/claim",
     "/claim/:path*",
     "/api/claim/:path*",
+    "/inspection",
+    "/inspection/:path*",
+    "/api/inspection/:path*",
   ],
 };

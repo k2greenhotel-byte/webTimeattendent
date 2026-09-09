@@ -1,0 +1,158 @@
+import Link from "next/link";
+import type { Company } from "@/lib/core-types";
+import {
+  INSP_STATUS_LABEL,
+  INSP_STATUS_ORDER,
+  type InspTemplate,
+  type InspectionQuery,
+} from "@/lib/inspection-types";
+import type { Branch } from "@/lib/types";
+
+export type InspectionParams = Record<string, string | undefined>;
+
+/** อ่านเงื่อนไขค้นหาจาก query string ของหน้าจอ (ใช้ร่วมกันทุกหน้าที่มีฟิลเตอร์) */
+export function queryFromParams(params: InspectionParams): InspectionQuery {
+  const status = params.status ?? "";
+
+  return {
+    keyword: params.q?.trim() || undefined,
+    company_id: params.company_id || null,
+    branch_id: params.branch_id || null,
+    template_id: params.template_id || null,
+    status: (INSP_STATUS_ORDER as string[]).includes(status)
+      ? (status as InspectionQuery["status"])
+      : null,
+    from: params.from || null,
+    to: params.to || null,
+  };
+}
+
+/**
+ * แถบเงื่อนไขค้นหาของหน้ารายการ หน้าสอบถาม และ dashboard
+ * ใช้ method GET จะได้ bookmark ลิงก์ผลลัพธ์ หรือส่งลิงก์ให้คนอื่นเปิดต่อได้
+ */
+export default function InspectionFilters({
+  params,
+  companies,
+  branches,
+  templates,
+  resetHref,
+}: {
+  params: InspectionParams;
+  companies: Company[];
+  branches: Branch[];
+  templates: InspTemplate[];
+  resetHref: string;
+}) {
+  return (
+    <form className="card no-print space-y-3" method="get">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="q">
+            คำค้น
+          </label>
+          <input
+            id="q"
+            name="q"
+            defaultValue={params.q ?? ""}
+            className="input"
+            placeholder="เลขที่ใบ ชื่อสาขา บริษัท แบบฟอร์ม ผู้ตรวจ หมายเหตุ"
+          />
+        </div>
+
+        <div>
+          <label className="label" htmlFor="from">
+            ตั้งแต่วันที่
+          </label>
+          <input id="from" name="from" type="date" defaultValue={params.from ?? ""} className="input" />
+        </div>
+        <div>
+          <label className="label" htmlFor="to">
+            ถึงวันที่
+          </label>
+          <input id="to" name="to" type="date" defaultValue={params.to ?? ""} className="input" />
+        </div>
+
+        <div>
+          <label className="label" htmlFor="company_id">
+            บริษัท
+          </label>
+          <select
+            id="company_id"
+            name="company_id"
+            defaultValue={params.company_id ?? ""}
+            className="input"
+          >
+            <option value="">ทุกบริษัท</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="branch_id">
+            สาขา
+          </label>
+          <select
+            id="branch_id"
+            name="branch_id"
+            defaultValue={params.branch_id ?? ""}
+            className="input"
+          >
+            <option value="">ทุกสาขา</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="template_id">
+            แบบฟอร์มที่ใช้ตรวจ
+          </label>
+          <select
+            id="template_id"
+            name="template_id"
+            defaultValue={params.template_id ?? ""}
+            className="input"
+          >
+            <option value="">ทุกแบบฟอร์ม</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="status">
+            สถานะเอกสาร
+          </label>
+          <select id="status" name="status" defaultValue={params.status ?? ""} className="input">
+            <option value="">ทั้งหมด</option>
+            {INSP_STATUS_ORDER.map((s) => (
+              <option key={s} value={s}>
+                {INSP_STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" className="btn-primary w-full sm:w-auto">
+          ค้นหา
+        </button>
+        <Link href={resetHref} className="btn-secondary w-full sm:w-auto">
+          ล้างเงื่อนไข
+        </Link>
+      </div>
+    </form>
+  );
+}

@@ -1,64 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    {
-      "name": "webTimeattendent",
-      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": [
-        "node_modules/next/dist/bin/next",
-        "dev"
-      ],
-      "port": 3000
-    },
-    {
-      "name": "webTimeattendent-3100",
-      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": [
-        "node_modules/next/dist/bin/next",
-        "dev",
-        "-p",
-        "3100"
-      ],
-      "port": 3100
-    },
-    {
-      "name": "webTimeattendent-3200",
-      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": [
-        "scripts/dev-isolated.mjs",
-        "3200"
-      ],
-      "port": 3200
-    },
-    {
-      "name": "webTimeattendent-3300",
-      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": [
-        "scripts/dev-isolated.mjs",
-        "3300"
-      ],
-      "port": 3300
-    },
-    {
-      "name": "db2-webapp",
-      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": [
-        "D:/claude code/DB2/db2-nextjs-starter/db2-nextjs-starter/node_modules/next/dist/bin/next",
-        "dev",
-        "D:/claude code/DB2/db2-nextjs-starter/db2-nextjs-starter",
-        "-p",
-        "3400"
-      ],
-      "port": 3400
-    },
-    {
-      "name": "db2-webapp-prod",
-      "runtimeExecutable": "cmd.exe",
-      "runtimeArgs": [
-        "/c",
-        "D:\\claude code\\DB2\\db2-nextjs-starter\\db2-nextjs-starter\\scripts\\start-prod.cmd"
-      ],
-      "port": 3400
-    }
+    { "name": "webTimeattendent", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
   ]
 }

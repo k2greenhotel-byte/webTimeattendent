@@ -157,3 +157,32 @@ export type SaleWorkWall = {
   byStaff: WallRank[];
   byTask: WallRank[];
 };
+
+// ---------- ตรวจสอบสาขา ----------
+
+/** ไม่ได้ตรวจสาขานี้มากี่วันถือว่านานเกินไป ควรจัดคิวเข้าไปตรวจ */
+export const INSP_STALE_DAYS = 45;
+
+export type InspectionWall = {
+  generatedAt: string;
+  today: string;
+  counts: {
+    inspectedThisMonth: number;
+    inspectedToday: number;
+    branchesCovered: number;
+    branchesTotal: number;
+    branchesNeverInspected: number;
+    draft: number;
+  };
+  money: { fineThisMonth: number; bonusThisMonth: number };
+  /** เฉลี่ยเปอร์เซ็นต์คะแนนของใบที่ส่งผลแล้วในเดือนนี้ */
+  avgPct: number;
+  /** สาขาคะแนนต่ำสุดจากผลตรวจล่าสุดของแต่ละสาขา */
+  worstBranches: WallRow[];
+  /** สาขาที่ไม่ได้ตรวจมานาน หรือยังไม่เคยตรวจเลย */
+  overdueBranches: WallRow[];
+  /** ข้อที่สาขาต่าง ๆ ตกบ่อยที่สุด — บอกว่าควรอบรมเรื่องอะไร */
+  topFailedItems: WallRank[];
+  /** คะแนนเฉลี่ยรายสาขา (สูงสุดก่อน) */
+  byBranch: WallRank[];
+};
