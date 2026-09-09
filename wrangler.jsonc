@@ -19,6 +19,7 @@
     "SUPABASE_PHOTO_BUCKET": "attendance-photos",
     "SUPABASE_MEMO_BUCKET": "marketing-files",
     "TZ": "Asia/Bangkok",
-    "DB2_API_URL": "https://db2-sales.tail9c6195.ts.net"
+    "DB2_API_URL": "https://sales.kmsgroup.app",
+    "DB2_API_URL_FALLBACK": "https://db2-sales.tail9c6195.ts.net"
   }
 }

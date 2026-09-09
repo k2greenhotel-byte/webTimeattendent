@@ -1,10 +1,12 @@
 import "server-only";
+import { db2Fetch, type Db2Upstream } from "./db2-fetch";
 
 /**
- * ไคลเอนต์เรียก "แอปข้อมูลสดจากระบบขาย (Db2)" ที่รันในบริษัทและเปิดออกมาผ่าน Tailscale Funnel
+ * ไคลเอนต์เรียก "แอปข้อมูลสดจากระบบขาย (Db2)" ที่รันในบริษัท (เซิร์ฟเวอร์ 192.168.1.200)
  *
- *   DB2_API_URL  เช่น https://db2-sales.tail9c6195.ts.net   (wrangler.jsonc vars / .env.local)
- *   DB2_API_KEY  ค่าเดียวกับ API_KEY ใน .env.local ของแอป Db2   (wrangler secret / .env.local)
+ *   DB2_API_URL           https://sales.kmsgroup.app            (Cloudflare Tunnel — หลัก)
+ *   DB2_API_URL_FALLBACK  https://db2-sales.tail9c6195.ts.net  (Tailscale Funnel — สำรอง) — ดู db2-fetch.ts
+ *   DB2_API_KEY           ค่าเดียวกับ API_KEY ใน .env.local ของแอป Db2   (wrangler secret / .env.local)
  *
  * ทุกคำขอเป็น server-to-server เท่านั้น (header x-api-key) — ห้ามเรียกจากฝั่ง browser
  * ข้อมูลเป็นของสดจาก Db2 ณ เวลาที่เรียก จึงไม่ cache
@@ -21,38 +23,31 @@ export class Db2ApiError extends Error {
 
 const TIMEOUT_MS = 20_000;
 
+/** เรียกแอป Db2 ผ่าน db2Fetch (ลอง DB2_API_URL แล้วถอยไป DB2_API_URL_FALLBACK ให้เอง) */
 async function call<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
-  const base = process.env.DB2_API_URL;
-  const key = process.env.DB2_API_KEY;
-  if (!base || !key) {
-    throw new Db2ApiError("ยังไม่ได้ตั้งค่า DB2_API_URL / DB2_API_KEY");
-  }
-
-  const url = new URL(path, base);
+  const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== "") url.searchParams.set(k, v);
+    if (v !== undefined && v !== "") qs.set(k, v);
+  }
+  const pathWithQuery = qs.size ? `${path}?${qs}` : path;
+
+  let upstream: Db2Upstream;
+  try {
+    upstream = await db2Fetch(pathWithQuery, TIMEOUT_MS);
+  } catch (err) {
+    throw new Db2ApiError(err instanceof Error ? err.message : "ต่อระบบขาย (Db2) ไม่ได้");
   }
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  let body: { ok?: boolean; error?: string };
   try {
-    const res = await fetch(url, {
-      headers: { "x-api-key": key },
-      signal: ctrl.signal,
-      cache: "no-store",
-    });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-    if (!res.ok || body.ok === false) {
-      throw new Db2ApiError(body.error ?? `ระบบขายตอบ HTTP ${res.status}`, res.status);
-    }
-    return body as T;
-  } catch (err) {
-    if (err instanceof Db2ApiError) throw err;
-    const reason = err instanceof Error && err.name === "AbortError" ? "หมดเวลารอ" : (err as Error).message;
-    throw new Db2ApiError(`ต่อระบบขาย (Db2) ไม่ได้ — เครื่องในบริษัทอาจปิดอยู่ (${reason})`);
-  } finally {
-    clearTimeout(timer);
+    body = JSON.parse(upstream.text);
+  } catch {
+    body = {};
   }
+  if (!upstream.res.ok || body.ok === false) {
+    throw new Db2ApiError(body.error ?? `ระบบขายตอบ HTTP ${upstream.res.status}`, upstream.res.status);
+  }
+  return body as T;
 }
 
 /* -------------------------------------------------------------------------- */

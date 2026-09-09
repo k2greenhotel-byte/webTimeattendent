@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { db2Configured, db2Fetch } from "@/lib/db2-fetch";
 import { checkPermission, getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -38,47 +39,22 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
     return NextResponse.json({ ok: false, error: "ไม่มีสิทธิ์ดูข้อมูลนี้" }, { status: 403 });
   }
 
-  const base = process.env.DB2_API_URL;
-  const key = process.env.DB2_API_KEY;
-  if (!base || !key) {
+  if (!db2Configured()) {
     return NextResponse.json({ ok: false, error: "ยังไม่ได้ตั้งค่า DB2_API_URL / DB2_API_KEY" }, { status: 500 });
   }
 
-  const url = new URL(`/api/${path}`, base);
-  url.search = req.nextUrl.search;
-
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25_000);
+  // db2Fetch ลอง URL หลักแล้วถอยไป URL สำรองเอง และคัดหน้า HTML error ของตัวกลาง (52x) ออกให้แล้ว
+  // จึงการันตีว่า body ที่ได้เป็น JSON — หน้า client จะไม่พังเป็น "The string did not match the expected pattern" บน Safari
   try {
-    const res = await fetch(url, { headers: { "x-api-key": key }, signal: ctrl.signal, cache: "no-store" });
-    const body = await res.text();
-
-    // ถ้าปลายทางไม่ได้ตอบเป็น JSON (เช่น Cloudflare ตอบหน้า HTML 525/522 ตอนเครื่องในบริษัทหลับ)
-    // แปลงเป็น JSON error ให้ทุกหน้า client แสดงข้อความอ่านรู้เรื่อง แทนที่ res.json() จะพังเป็น
-    // "The string did not match the expected pattern" บน Safari
-    const looksJson = /^\s*[\[{]/.test(body);
-    if (!looksJson) {
-      const hint =
-        res.status === 525 || res.status === 522 || res.status === 523
-          ? "เครื่องในบริษัทที่รันระบบขายน่าจะหลับหรือปิดอยู่ (Cloudflare ต่อไม่ถึง)"
-          : "ปลายทางตอบไม่ใช่ JSON";
-      return NextResponse.json(
-        { ok: false, error: `ระบบขายตอบ HTTP ${res.status} — ${hint} ลองใหม่อีกครั้ง` },
-        { status: 502, headers: { "cache-control": "no-store" } },
-      );
-    }
-
-    return new NextResponse(body, {
+    const { res, text } = await db2Fetch(`/api/${path}${req.nextUrl.search}`, 25_000);
+    return new NextResponse(text, {
       status: res.status,
       headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
     });
   } catch (err) {
-    const reason = err instanceof Error && err.name === "AbortError" ? "หมดเวลารอ" : (err as Error).message;
     return NextResponse.json(
-      { ok: false, error: `ต่อระบบขาย (Db2) ไม่ได้ — เครื่องในบริษัทอาจปิดอยู่ (${reason})` },
-      { status: 502 },
+      { ok: false, error: err instanceof Error ? err.message : "ต่อระบบขาย (Db2) ไม่ได้" },
+      { status: 502, headers: { "cache-control": "no-store" } },
     );
-  } finally {
-    clearTimeout(timer);
   }
 }
