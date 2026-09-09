@@ -609,3 +609,47 @@ export async function copyOverridesToProgramUsers(
 
   return { affected: userIds.length };
 }
+
+// ---------- สิทธิ์จอ War Room (ทุกโปรแกรมรวมกัน) ----------
+
+/** เมนูจอ War Room ของทุกโปรแกรม (รหัสลงท้าย _WALL) เรียงตามโปรแกรม */
+export async function listWallMenus(): Promise<(ProgramMenu & { program_code: string; program_name: string; program_icon: string | null; program_sort: number })[]> {
+  const { data, error } = await getSupabase()
+    .from("program_menus")
+    .select("*, programs!inner(code, name, icon, sort_order)")
+    .like("code", "%\_WALL")
+    .neq("code", "CORE_WALL") // เมนูตั้งค่าหน้านี้เอง ไม่ใช่จอ
+    .order("sort_order");
+  if (error) throw new Error(`อ่านเมนูจอ War Room ไม่สำเร็จ: ${error.message}`);
+
+  type Raw = ProgramMenu & { programs: { code: string; name: string; icon: string | null; sort_order: number } };
+  return ((data ?? []) as Raw[])
+    .map(({ programs, ...m }) => ({
+      ...m,
+      program_code: programs.code,
+      program_name: programs.name,
+      program_icon: programs.icon,
+      program_sort: programs.sort_order,
+    }))
+    .sort((a, b) => a.program_sort - b.program_sort || a.sort_order - b.sort_order);
+}
+
+/** สิทธิ์ที่มีผลจริงของทุกคน เฉพาะเมนูจอ War Room (≈ ผู้ใช้ × จอ แถว) */
+export async function getWallPermissions(): Promise<(EffectiveMenuPermission & { user_id: string })[]> {
+  const { data, error } = await getSupabase()
+    .from("v_user_permissions")
+    .select("*")
+    .like("menu_code", "%\_WALL")
+    .neq("menu_code", "CORE_WALL");
+  if (error) throw new Error(`อ่านสิทธิ์จอ War Room ไม่สำเร็จ: ${error.message}`);
+  return (data ?? []) as (EffectiveMenuPermission & { user_id: string })[];
+}
+
+/** ให้สิทธิ์เข้าโปรแกรมเพิ่ม (ไม่แตะโปรแกรมอื่นที่มีอยู่) — ใช้ตอนติ๊กจอ War Room ให้คนที่ยังไม่มีสิทธิ์เข้าโปรแกรมนั้น */
+export async function grantUserPrograms(userId: string, programIds: string[]): Promise<void> {
+  if (programIds.length === 0) return;
+  const { error } = await getSupabase()
+    .from("user_programs")
+    .upsert(programIds.map((program_id) => ({ user_id: userId, program_id })), { onConflict: "user_id,program_id", ignoreDuplicates: true });
+  if (error) throw new Error(`ให้สิทธิ์เข้าโปรแกรมไม่สำเร็จ: ${error.message}`);
+}

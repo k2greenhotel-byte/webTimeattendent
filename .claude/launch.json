@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "webTimeattendent", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
+    { "name": "webTimeattendent", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 },
+    { "name": "webTimeattendent-3300", "runtimeExecutable": "node", "runtimeArgs": ["scripts/dev-isolated.mjs", "3300"], "port": 3300 }
   ]
 }
