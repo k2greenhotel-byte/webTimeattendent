@@ -54,6 +54,7 @@ export default async function ReceiveListPage({
               <th>วันที่ส่งเบิก</th>
               <th>ควรได้รับ</th>
               <th>ได้รับแล้ว</th>
+              <th>งวด</th>
               <th>คงค้าง</th>
               <th>สถานะ</th>
               <th></th>
@@ -78,6 +79,7 @@ export default async function ReceiveListPage({
                     {formatBaht(r.approved_amount ?? r.request_amount)}
                   </td>
                   <td className="!text-right">{formatBaht(r.received_amount)}</td>
+                  <td>{r.receipt_count > 0 ? `${r.receipt_count} งวด` : "-"}</td>
                   <td className="!text-right">{formatBaht(outstandingAmount(r))}</td>
                   <td>
                     <FlowBadge status={r.flow_status} />
@@ -87,7 +89,7 @@ export default async function ReceiveListPage({
                       href={`/marketing/receive/${r.id}`}
                       className="font-medium text-brand-600 hover:underline"
                     >
-                      {r.receipt_id ? "แก้ไขการรับเงิน" : "บันทึกรับเงิน"}
+                      {r.receipt_count > 0 ? "บันทึกรับเงินเพิ่ม" : "บันทึกรับเงิน"}
                     </Link>
                   </td>
                 </tr>

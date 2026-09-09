@@ -4,7 +4,14 @@
 export type MktActiveStatus = "active" | "cancelled";
 
 /** สถานะขั้นตอนการเบิก (ข้อ 1.13 / 2.7 / 3.6) */
-export type MktFlowStatus = "draft" | "submitted" | "received";
+export type MktFlowStatus =
+  | "draft"
+  | "submitted"
+  /** รับเงินมาแล้วบางส่วน ยังค้างชำระ รอรับงวดถัดไป */
+  | "partial_received"
+  | "received"
+  /** บริษัทรถจ่ายน้อยกว่าที่ตกลงและจะไม่จ่ายส่วนที่เหลืออีก — ถือว่าจบเรื่อง */
+  | "received_short";
 
 export const ACTIVE_STATUS_LABEL: Record<MktActiveStatus, string> = {
   active: "ใช้งาน",
@@ -14,16 +21,29 @@ export const ACTIVE_STATUS_LABEL: Record<MktActiveStatus, string> = {
 export const FLOW_STATUS_LABEL: Record<MktFlowStatus, string> = {
   draft: "ทำเรื่องตั้งเบิก",
   submitted: "ส่งเบิกแล้ว",
-  received: "รับเงินแล้ว",
+  partial_received: "รับเงินบางส่วน (ค้างชำระ)",
+  received: "รับเงินครบแล้ว",
+  received_short: "ได้ครบแต่ถูกตัดเงิน",
 };
 
-export const FLOW_STATUS_ORDER: MktFlowStatus[] = ["draft", "submitted", "received"];
+export const FLOW_STATUS_ORDER: MktFlowStatus[] = [
+  "draft",
+  "submitted",
+  "partial_received",
+  "received",
+  "received_short",
+];
+
+/** สถานะที่ถือว่าจบเรื่องแล้ว ไม่ต้องตามเงินต่อ */
+export const FLOW_STATUS_CLOSED: MktFlowStatus[] = ["received", "received_short"];
 
 /** สีของป้ายสถานะ (ใช้ร่วมกันทุกหน้า จะได้ไม่เพี้ยน) */
 export const FLOW_STATUS_CLASS: Record<MktFlowStatus, string> = {
   draft: "bg-amber-100 text-amber-700",
   submitted: "bg-sky-100 text-sky-700",
+  partial_received: "bg-orange-100 text-orange-700",
   received: "bg-emerald-100 text-emerald-700",
+  received_short: "bg-violet-100 text-violet-700",
 };
 
 export type MktCompany = { id: string; code: string; name: string; is_active: boolean };
@@ -57,6 +77,9 @@ export type MktActivity = {
   approved_amount: number | null;
   active_status: MktActiveStatus;
   flow_status: MktFlowStatus;
+  /** ปิดยอดเพราะบริษัทรถตัดเงิน ไม่จ่ายส่วนที่เหลืออีกแล้ว */
+  settled_short: boolean;
+  settled_note: string | null;
 };
 
 /** บันทึกส่งเรื่องเบิกเงิน (หน้าจอ 2) */
@@ -71,15 +94,20 @@ export type MktSubmission = {
   active_status: MktActiveStatus;
 };
 
-/** บันทึกรับเงิน (หน้าจอ 3) */
+/** บันทึกรับเงิน 1 งวด (หน้าจอ 3) — 1 ใบกิจกรรมมีได้หลายงวด */
 export type MktReceipt = {
   id: string;
   activity_id: string;
   received_by_staff_id: string | null;
+  received_by_name?: string | null;
   receive_date: string;
   receipt_no: string | null;
+  /** ยอดเต็มก่อนหักภาษี ณ ที่จ่าย — ใช้ตัดยอดค้าง */
   received_amount: number;
+  /** ภาษีหัก ณ ที่จ่ายของงวดนี้ */
+  wht_amount: number;
   active_status: MktActiveStatus;
+  created_at?: string;
 };
 
 /** แถวรวมจาก view v_mkt_activities — ใช้ในหน้ารายการ สอบถาม และ dashboard */
@@ -106,12 +134,17 @@ export type MktActivityRow = {
   ack_photo_path: string | null;
   submission_status: MktActiveStatus | null;
   submitted_by_name: string | null;
-  receipt_id: string | null;
-  receive_date: string | null;
-  receipt_no: string | null;
-  received_amount: number | null;
-  receipt_status: MktActiveStatus | null;
-  received_by_name: string | null;
+  /** ปิดยอดเพราะถูกตัดเงิน */
+  settled_short: boolean;
+  settled_note: string | null;
+  /** ยอดรับเงินรวมทุกงวดที่ยังใช้งานอยู่ (ไม่เคยเป็น null — ยังไม่รับเลยคือ 0) */
+  received_amount: number;
+  /** ภาษีหัก ณ ที่จ่ายรวมทุกงวด */
+  wht_amount: number;
+  receipt_count: number;
+  last_receive_date: string | null;
+  last_receipt_no: string | null;
+  last_received_by_name: string | null;
 };
 
 /** เงื่อนไขการค้นหาของหน้าสอบถาม (ข้อ 5) */

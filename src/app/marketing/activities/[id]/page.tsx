@@ -70,7 +70,7 @@ export default async function ActivityDetailPage({
         <Figure
           label="ได้รับโอน"
           value={
-            activity.receipt_status === "cancelled" ? "-" : formatBaht(activity.received_amount)
+            formatBaht(activity.received_amount)
           }
         />
         <Figure label="คงค้าง" value={formatBaht(outstandingAmount(activity))} />
@@ -123,16 +123,16 @@ export default async function ActivityDetailPage({
         </section>
       )}
 
-      {activity.receipt_id && (
+      {activity.receipt_count > 0 && (
         <section className="card space-y-2">
           <h2 className="font-semibold text-slate-800">ข้อมูลการรับเงิน</h2>
           <dl className="grid gap-2 text-sm sm:grid-cols-4">
-            <Item label="ผู้บันทึกรับเงิน" value={activity.received_by_name ?? "-"} />
+            <Item label="ผู้บันทึกรับเงิน" value={activity.last_received_by_name ?? "-"} />
             <Item
               label="วันที่รับเงิน"
-              value={activity.receive_date ? formatThaiDate(activity.receive_date) : "-"}
+              value={activity.last_receive_date ? formatThaiDate(activity.last_receive_date) : "-"}
             />
-            <Item label="เลขที่ใบเสร็จ" value={activity.receipt_no ?? "-"} />
+            <Item label="เลขที่ใบเสร็จ" value={activity.last_receipt_no ?? "-"} />
             <Item label="จำนวนเงินที่ได้รับ" value={formatBaht(activity.received_amount)} />
           </dl>
         </section>

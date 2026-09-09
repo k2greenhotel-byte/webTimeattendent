@@ -1,5 +1,10 @@
 import { workDateOf } from "@/lib/datetime";
-import { MAX_ACTIVITY_PHOTOS, type MktActivityRow, type MktOption } from "@/lib/marketing-types";
+import {
+  FLOW_STATUS_LABEL,
+  MAX_ACTIVITY_PHOTOS,
+  type MktActivityRow,
+  type MktOption,
+} from "@/lib/marketing-types";
 import PhotoUploader from "./PhotoUploader";
 
 type Props = {
@@ -134,13 +139,7 @@ export default function ActivityForm({
           <label className="label">สถานะการเบิก</label>
           <input
             className="input bg-slate-50 text-slate-500"
-            value={
-              activity
-                ? { draft: "ทำเรื่องตั้งเบิก", submitted: "ส่งเบิกแล้ว", received: "รับเงินแล้ว" }[
-                    activity.flow_status
-                  ]
-                : "ทำเรื่องตั้งเบิก"
-            }
+            value={FLOW_STATUS_LABEL[activity?.flow_status ?? "draft"]}
             readOnly
           />
           <p className="mt-1 text-xs text-slate-500">ระบบเปลี่ยนให้เองตามหน้าจอ 2 และ 3</p>

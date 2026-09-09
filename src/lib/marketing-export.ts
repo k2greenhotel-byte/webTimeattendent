@@ -1,7 +1,13 @@
 import "server-only";
 import { formatThaiDate } from "./datetime";
 import type { Table } from "./export";
-import { formatPeriod, outstandingAmount, summarize, summarizeMemos } from "./marketing";
+import {
+  formatPeriod,
+  netReceived,
+  outstandingAmount,
+  summarize,
+  summarizeMemos,
+} from "./marketing";
 import {
   ACTIVE_STATUS_LABEL,
   FLOW_STATUS_LABEL,
@@ -22,7 +28,9 @@ export function marketingToTable(title: string, rows: MktActivityRow[]): Table {
     "ผู้บันทึกจัดทำ",
     "ขอเบิก",
     "อนุมัติเบิก",
-    "ได้รับโอน",
+    "ได้รับ (ก่อนหักภาษี)",
+    "ภาษีหัก ณ ที่จ่าย",
+    "เงินเข้าบัญชีจริง",
     "คงค้าง",
     "สถานะการเบิก",
     "สถานะเอกสาร",
@@ -44,16 +52,18 @@ export function marketingToTable(title: string, rows: MktActivityRow[]): Table {
     r.created_by_name ?? "-",
     r.request_amount,
     r.approved_amount ?? 0,
-    r.receipt_status === "cancelled" ? 0 : (r.received_amount ?? 0),
+    r.received_amount ?? 0,
+    r.wht_amount ?? 0,
+    netReceived(r),
     outstandingAmount(r),
     FLOW_STATUS_LABEL[r.flow_status],
     ACTIVE_STATUS_LABEL[r.active_status],
     r.submitted_by_name ?? "-",
     r.submit_date ? formatThaiDate(r.submit_date) : "-",
     r.postal_no ?? "-",
-    r.received_by_name ?? "-",
-    r.receive_date ? formatThaiDate(r.receive_date) : "-",
-    r.receipt_no ?? "-",
+    r.last_received_by_name ?? "-",
+    r.last_receive_date ? formatThaiDate(r.last_receive_date) : "-",
+    r.last_receipt_no ?? "-",
     r.memo ?? "",
   ]);
 
@@ -67,7 +77,9 @@ export function marketingToTable(title: string, rows: MktActivityRow[]): Table {
       `จำนวนใบกิจกรรม: ${totals.count}`,
       `รวมยอดขอเบิก: ${totals.request.toFixed(2)} บาท`,
       `รวมยอดอนุมัติ: ${totals.approved.toFixed(2)} บาท`,
-      `รวมยอดที่ได้รับ: ${totals.received.toFixed(2)} บาท`,
+      `รวมยอดที่ได้รับก่อนหักภาษี: ${totals.received.toFixed(2)} บาท`,
+      `รวมภาษีหัก ณ ที่จ่าย: ${totals.wht.toFixed(2)} บาท`,
+      `รวมเงินเข้าบัญชีจริง: ${totals.net.toFixed(2)} บาท`,
       `รวมยอดคงค้าง: ${totals.outstanding.toFixed(2)} บาท`,
       "(ใบที่ยกเลิกไม่ถูกนำมารวมยอด)",
     ],

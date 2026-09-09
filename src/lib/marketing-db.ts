@@ -1,6 +1,6 @@
 import "server-only";
 import { removePhotos, signedPhotoUrl, uploadPhoto } from "./db";
-import { computeFlowStatus } from "./marketing";
+import { computeFlowStatus, expectedAmount } from "./marketing";
 import { getSupabase } from "./supabase-server";
 import type {
   MktActiveStatus,
@@ -151,9 +151,10 @@ function toRow(raw: Record<string, unknown>): MktActivityRow {
     approved_amount: raw.approved_amount === null || raw.approved_amount === undefined
       ? null
       : Number(raw.approved_amount),
-    received_amount: raw.received_amount === null || raw.received_amount === undefined
-      ? null
-      : Number(raw.received_amount),
+    received_amount: Number(raw.received_amount ?? 0),
+    wht_amount: Number(raw.wht_amount ?? 0),
+    receipt_count: Number(raw.receipt_count ?? 0),
+    settled_short: Boolean(raw.settled_short),
   };
 }
 
@@ -180,7 +181,7 @@ export async function listActivities(query: MktQuery = {}): Promise<MktActivityR
   if (!keyword) return rows;
 
   return rows.filter((r) =>
-    `${r.doc_no} ${r.title} ${r.company_name ?? ""} ${r.memo ?? ""} ${r.postal_no ?? ""} ${r.receipt_no ?? ""}`
+    `${r.doc_no} ${r.title} ${r.company_name ?? ""} ${r.memo ?? ""} ${r.postal_no ?? ""} ${r.last_receipt_no ?? ""}`
       .toLowerCase()
       .includes(keyword),
   );
@@ -283,20 +284,16 @@ async function replaceActivityPhotos(activityId: string, paths: string[]): Promi
 export async function deleteActivity(id: string): Promise<void> {
   const supabase = getSupabase();
 
-  const [photos, submission, receipt] = await Promise.all([
-    listActivityPhotos(id),
-    getSubmission(id),
-    getReceipt(id),
-  ]);
+  const [photos, submission] = await Promise.all([listActivityPhotos(id), getSubmission(id)]);
 
+  // ใบรับเงินไม่มีไฟล์แนบ และถูกลบตาม cascade อยู่แล้ว จึงเหลือแค่รูปกิจกรรมกับรูปใบส่งเบิก
   const paths = [
-    ...photos.map((p) => p.path),
+    ...photos.map((photo) => photo.path),
     submission?.letter_photo_path,
     submission?.ack_photo_path,
-  ].filter((p): p is string => Boolean(p));
+  ].filter((path): path is string => Boolean(path));
 
   await removePhotos(paths);
-  void receipt;
 
   const { error } = await supabase.from("mkt_activities").delete().eq("id", id);
   if (error) throw new Error(`ลบใบกิจกรรมไม่สำเร็จ: ${error.message}`);
@@ -358,31 +355,77 @@ export async function saveSubmission(
 
 // ---------- รับเงิน (หน้าจอ 3) ----------
 
-export async function getReceipt(activityId: string): Promise<MktReceipt | null> {
+/** ใบรับเงินทุกงวดของใบกิจกรรม เรียงงวดเก่าไปใหม่ */
+export async function listReceipts(activityId: string): Promise<MktReceipt[]> {
   const { data, error } = await getSupabase()
     .from("mkt_receipts")
-    .select("*")
+    .select("*, mkt_staff(name)")
     .eq("activity_id", activityId)
-    .maybeSingle();
+    .order("receive_date")
+    .order("created_at");
 
   if (error) throw new Error(`อ่านข้อมูลรับเงินไม่สำเร็จ: ${error.message}`);
-  if (!data) return null;
-  return { ...(data as MktReceipt), received_amount: Number(data.received_amount ?? 0) };
+
+  return (data ?? []).map((raw) => {
+    const r = raw as Record<string, unknown>;
+    const staff = r.mkt_staff as { name?: string } | null;
+    return {
+      id: r.id as string,
+      activity_id: r.activity_id as string,
+      received_by_staff_id: (r.received_by_staff_id as string) ?? null,
+      received_by_name: staff?.name ?? null,
+      receive_date: r.receive_date as string,
+      receipt_no: (r.receipt_no as string) ?? null,
+      received_amount: Number(r.received_amount ?? 0),
+      wht_amount: Number(r.wht_amount ?? 0),
+      active_status: r.active_status as MktActiveStatus,
+      created_at: r.created_at as string,
+    };
+  });
 }
 
 export type ReceiptInput = {
   received_by_staff_id: string | null;
   receive_date: string;
   receipt_no: string | null;
+  /** ยอดเต็มก่อนหักภาษี ณ ที่จ่าย */
   received_amount: number;
+  wht_amount: number;
   active_status: MktActiveStatus;
 };
 
-export async function saveReceipt(activityId: string, input: ReceiptInput): Promise<void> {
+/** บันทึกรับเงินเพิ่ม 1 งวด (ไม่ทับของเดิม) */
+export async function addReceipt(activityId: string, input: ReceiptInput): Promise<void> {
   const { error } = await getSupabase()
     .from("mkt_receipts")
-    .upsert({ activity_id: activityId, ...input }, { onConflict: "activity_id" });
+    .insert({ activity_id: activityId, ...input });
   if (error) throw new Error(`บันทึกการรับเงินไม่สำเร็จ: ${error.message}`);
+
+  await refreshFlowStatus(activityId);
+}
+
+/** ลบใบรับเงิน 1 งวด (เช่นกรอกผิด) แล้วคิดสถานะใหม่ */
+export async function deleteReceipt(receiptId: string, activityId: string): Promise<void> {
+  const { error } = await getSupabase().from("mkt_receipts").delete().eq("id", receiptId);
+  if (error) throw new Error(`ลบงวดรับเงินไม่สำเร็จ: ${error.message}`);
+
+  await refreshFlowStatus(activityId);
+}
+
+/**
+ * ปิดยอดเพราะบริษัทรถตัดเงิน — จ่ายน้อยกว่าที่ตกลงและจะไม่จ่ายส่วนที่เหลืออีก
+ * ปลดออกได้ถ้ากดผิด แล้วสถานะจะกลับไปเป็น "รับเงินบางส่วน" ตามยอดจริง
+ */
+export async function setSettledShort(
+  activityId: string,
+  settled: boolean,
+  note: string | null,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("mkt_activities")
+    .update({ settled_short: settled, settled_note: settled ? note : null })
+    .eq("id", activityId);
+  if (error) throw new Error(`ปิดยอดไม่สำเร็จ: ${error.message}`);
 
   await refreshFlowStatus(activityId);
 }
@@ -394,17 +437,35 @@ export async function saveReceipt(activityId: string, input: ReceiptInput): Prom
  * ฟังก์ชันนี้คือ "ผู้เขียน flow_status" เพียงตัวเดียวของทั้งระบบ
  */
 export async function refreshFlowStatus(activityId: string): Promise<void> {
-  const [submission, receipt] = await Promise.all([
+  const supabase = getSupabase();
+
+  const [submission, receipts, { data: activity, error: readError }] = await Promise.all([
     getSubmission(activityId),
-    getReceipt(activityId),
+    listReceipts(activityId),
+    supabase
+      .from("mkt_activities")
+      .select("request_amount, approved_amount, settled_short")
+      .eq("id", activityId)
+      .single(),
   ]);
+  if (readError) throw new Error(`อ่านใบกิจกรรมไม่สำเร็จ: ${readError.message}`);
+
+  const receivedTotal = receipts
+    .filter((r) => r.active_status === "active")
+    .reduce((sum, r) => sum + r.received_amount, 0);
 
   const flow_status = computeFlowStatus({
     hasActiveSubmission: submission?.active_status === "active",
-    hasActiveReceipt: receipt?.active_status === "active",
+    receivedTotal,
+    expected: expectedAmount({
+      request_amount: Number(activity.request_amount ?? 0),
+      approved_amount:
+        activity.approved_amount === null ? null : Number(activity.approved_amount),
+    }),
+    settledShort: Boolean(activity.settled_short),
   });
 
-  const { error } = await getSupabase()
+  const { error } = await supabase
     .from("mkt_activities")
     .update({ flow_status })
     .eq("id", activityId);

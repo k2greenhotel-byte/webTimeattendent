@@ -13,6 +13,8 @@ import {
   outstandingAmount,
   parseAmount,
   summarize,
+  netReceived,
+  remainingToReceive,
   assertMemoPeriod,
   isPeriodExpired,
   summarizeMemos,
@@ -47,35 +49,80 @@ function row(patch: Partial<MktActivityRow> = {}): MktActivityRow {
     ack_photo_path: null,
     submission_status: null,
     submitted_by_name: null,
-    receipt_id: null,
-    receive_date: null,
-    receipt_no: null,
-    received_amount: null,
-    receipt_status: null,
-    received_by_name: null,
+    settled_short: false,
+    settled_note: null,
+    received_amount: 0,
+    wht_amount: 0,
+    receipt_count: 0,
+    last_receive_date: null,
+    last_receipt_no: null,
+    last_received_by_name: null,
     ...patch,
   };
 }
 
 describe("computeFlowStatus", () => {
+  const base = { expected: 10_000, settledShort: false };
+
   it("ยังไม่ส่งเบิก = ทำเรื่องตั้งเบิก", () => {
-    expect(computeFlowStatus({ hasActiveSubmission: false, hasActiveReceipt: false })).toBe("draft");
+    expect(computeFlowStatus({ ...base, hasActiveSubmission: false, receivedTotal: 0 })).toBe("draft");
   });
 
-  it("ส่งเบิกแล้วแต่ยังไม่รับเงิน", () => {
-    expect(computeFlowStatus({ hasActiveSubmission: true, hasActiveReceipt: false })).toBe(
-      "submitted",
-    );
+  it("ส่งเบิกแล้วแต่ยังไม่ได้เงิน", () => {
+    expect(computeFlowStatus({ ...base, hasActiveSubmission: true, receivedTotal: 0 })).toBe("submitted");
   });
 
-  it("รับเงินแล้วมาก่อนเสมอ", () => {
-    expect(computeFlowStatus({ hasActiveSubmission: true, hasActiveReceipt: true })).toBe(
-      "received",
-    );
+  it("ได้เงินมาบางส่วน = ค้างชำระ", () => {
+    expect(computeFlowStatus({ ...base, hasActiveSubmission: true, receivedTotal: 4000 })).toBe("partial_received");
   });
 
-  it("ยกเลิกใบส่งเบิกแล้วสถานะถอยกลับ", () => {
-    expect(computeFlowStatus({ hasActiveSubmission: false, hasActiveReceipt: false })).toBe("draft");
+  it("ได้เงินครบ = รับเงินครบแล้ว", () => {
+    expect(computeFlowStatus({ ...base, hasActiveSubmission: true, receivedTotal: 10_000 })).toBe("received");
+  });
+
+  it("ได้เกินยอดที่ควรได้ ก็ถือว่าครบ", () => {
+    expect(computeFlowStatus({ ...base, hasActiveSubmission: true, receivedTotal: 10_500 })).toBe("received");
+  });
+
+  it("เศษสตางค์จากการปัดเลขไม่ทำให้ค้าง", () => {
+    expect(computeFlowStatus({ ...base, hasActiveSubmission: true, receivedTotal: 9999.999 })).toBe("received");
+  });
+
+  it("ปิดยอดเพราะถูกตัดเงิน = ได้ครบแต่ถูกตัดเงิน", () => {
+    expect(
+      computeFlowStatus({ ...base, hasActiveSubmission: true, receivedTotal: 4000, settledShort: true }),
+    ).toBe("received_short");
+  });
+
+  it("ปิดยอดทั้งที่ยังไม่ได้เงินเลย ไม่ถือว่าจบ", () => {
+    expect(
+      computeFlowStatus({ ...base, hasActiveSubmission: true, receivedTotal: 0, settledShort: true }),
+    ).toBe("submitted");
+  });
+});
+
+describe("ภาษีหัก ณ ที่จ่าย", () => {
+  it("เงินเข้าบัญชีจริง = ยอดเต็ม − ภาษีที่ถูกหัก", () => {
+    expect(netReceived({ received_amount: 5000, wht_amount: 150 })).toBe(4850);
+  });
+
+  it("ไม่ได้ถูกหักภาษี เงินเข้าเท่ายอดเต็ม", () => {
+    expect(netReceived({ received_amount: 5000, wht_amount: 0 })).toBe(5000);
+  });
+
+  it("ภาษีที่ถูกหักไม่ทำให้ค้างชำระ (เคสจากหน้าจอจริง)", () => {
+    // ขอเบิก 5,000 ถูกหักภาษี 3% เงินเข้าจริง 4,850 — ยอดเต็ม 5,000 ถือว่าจบแล้ว
+    const r = row({ request_amount: 5000, received_amount: 5000, wht_amount: 150 });
+    expect(outstandingAmount(r)).toBe(0);
+    expect(netReceived(r)).toBe(4850);
+    expect(
+      computeFlowStatus({
+        hasActiveSubmission: true,
+        receivedTotal: 5000,
+        expected: 5000,
+        settledShort: false,
+      }),
+    ).toBe("received");
   });
 });
 
@@ -133,15 +180,16 @@ describe("ยอดคงค้าง", () => {
   });
 
   it("หักยอดที่รับมาแล้ว", () => {
-    expect(
-      outstandingAmount(row({ approved_amount: 8000, received_amount: 5000, receipt_status: "active" })),
-    ).toBe(3000);
+    expect(outstandingAmount(row({ approved_amount: 8000, received_amount: 5000 }))).toBe(3000);
   });
 
-  it("ใบรับเงินที่ถูกยกเลิกไม่นับเป็นเงินที่ได้รับ", () => {
-    expect(
-      outstandingAmount(row({ received_amount: 5000, receipt_status: "cancelled" })),
-    ).toBe(10_000);
+  it("ปิดยอดเพราะถูกตัดเงินแล้ว ไม่เหลือยอดค้างให้ตาม", () => {
+    expect(outstandingAmount(row({ received_amount: 4000, settled_short: true }))).toBe(0);
+  });
+
+  it("ยอดที่ยังรอรับ ใช้เป็นค่าตั้งต้นของช่องจำนวนเงิน", () => {
+    expect(remainingToReceive(row({ approved_amount: 8000, received_amount: 5000 }))).toBe(3000);
+    expect(remainingToReceive(row({ received_amount: 10_000 }))).toBe(0);
   });
 
   it("ใบกิจกรรมที่ยกเลิกไม่มียอดค้าง", () => {
@@ -151,7 +199,7 @@ describe("ยอดคงค้าง", () => {
 
 describe("summarize", () => {
   const rows = [
-    row({ id: "1", request_amount: 10_000, approved_amount: 9000, received_amount: 9000, receipt_status: "active", flow_status: "received" }),
+    row({ id: "1", request_amount: 10_000, approved_amount: 9000, received_amount: 9000, wht_amount: 270, flow_status: "received" }),
     row({ id: "2", request_amount: 5000, flow_status: "submitted" }),
     row({ id: "3", request_amount: 3000, active_status: "cancelled" }),
   ];
@@ -166,7 +214,20 @@ describe("summarize", () => {
   });
 
   it("นับจำนวนตามสถานะ (ไม่รวมใบยกเลิก)", () => {
-    expect(countByFlowStatus(rows)).toEqual({ draft: 0, submitted: 1, received: 1 });
+    expect(countByFlowStatus(rows)).toEqual({
+      draft: 0,
+      submitted: 1,
+      partial_received: 0,
+      received: 1,
+      received_short: 0,
+    });
+  });
+
+  it("แยกยอดเต็ม ภาษีที่ถูกหัก และเงินเข้าจริง", () => {
+    const t = summarize(rows);
+    expect(t.received).toBe(9000);
+    expect(t.wht).toBe(270);
+    expect(t.net).toBe(8730);
   });
 });
 

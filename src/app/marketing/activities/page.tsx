@@ -115,7 +115,7 @@ export default async function ActivitiesPage({
                   <td className="!text-right">{formatBaht(r.request_amount)}</td>
                   <td className="!text-right">{formatBaht(r.approved_amount)}</td>
                   <td className="!text-right">
-                    {r.receipt_status === "cancelled" ? "-" : formatBaht(r.received_amount)}
+                    {formatBaht(r.received_amount)}
                   </td>
                   <td>{r.letter_photo_path || r.ack_photo_path ? "📎" : ""}</td>
                   <td>

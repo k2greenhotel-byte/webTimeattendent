@@ -293,7 +293,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                       <td className="!text-right">{formatBaht(r.received_amount)}</td>
                       <td className="!text-right">{formatBaht(outstandingAmount(r))}</td>
                       <td>{r.submit_date ? formatThaiDate(r.submit_date) : "-"}</td>
-                      <td>{r.receive_date ? formatThaiDate(r.receive_date) : "-"}</td>
+                      <td>{r.last_receive_date ? formatThaiDate(r.last_receive_date) : "-"}</td>
                       <td>
                         <FlowBadge status={r.flow_status} />
                       </td>

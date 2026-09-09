@@ -68,7 +68,7 @@ export async function buildMarketingWall(input: {
   for (const r of live) {
     request += r.request_amount;
     approved += r.approved_amount ?? 0;
-    received += r.receipt_status === "cancelled" ? 0 : (r.received_amount ?? 0);
+    received += r.received_amount ?? 0;
     outstanding += outstandingAmount(r);
   }
 

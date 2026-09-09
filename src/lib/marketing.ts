@@ -11,21 +11,38 @@ import type {
   MktMemoStatus,
   MktQuery,
 } from "./marketing-types";
-import { MAX_ACTIVITY_PHOTOS } from "./marketing-types";
+import { FLOW_STATUS_CLOSED, MAX_ACTIVITY_PHOTOS } from "./marketing-types";
 
 // ---------- สถานะ ----------
 
 /**
- * สถานะขั้นตอนของใบกิจกรรม คำนวณจากเอกสารที่ผูกอยู่เท่านั้น
- * (ใบส่งเบิก/ใบรับเงินที่ถูกยกเลิกไม่นับ — ถอยสถานะกลับให้อัตโนมัติ)
+ * สถานะขั้นตอนของใบกิจกรรม คิดจากเอกสารที่ผูกอยู่และ "ยอดเงินที่รับมาแล้ว"
+ *
+ *   ยังไม่ส่งเบิก                        → ทำเรื่องตั้งเบิก
+ *   ส่งเบิกแล้วแต่ยังไม่ได้เงิน            → ส่งเบิกแล้ว
+ *   ได้เงินมาบางส่วน ยังรอส่วนที่เหลือ     → รับเงินบางส่วน (ค้างชำระ)
+ *   ได้เงินครบตามยอดที่ควรได้             → รับเงินครบแล้ว
+ *   ได้ไม่ครบ แต่บริษัทตัดเงินไม่จ่ายต่อ   → ได้ครบแต่ถูกตัดเงิน (ปิดยอด)
+ *
+ * ใบส่งเบิก/ใบรับเงินที่ถูกยกเลิกไม่นับ — ถอยสถานะกลับให้อัตโนมัติ
  */
 export function computeFlowStatus(input: {
   hasActiveSubmission: boolean;
-  hasActiveReceipt: boolean;
+  /** ยอดรับเงินรวมทุกงวดที่ยังใช้งานอยู่ */
+  receivedTotal: number;
+  /** ยอดที่ควรได้รับ (ยอดอนุมัติถ้ามี ไม่งั้นยอดที่ขอเบิก) */
+  expected: number;
+  /** ผู้ใช้กดปิดยอดว่าบริษัทตัดเงิน ไม่จ่ายส่วนที่เหลืออีกแล้ว */
+  settledShort: boolean;
 }): MktFlowStatus {
-  if (input.hasActiveReceipt) return "received";
-  if (input.hasActiveSubmission) return "submitted";
-  return "draft";
+  const received = round2(input.receivedTotal);
+
+  // ปิดยอดเพราะถูกตัดเงิน ต้องมีเงินเข้ามาแล้วอย่างน้อยบางส่วนถึงจะถือว่าจบ
+  if (input.settledShort && received > 0) return "received_short";
+  if (received <= 0) return input.hasActiveSubmission ? "submitted" : "draft";
+  // เผื่อเศษสตางค์จากการปัดเลข ไม่งั้นรับครบแล้วยังค้าง 0.001 บาท
+  if (received + 0.005 >= round2(input.expected)) return "received";
+  return "partial_received";
 }
 
 /** ใบกิจกรรมที่ยกเลิกแล้วหรือรับเงินครบแล้ว ห้ามส่งเบิกซ้ำ */
@@ -34,13 +51,13 @@ export function canSubmit(row: {
   flow_status: MktFlowStatus;
 }): { ok: boolean; reason?: string } {
   if (row.active_status === "cancelled") return { ok: false, reason: "ใบกิจกรรมนี้ถูกยกเลิกแล้ว" };
-  if (row.flow_status === "received") {
-    return { ok: false, reason: "ใบกิจกรรมนี้รับเงินแล้ว แก้ไขการส่งเบิกไม่ได้" };
+  if (FLOW_STATUS_CLOSED.includes(row.flow_status)) {
+    return { ok: false, reason: "ใบกิจกรรมนี้จบเรื่องแล้ว แก้ไขการส่งเบิกไม่ได้" };
   }
   return { ok: true };
 }
 
-/** ต้องส่งเบิกก่อนถึงจะบันทึกรับเงินได้ */
+/** ต้องส่งเบิกก่อนถึงจะบันทึกรับเงินได้ และใบที่ปิดยอดแล้วรับเพิ่มไม่ได้ */
 export function canReceive(row: {
   active_status: MktActiveStatus;
   flow_status: MktFlowStatus;
@@ -48,6 +65,12 @@ export function canReceive(row: {
   if (row.active_status === "cancelled") return { ok: false, reason: "ใบกิจกรรมนี้ถูกยกเลิกแล้ว" };
   if (row.flow_status === "draft") {
     return { ok: false, reason: "ต้องบันทึกส่งเรื่องเบิกเงินก่อน จึงจะบันทึกรับเงินได้" };
+  }
+  if (row.flow_status === "received_short") {
+    return {
+      ok: false,
+      reason: "ใบนี้ปิดยอดไปแล้ว (ถูกตัดเงิน) — ถ้าจะรับเงินเพิ่ม ให้ยกเลิกการปิดยอดก่อน",
+    };
   }
   return { ok: true };
 }
@@ -82,17 +105,38 @@ export function expectedAmount(row: {
   return row.approved_amount ?? row.request_amount;
 }
 
-/** ยอดคงค้าง = ยอดที่ควรได้ − ยอดที่รับมาแล้ว (ใบที่ยกเลิกคิดเป็น 0) */
+/**
+ * ยอดคงค้าง = ยอดที่ควรได้ − ยอดที่รับมาแล้วทุกงวด
+ * ใบที่ยกเลิก หรือปิดยอดเพราะถูกตัดเงินแล้ว ถือว่าไม่มียอดค้างให้ตามอีก
+ */
 export function outstandingAmount(row: {
   active_status: MktActiveStatus;
   request_amount: number;
   approved_amount: number | null;
   received_amount: number | null;
-  receipt_status?: MktActiveStatus | null;
+  settled_short?: boolean;
 }): number {
-  if (row.active_status === "cancelled") return 0;
-  const received = row.receipt_status === "cancelled" ? 0 : (row.received_amount ?? 0);
-  return Math.round((expectedAmount(row) - received) * 100) / 100;
+  if (row.active_status === "cancelled" || row.settled_short) return 0;
+  const received = row.received_amount ?? 0;
+  return Math.max(0, round2(expectedAmount(row) - received));
+}
+
+/**
+ * เงินที่เข้าบัญชีจริง = ยอดเต็ม − ภาษีหัก ณ ที่จ่าย
+ *
+ * ยอดเต็มคือตัวที่ใช้ตัดยอดค้าง ส่วนภาษีที่ถูกหักไม่ใช่หนี้ที่บริษัทรถยังค้างอยู่
+ * (เอาไปเครดิตคืนตอนยื่นภาษีได้) จึงไม่ทำให้ใบกิจกรรมค้างชำระ
+ */
+export function netReceived(row: { received_amount: number | null; wht_amount: number | null }): number {
+  return round2((row.received_amount ?? 0) - (row.wht_amount ?? 0));
+}
+/** ยอดที่ยังรอรับอีก — ใช้เป็นค่าตั้งต้นของช่องจำนวนเงินในหน้าจอรับเงิน */
+export function remainingToReceive(row: {
+  request_amount: number;
+  approved_amount: number | null;
+  received_amount: number | null;
+}): number {
+  return Math.max(0, round2(expectedAmount(row) - (row.received_amount ?? 0)));
 }
 
 // ---------- เลขที่เอกสาร ----------
@@ -135,12 +179,25 @@ export type MktTotals = {
   count: number;
   request: number;
   approved: number;
+  /** ยอดเต็มก่อนหักภาษี */
   received: number;
+  /** ภาษีหัก ณ ที่จ่ายรวม */
+  wht: number;
+  /** เงินเข้าบัญชีจริง = received − wht */
+  net: number;
   outstanding: number;
 };
 
 export function summarize(rows: MktActivityRow[]): MktTotals {
-  const totals: MktTotals = { count: 0, request: 0, approved: 0, received: 0, outstanding: 0 };
+  const totals: MktTotals = {
+    count: 0,
+    request: 0,
+    approved: 0,
+    received: 0,
+    wht: 0,
+    net: 0,
+    outstanding: 0,
+  };
 
   for (const r of rows) {
     if (r.active_status === "cancelled") {
@@ -150,7 +207,8 @@ export function summarize(rows: MktActivityRow[]): MktTotals {
     totals.count += 1;
     totals.request += r.request_amount;
     totals.approved += r.approved_amount ?? 0;
-    totals.received += r.receipt_status === "cancelled" ? 0 : (r.received_amount ?? 0);
+    totals.received += r.received_amount ?? 0;
+    totals.wht += r.wht_amount ?? 0;
     totals.outstanding += outstandingAmount(r);
   }
 
@@ -159,12 +217,20 @@ export function summarize(rows: MktActivityRow[]): MktTotals {
     request: round2(totals.request),
     approved: round2(totals.approved),
     received: round2(totals.received),
+    wht: round2(totals.wht),
+    net: round2(totals.received - totals.wht),
     outstanding: round2(totals.outstanding),
   };
 }
 
 export function countByFlowStatus(rows: MktActivityRow[]): Record<MktFlowStatus, number> {
-  const out: Record<MktFlowStatus, number> = { draft: 0, submitted: 0, received: 0 };
+  const out: Record<MktFlowStatus, number> = {
+    draft: 0,
+    submitted: 0,
+    partial_received: 0,
+    received: 0,
+    received_short: 0,
+  };
   for (const r of rows) {
     if (r.active_status === "cancelled") continue;
     out[r.flow_status] += 1;
@@ -184,11 +250,22 @@ export function groupTotals(
   for (const r of rows) {
     if (r.active_status === "cancelled") continue;
     const { key, label } = keyOf(r);
-    const acc = map.get(key) ?? { key, label, count: 0, request: 0, approved: 0, received: 0, outstanding: 0 };
+    const acc = map.get(key) ?? {
+      key,
+      label,
+      count: 0,
+      request: 0,
+      approved: 0,
+      received: 0,
+      wht: 0,
+      net: 0,
+      outstanding: 0,
+    };
     acc.count += 1;
     acc.request += r.request_amount;
     acc.approved += r.approved_amount ?? 0;
-    acc.received += r.receipt_status === "cancelled" ? 0 : (r.received_amount ?? 0);
+    acc.received += r.received_amount ?? 0;
+    acc.wht += r.wht_amount ?? 0;
     acc.outstanding += outstandingAmount(r);
     map.set(key, acc);
   }
@@ -199,6 +276,8 @@ export function groupTotals(
       request: round2(g.request),
       approved: round2(g.approved),
       received: round2(g.received),
+      wht: round2(g.wht),
+      net: round2(g.received - g.wht),
       outstanding: round2(g.outstanding),
     }))
     .sort((a, b) => b.request - a.request);
@@ -222,7 +301,7 @@ export function filterRows(rows: MktActivityRow[], q: MktQuery): MktActivityRow[
     if (q.from && r.activity_date < q.from) return false;
     if (q.to && r.activity_date > q.to) return false;
     if (keyword) {
-      const hay = `${r.doc_no} ${r.title} ${r.company_name ?? ""} ${r.memo ?? ""} ${r.postal_no ?? ""} ${r.receipt_no ?? ""}`;
+      const hay = `${r.doc_no} ${r.title} ${r.company_name ?? ""} ${r.memo ?? ""} ${r.postal_no ?? ""} ${r.last_receipt_no ?? ""}`;
       if (!hay.toLowerCase().includes(keyword)) return false;
     }
     return true;
