@@ -46,16 +46,18 @@ export function StatTile({
   );
 }
 
-/** กรอบหัวข้อพร้อมจำนวนรายการ */
+/** กรอบหัวข้อพร้อมจำนวนรายการ · `action` = ตัวกรองเล็ก ๆ ของแผงนั้นเอง วางชิดขวา */
 export function Panel({
   title,
   count,
   hint,
+  action,
   children,
 }: {
   title: string;
   count?: number;
   hint?: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -68,6 +70,7 @@ export function Panel({
           </span>
         )}
         {hint && <span className="text-xs text-slate-500">{hint}</span>}
+        {action && <span className="ml-auto shrink-0">{action}</span>}
       </div>
       {children}
     </section>

@@ -14,7 +14,9 @@ import type {
   TaskType,
   TaskTypeInput,
 } from "./salework-types";
+import type { TaskMatrixRow } from "./salework-types";
 import type { AccessLevel } from "./core-types";
+import { daysBetween } from "./datetime";
 
 /** หัวหน้างานขึ้นไปเห็นใบงานของทุกคน — พนักงานทั่วไปเห็นเฉพาะของตัวเอง */
 export function canSeeAllWork(level: AccessLevel): boolean {
@@ -167,8 +169,33 @@ export function progressOf(items: { done: boolean }[]): {
 
 // ---------- Dashboard / War room ----------
 
-function keyOf(row: ItemStatRow): string {
+/** กุญแจประจำตัวพนักงานหนึ่งคน — ใช้ตัวเดียวกันทุกตาราง จะได้ join กันได้ */
+export function staffKeyOf(row: ItemStatRow): string {
   return row.owner_id ?? `name:${row.owner_name}`;
+}
+
+const keyOf = staffKeyOf;
+
+/**
+ * จำนวนวันที่ใช้หารหาค่าเฉลี่ยต่อวัน — นับวันปฏิทินตั้งแต่ from ถึง to แบบรวมปลายทั้งสองด้าน
+ *
+ * ตัดที่ "วันนี้" เสมอ เพราะช่วงที่เลือกอาจลากไปถึงสิ้นเดือนที่ยังมาไม่ถึง
+ * (เลือกเดือนนี้ = 1–30 ก.ย. แต่วันนี้ 9 ก.ย. ต้องหารด้วย 9 ไม่ใช่ 30 ไม่งั้นค่าเฉลี่ยต่ำเกินจริง)
+ */
+export function daysElapsed(from: string, to: string, today: string): number {
+  const end = to > today ? today : to;
+  if (end < from) return 0;
+  return daysBetween(from, end) + 1;
+}
+
+/** ค่าเฉลี่ยต่อวัน ทศนิยม 1 ตำแหน่ง (ไม่มีวัน = 0 ไม่ใช่ค่าอนันต์) */
+export function perDay(total: number, days: number): number {
+  return days > 0 ? Math.round((total / days) * 10) / 10 : 0;
+}
+
+/** สัดส่วนเป็น % ปัดจำนวนเต็ม — ตัวหารเป็นศูนย์คืน 0 */
+export function sharePct(part: number, total: number): number {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
 }
 
 /**
@@ -186,6 +213,7 @@ export function buildStaffSummaries(rows: ItemStatRow[]): StaffSummary[] {
     let s = acc.get(key);
     if (!s) {
       s = {
+        key,
         owner_id: row.owner_id,
         owner_name: row.owner_full_name ?? row.owner_name,
         branch_name: row.branch_name,
@@ -254,6 +282,35 @@ export function buildTaskSummaries(rows: ItemStatRow[]): TaskSummary[] {
   return [...acc.values()]
     .map(({ staff, ...t }) => ({ ...t, staffCount: staff.size }))
     .sort((a, b) => b.doneCount - a.doneCount || a.task_name.localeCompare(b.task_name, "th"));
+}
+
+/**
+ * งานรายประเภท แยกยอดตามพนักงาน — เรียงจากประเภทที่ทำน้อยที่สุดขึ้นก่อน
+ *
+ * ส่งทั้งตารางไปให้จอครั้งเดียว จอจึงสลับ "ดูรวมทุกคน / ดูรายคน" ได้ทันทีโดยไม่ต้องยิงใหม่
+ * และคิด % เทียบยอดรวมของประเภทนั้นได้เอง (เช่น โพสต์ FB รวม 62 งาน คนนี้ทำ 10 = 16%)
+ *
+ * นับเฉพาะบรรทัดที่ติ๊กว่า "ทำแล้ว" เหมือน buildTaskSummaries — ตัวเลขสองที่จะได้ตรงกัน
+ */
+export function buildTaskMatrix(rows: ItemStatRow[]): TaskMatrixRow[] {
+  const acc = new Map<string, TaskMatrixRow>();
+
+  for (const row of rows) {
+    let t = acc.get(row.task_code);
+    if (!t) {
+      t = { task_code: row.task_code, task_name: row.task_name, total: 0, byStaff: {} };
+      acc.set(row.task_code, t);
+    }
+    if (!row.done) continue;
+
+    t.total += 1;
+    const key = keyOf(row);
+    t.byStaff[key] = (t.byStaff[key] ?? 0) + 1;
+  }
+
+  return [...acc.values()].sort(
+    (a, b) => a.total - b.total || a.task_name.localeCompare(b.task_name, "th"),
+  );
 }
 
 /** เติมยอดขายจริงจากระบบขาย (Db2) ลงในสรุปรายคน ผ่านคู่ที่จับไว้ */

@@ -1,6 +1,6 @@
 import "server-only";
 import { workDateOf } from "./datetime";
-import { buildStaffSummaries, buildTaskSummaries } from "./salework";
+import { buildStaffSummaries, buildTaskMatrix, daysElapsed, perDay } from "./salework";
 import { listItemStats, listWorkOwners } from "./salework-db";
 import type { WallPeriod } from "./wall-period";
 import type { SaleWorkWall, WallRow } from "./wall-types";
@@ -11,13 +11,19 @@ import type { SaleWorkWall, WallRow } from "./wall-types";
  * ตอบคำถามที่หัวหน้าฝ่ายขายต้องรู้ตอนนี้:
  *   1. วันนี้ใครยังไม่ส่งใบงาน — ต้องตามก่อนหมดวัน
  *   2. งานที่ต้องทำวันนี้ทำไปได้กี่ % แล้ว
- *   3. คนไหน/งานประเภทไหนทำได้มากที่สุดวันนี้
+ *   3. ใครทำได้น้อยที่สุด และงานประเภทไหนถูกทำน้อยที่สุด — ทั้งสองแผงเรียงจากน้อยไปมาก
+ *      เพราะจอนี้มีไว้ "ตามงานที่ยังขาด" ไม่ใช่ชมคนที่ทำเยอะอยู่แล้ว
+ *   4. เทียบกันได้ว่าแต่ละคนทำงานประเภทนั้นไปกี่ % ของยอดรวมทั้งร้าน
  *
- * ยอดรวมใช้ buildStaffSummaries / buildTaskSummaries จาก salework.ts
- * ชุดเดียวกับหน้า Dashboard
+ * ยอดรวมใช้ buildStaffSummaries / buildTaskMatrix จาก salework.ts ชุดเดียวกับหน้า Dashboard
+ * ค่าเฉลี่ยต่อวันหารด้วยจำนวนวันที่ผ่านมาจริง (daysElapsed) ไม่ใช่จำนวนวันที่คนนั้นส่งใบงาน
+ * — จะได้เทียบกันได้ตรง ๆ ว่าใครทำงานสม่ำเสมอกว่ากัน
  */
 
-const TOP_N = 10;
+const TOP_N = 12;
+
+/** แผงรายคนเรียงจากน้อยไปมาก จึงเผื่อแถวไว้มากกว่า เพื่อไม่ให้คนทำงานเยอะหายไปหมด */
+const STAFF_N = 20;
 
 export type { SaleWorkWall };
 
@@ -34,7 +40,8 @@ export async function buildSaleWorkWall(input: {
   ]);
 
   const staff = buildStaffSummaries(rows);
-  const tasks = buildTaskSummaries(rows);
+  const taskMatrix = buildTaskMatrix(rows);
+  const days = daysElapsed(period.from, period.to, today);
 
   // ใครส่งใบงานแล้วในช่วงนี้ — นับจากรายการที่มี submitted_at
   const submittedOwners = new Set(
@@ -65,18 +72,22 @@ export async function buildSaleWorkWall(input: {
       itemsTotal,
     },
     donePct: itemsTotal > 0 ? Math.round((itemsDone / itemsTotal) * 100) : 0,
+    days,
     notReported,
+    // เรียงจากน้อยไปมาก — คนที่ทำได้น้อยอยู่บนสุด หัวหน้าจะได้เห็นคนที่ต้องตามก่อน
     byStaff: staff
       .map((s) => ({
         label: s.owner_name,
         value: s.doneCount,
-        sub: `${s.donePct}% ของงานในใบ`,
+        sub: `เฉลี่ย ${perDay(s.doneCount, days)} งาน/วัน · ${s.donePct}% ของงานในใบ`,
       }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, TOP_N),
-    byTask: tasks
-      .map((t) => ({ label: t.task_name, value: t.doneCount }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, TOP_N),
+      .sort((a, b) => a.value - b.value || a.label.localeCompare(b.label, "th"))
+      .slice(0, STAFF_N),
+    staffOptions: staff
+      .map((s) => ({ id: s.key, name: s.owner_name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "th")),
+    byTask: taskMatrix
+      .slice(0, TOP_N)
+      .map((t) => ({ label: t.task_name, total: t.total, byStaff: t.byStaff })),
   };
 }

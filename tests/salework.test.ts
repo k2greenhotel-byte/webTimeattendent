@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   attachDb2Sales,
   buildStaffSummaries,
+  buildTaskMatrix,
   buildTaskSummaries,
   canSeeAllWork,
+  daysElapsed,
   fillableTasks,
   groupTaskTypes,
   mediaKindOf,
   normalizeLink,
   normalizeSalcod,
+  perDay,
   progressOf,
+  sharePct,
   simplifyName,
   suggestMappings,
   taskTypeBlockers,
@@ -401,5 +405,100 @@ describe("เดาคู่ที่น่าจะใช่", () => {
       [{ salcod: "MN001", name: "สมชาย ใจดี", units: 10 }],
     );
     expect(guess.size).toBe(0);
+  });
+});
+
+// ---------- ค่าเฉลี่ยต่อวัน และสัดส่วนเทียบยอดรวม (จอ War Room) ----------
+
+describe("จำนวนวันที่ใช้หารค่าเฉลี่ย", () => {
+  it("นับรวมปลายทั้งสองด้าน — 1 ถึง 9 ก.ย. = 9 วัน", () => {
+    expect(daysElapsed("2026-09-01", "2026-09-09", "2026-09-09")).toBe(9);
+  });
+
+  it("วันเดียวนับเป็น 1 วัน ไม่ใช่ 0", () => {
+    expect(daysElapsed("2026-09-09", "2026-09-09", "2026-09-09")).toBe(1);
+  });
+
+  it("ตัดที่วันนี้ — เลือกทั้งเดือนแต่เพิ่งถึงวันที่ 9 ต้องหารด้วย 9 ไม่ใช่ 30", () => {
+    expect(daysElapsed("2026-09-01", "2026-09-30", "2026-09-09")).toBe(9);
+  });
+
+  it("ช่วงที่ยังมาไม่ถึงเลยคืน 0 (ไม่หารด้วยค่าติดลบ)", () => {
+    expect(daysElapsed("2026-10-01", "2026-10-05", "2026-09-09")).toBe(0);
+  });
+});
+
+describe("ค่าเฉลี่ยต่อวัน", () => {
+  it("ปัดทศนิยม 1 ตำแหน่ง — 49 งานใน 9 วัน = 5.4", () => {
+    expect(perDay(49, 9)).toBe(5.4);
+  });
+
+  it("ไม่มีวันให้หาร คืน 0 ไม่ใช่ค่าอนันต์", () => {
+    expect(perDay(10, 0)).toBe(0);
+    expect(Number.isFinite(perDay(10, 0))).toBe(true);
+  });
+});
+
+describe("สัดส่วนเทียบยอดรวม", () => {
+  it("ตามตัวอย่างผู้ใช้ — โพสต์ FB รวม 62 งาน คนนี้ทำ 10 = 16%", () => {
+    expect(sharePct(10, 62)).toBe(16);
+  });
+
+  it("ทำคนเดียวทั้งหมด = 100% · ยอดรวมเป็นศูนย์ = 0%", () => {
+    expect(sharePct(5, 5)).toBe(100);
+    expect(sharePct(0, 0)).toBe(0);
+  });
+});
+
+describe("งานรายประเภทแยกตามคน", () => {
+  const rows = [
+    statRow({ owner_id: "u1", task_code: "FB" }),
+    statRow({ owner_id: "u1", task_code: "FB" }),
+    statRow({ owner_id: "u2", task_code: "FB" }),
+    statRow({ owner_id: "u1", task_code: "CHAT" }),
+    statRow({ owner_id: "u2", task_code: "CHAT" }),
+    statRow({ owner_id: "u2", task_code: "CHAT" }),
+    statRow({ owner_id: "u2", task_code: "CHAT" }),
+    // ยังไม่ได้ทำ — ต้องไม่ถูกนับทั้งยอดรวมและยอดรายคน
+    statRow({ owner_id: "u1", task_code: "FLYER", done: false }),
+  ];
+
+  it("รวมยอดของแต่ละประเภท และแยกยอดตามคนได้ถูก", () => {
+    const m = buildTaskMatrix(rows);
+    const fb = m.find((t) => t.task_code === "FB");
+    expect(fb).toMatchObject({ total: 3, byStaff: { u1: 2, u2: 1 } });
+  });
+
+  it("เรียงจากประเภทที่ทำน้อยไปมาก", () => {
+    expect(buildTaskMatrix(rows).map((t) => t.task_code)).toEqual(["FLYER", "FB", "CHAT"]);
+  });
+
+  it("บรรทัดที่ยังไม่ได้ทำนับเป็น 0 แต่ยังขึ้นในรายการ (จะได้เห็นว่างานนี้ไม่มีใครทำ)", () => {
+    const flyer = buildTaskMatrix(rows).find((t) => t.task_code === "FLYER");
+    expect(flyer).toMatchObject({ total: 0, byStaff: {} });
+  });
+
+  it("ยอดรวมของแต่ละประเภทตรงกับ buildTaskSummaries (ตัวเลขสองที่ต้องไม่เพี้ยนกัน)", () => {
+    const matrix = buildTaskMatrix(rows);
+    for (const t of buildTaskSummaries(rows)) {
+      expect(matrix.find((m) => m.task_code === t.task_code)?.total).toBe(t.doneCount);
+    }
+  });
+
+  it("ผลรวมของทุกคนในหนึ่งประเภท = ยอดรวมของประเภทนั้น (ฐานของ % ถูกต้อง)", () => {
+    for (const t of buildTaskMatrix(rows)) {
+      const sum = Object.values(t.byStaff).reduce((n, v) => n + v, 0);
+      expect(sum).toBe(t.total);
+    }
+  });
+});
+
+describe("กุญแจพนักงานในสรุปรายคน", () => {
+  it("key ตรงกับที่ใช้ใน buildTaskMatrix จึงจับคู่กันได้", () => {
+    const rows = [statRow({ owner_id: "u1", task_code: "FB" })];
+    const [staff] = buildStaffSummaries(rows);
+    const [task] = buildTaskMatrix(rows);
+    expect(staff.key).toBe("u1");
+    expect(task.byStaff[staff.key]).toBe(1);
   });
 });

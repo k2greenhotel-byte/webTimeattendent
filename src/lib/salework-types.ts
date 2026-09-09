@@ -145,6 +145,8 @@ export type ItemStatRow = {
 
 /** สรุปผลงานของพนักงานขายหนึ่งคนในช่วงที่เลือก */
 export type StaffSummary = {
+  /** กุญแจประจำตัวที่ใช้อ้างอิงข้ามตาราง (owner_id ถ้ามี ไม่งั้นใช้ชื่อ) */
+  key: string;
   owner_id: string | null;
   owner_name: string;
   branch_name: string | null;
@@ -161,6 +163,19 @@ export type StaffSummary = {
   /** ยอดขายจริงจากระบบขาย (Db2) — มีค่าเมื่อจับคู่ SALCOD ไว้แล้วและต่อ Db2 ติด */
   db2Units?: number | null;
   db2Salcod?: string | null;
+};
+
+/**
+ * งานหนึ่งประเภท แยกยอดตามพนักงาน — ใช้เทียบว่าใครทำงานประเภทนั้นไปกี่ % ของยอดรวม
+ * เช่น โพสต์ Facebook รวมทั้งร้าน 62 งาน น้องนุชทำ 10 งาน = 16%
+ */
+export type TaskMatrixRow = {
+  task_code: string;
+  task_name: string;
+  /** งานที่ทำแล้วรวมทุกคนของประเภทนี้ (ตัวหารของ %) */
+  total: number;
+  /** จำนวนงานที่ทำแล้ว แยกตามพนักงาน — key ตรงกับ StaffSummary.key */
+  byStaff: Record<string, number>;
 };
 
 /** สรุปผลงานรายประเภทงาน (ทุกคนรวมกัน) */
