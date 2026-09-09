@@ -3,16 +3,21 @@
 import { useState } from "react";
 import WallShell from "@/components/wall/WallShell";
 import { AlertList, Panel, RankBars, StatTile } from "@/components/wall/WallParts";
+import {
+  useWallPeriod,
+  WallPeriodPicker,
+  WallSelect,
+  type Option,
+} from "@/components/wall/WallFilters";
 import type { ClaimWall } from "@/lib/wall-types";
 
 const REFRESH_MS = 2 * 60_000;
 
-type Branch = { id: string; name: string };
-
-export default function ClaimWallBoard({ branches }: { branches: Branch[] }) {
+export default function ClaimWallBoard({ branches }: { branches: Option[] }) {
   const [branch, setBranch] = useState("");
+  const { state, setState, period } = useWallPeriod();
 
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams({ from: period.from, to: period.to });
   if (branch) qs.set("branch", branch);
 
   return (
@@ -21,19 +26,16 @@ export default function ClaimWallBoard({ branches }: { branches: Branch[] }) {
       endpoint={`/api/claim/wall?${qs}`}
       refreshMs={REFRESH_MS}
       controls={
-        <select
-          value={branch}
-          onChange={(e) => setBranch(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
-          aria-label="สาขา"
-        >
-          <option value="">ทุกสาขา</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <>
+          <WallPeriodPicker state={state} onChange={setState} period={period} />
+          <WallSelect
+            value={branch}
+            onChange={setBranch}
+            options={branches}
+            allLabel="ทุกสาขา"
+            label="สาขา"
+          />
+        </>
       }
     >
       {(d) => (
@@ -58,9 +60,9 @@ export default function ClaimWallBoard({ branches }: { branches: Branch[] }) {
               tone="violet"
             />
             <StatTile
-              label="งานเคลมที่ยังไม่จบ"
-              value={d.counts.open}
-              sub={`เดือนนี้เปิดใหม่ ${d.counts.openedThisMonth} ใบ`}
+              label={`เปิดเคลม ${d.period.label}`}
+              value={d.counts.openedInPeriod}
+              sub={`งานเคลมที่ยังไม่จบทั้งหมด ${d.counts.open} ใบ`}
               tone="sky"
             />
           </div>
@@ -75,7 +77,7 @@ export default function ClaimWallBoard({ branches }: { branches: Branch[] }) {
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <Panel title="งานค้างรายสาขา">
+            <Panel title="เปิดเคลมรายสาขา" hint={d.period.label}>
               <RankBars rows={d.byBranch} unit="ใบ" tone="sky" />
             </Panel>
             <Panel title="งานค้างแยกตามผู้ผลิต">

@@ -2,7 +2,8 @@ import "server-only";
 import { isClosed, isOverdue, makerText, overdueDays, summarizeClaims, vehicleText } from "./claim";
 import { listClaims } from "./claim-db";
 import type { ClaimRow } from "./claim-types";
-import { monthBounds, workDateOf } from "./datetime";
+import { workDateOf } from "./datetime";
+import { inPeriod, type WallPeriod } from "./wall-period";
 import type { ClaimWall, WallRank, WallRow } from "./wall-types";
 
 /**
@@ -41,9 +42,12 @@ function rank(rows: ClaimRow[], keyOf: (r: ClaimRow) => string): WallRank[] {
     .slice(0, TOP_N);
 }
 
-export async function buildClaimWall(input: { branchId?: string | null }): Promise<ClaimWall> {
+export async function buildClaimWall(input: {
+  branchId?: string | null;
+  period: WallPeriod;
+}): Promise<ClaimWall> {
   const today = workDateOf();
-  const month = monthBounds(Number(today.slice(0, 4)), Number(today.slice(5, 7)));
+  const { period } = input;
 
   const rows = await listClaims(input.branchId ? { branch_id: input.branchId } : {});
   const summary = summarizeClaims(rows, today);
@@ -55,22 +59,28 @@ export async function buildClaimWall(input: { branchId?: string | null }): Promi
     .sort((a, b) => overdueDays(b, today) - overdueDays(a, today));
   const waitingMakerRows = live.filter((r) => r.job_status === "sent_agent");
 
+  // เคลมที่เปิดในช่วงที่เลือก — ตัวเลขกลุ่มนี้ขยับตามตัวกรอง
+  const openedInPeriod = live.filter((r) => inPeriod(r.claim_date, period));
+
   return {
     generatedAt: new Date().toISOString(),
     today,
+    period,
     counts: {
       open: summary.open,
       overdue: summary.overdue,
       waitingMaker: summary.waitingMaker,
       waitingDelivery: summary.waitingDelivery,
       openedToday: live.filter((r) => r.claim_date === today).length,
-      openedThisMonth: live.filter((r) => r.claim_date >= month.from && r.claim_date <= month.to).length,
+      openedInPeriod: openedInPeriod.length,
     },
     overdue: overdueRows.slice(0, TOP_N).map((r) => rowOf(r, `เลย ${overdueDays(r, today)} วัน`)),
     waitingMaker: waitingMakerRows
       .slice(0, TOP_N)
       .map((r) => rowOf(r, makerText(r) || "รอผู้ผลิต")),
-    byBranch: rank(openRows, (r) => r.branch_name ?? "ไม่ระบุสาขา"),
+    // เปิดเคลมรายสาขา นับเฉพาะในช่วงที่เลือก — ดูปริมาณงานเข้าใหม่
+    byBranch: rank(openedInPeriod, (r) => r.branch_name ?? "ไม่ระบุสาขา"),
+    // งานค้างแยกตามผู้ผลิต เป็นภาพ "ค้างอยู่ตอนนี้" ไม่ขึ้นกับช่วงที่เลือก
     byMaker: rank(openRows, (r) => r.maker_vendor_name ?? r.maker_name ?? "ไม่ระบุผู้ผลิต"),
   };
 }

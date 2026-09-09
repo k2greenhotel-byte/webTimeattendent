@@ -3,16 +3,21 @@
 import { useState } from "react";
 import WallShell from "@/components/wall/WallShell";
 import { AlertList, Panel, RankBars, shortBaht, StatTile } from "@/components/wall/WallParts";
+import {
+  useWallPeriod,
+  WallPeriodPicker,
+  WallSelect,
+  type Option,
+} from "@/components/wall/WallFilters";
 import { BOOK_SLOW_DAYS, type BookingWall } from "@/lib/wall-types";
 
 const REFRESH_MS = 2 * 60_000;
 
-type Branch = { id: string; name: string };
-
-export default function BookingWallBoard({ branches }: { branches: Branch[] }) {
+export default function BookingWallBoard({ branches }: { branches: Option[] }) {
   const [branch, setBranch] = useState("");
+  const { state, setState, period } = useWallPeriod();
 
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams({ from: period.from, to: period.to });
   if (branch) qs.set("branch", branch);
 
   return (
@@ -21,19 +26,16 @@ export default function BookingWallBoard({ branches }: { branches: Branch[] }) {
       endpoint={`/api/booking/wall?${qs}`}
       refreshMs={REFRESH_MS}
       controls={
-        <select
-          value={branch}
-          onChange={(e) => setBranch(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
-          aria-label="สาขา"
-        >
-          <option value="">ทุกสาขา</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <>
+          <WallPeriodPicker state={state} onChange={setState} period={period} />
+          <WallSelect
+            value={branch}
+            onChange={setBranch}
+            options={branches}
+            allLabel="ทุกสาขา"
+            label="สาขา"
+          />
+        </>
       }
     >
       {(d) => (
@@ -52,9 +54,9 @@ export default function BookingWallBoard({ branches }: { branches: Branch[] }) {
               tone="sky"
             />
             <StatTile
-              label="รับจองเดือนนี้"
-              value={d.counts.bookedThisMonth}
-              sub={`มัดจำเดือนนี้ ${shortBaht(d.money.thisMonth)} บาท`}
+              label={`รับจอง ${d.period.label}`}
+              value={d.counts.bookedInPeriod}
+              sub={`มัดจำในช่วงนี้ ${shortBaht(d.money.inPeriod)} บาท`}
               tone="emerald"
             />
             <StatTile
@@ -80,10 +82,10 @@ export default function BookingWallBoard({ branches }: { branches: Branch[] }) {
           </div>
 
           <div className="grid gap-3 lg:grid-cols-3">
-            <Panel title="รับจองรายสาขา">
+            <Panel title="รับจองรายสาขา" hint={d.period.label}>
               <RankBars rows={d.byBranch} unit="ใบ" tone="sky" />
             </Panel>
-            <Panel title="พนักงานขายที่รับจองสูงสุด">
+            <Panel title="พนักงานขายที่รับจองสูงสุด" hint={d.period.label}>
               <RankBars rows={d.byStaff} unit="ใบ" tone="emerald" />
             </Panel>
             <Panel title="รุ่นรถที่ต้องเร่งสั่ง">

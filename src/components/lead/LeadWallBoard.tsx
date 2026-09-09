@@ -3,16 +3,21 @@
 import { useState } from "react";
 import WallShell from "@/components/wall/WallShell";
 import { AlertList, Panel, RankBars, StatTile } from "@/components/wall/WallParts";
+import {
+  useWallPeriod,
+  WallPeriodPicker,
+  WallSelect,
+  type Option,
+} from "@/components/wall/WallFilters";
 import type { LeadWall } from "@/lib/wall-types";
 
 const REFRESH_MS = 2 * 60_000;
 
-type Branch = { id: string; name: string };
-
-export default function LeadWallBoard({ branches }: { branches: Branch[] }) {
+export default function LeadWallBoard({ branches }: { branches: Option[] }) {
   const [branch, setBranch] = useState("");
+  const { state, setState, period } = useWallPeriod();
 
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams({ from: period.from, to: period.to });
   if (branch) qs.set("branch", branch);
 
   return (
@@ -21,19 +26,16 @@ export default function LeadWallBoard({ branches }: { branches: Branch[] }) {
       endpoint={`/api/lead/wall?${qs}`}
       refreshMs={REFRESH_MS}
       controls={
-        <select
-          value={branch}
-          onChange={(e) => setBranch(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
-          aria-label="สาขา"
-        >
-          <option value="">ทุกสาขา</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <>
+          <WallPeriodPicker state={state} onChange={setState} period={period} />
+          <WallSelect
+            value={branch}
+            onChange={setBranch}
+            options={branches}
+            allLabel="ทุกสาขา"
+            label="สาขา"
+          />
+        </>
       }
     >
       {(d) => (
@@ -55,7 +57,7 @@ export default function LeadWallBoard({ branches }: { branches: Branch[] }) {
             <StatTile
               label="Lead ที่ยังตามอยู่"
               value={d.counts.open}
-              sub={`เดือนนี้รับใหม่ ${d.counts.newThisMonth} · ปิดได้ ${d.counts.won}`}
+              sub={`Lead ใหม่ ${d.period.label} ${d.counts.newInPeriod} · ปิดได้ ${d.counts.won}`}
               tone="sky"
             />
           </div>
@@ -70,7 +72,7 @@ export default function LeadWallBoard({ branches }: { branches: Branch[] }) {
           </div>
 
           <div className="grid gap-3 lg:grid-cols-3">
-            <Panel title="Lead ค้างรายพนักงาน">
+            <Panel title="Lead ใหม่รายพนักงาน" hint={d.period.label}>
               <RankBars rows={d.byStaff} unit="ราย" tone="sky" />
             </Panel>
             <Panel title="Lead ค้างรายสาขา">

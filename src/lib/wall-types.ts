@@ -12,6 +12,15 @@ export type WallRow = { key: string; title: string; detail: string; right: strin
 /** แถวจัดอันดับแบบแท่ง */
 export type WallRank = { label: string; value: number; sub?: string };
 
+/**
+ * ช่วงเวลาที่จอกำลังแสดงอยู่ — ส่งกลับไปให้จอขึ้นหัวข้อว่ากำลังดูช่วงไหน
+ *
+ * ตัวเลขในจอแบ่งเป็นสองพวก อย่าปนกัน:
+ *   1. "ค้างอยู่ตอนนี้" (รออนุมัติ เลยกำหนด รอส่งมอบ) — สถานะปัจจุบัน ไม่ขึ้นกับช่วงที่เลือก
+ *   2. "เกิดขึ้นในช่วง" (เปิดใบ รับจอง ตรวจ ลา) — นับเฉพาะในช่วง from–to ที่ผู้ใช้เลือก
+ */
+export type WallPeriodInfo = { from: string; to: string; label: string };
+
 // ---------- กิจกรรมการตลาด ----------
 
 /** ส่งเบิกแล้วเกินกี่วันถือว่าค้างนาน ควรโทรตาม */
@@ -20,7 +29,7 @@ export const MKT_SLOW_DAYS = 30;
 export type MarketingWall = {
   generatedAt: string;
   today: string;
-  period: { from: string | null; to: string | null; label: string };
+  period: WallPeriodInfo;
   money: { request: number; approved: number; received: number; outstanding: number };
   counts: {
     activities: number;
@@ -41,15 +50,16 @@ export type MarketingWall = {
 export type BookingWall = {
   generatedAt: string;
   today: string;
+  period: WallPeriodInfo;
   counts: {
     openBookings: number;
     bookedToday: number;
-    bookedThisMonth: number;
+    bookedInPeriod: number;
     awaitingDelivery: number;
     outOfStock: number;
     docPending: number;
   };
-  money: { total: number; thisMonth: number };
+  money: { total: number; inPeriod: number };
   waitingLong: WallRow[];
   docPending: WallRow[];
   byBranch: WallRank[];
@@ -65,10 +75,11 @@ export const BOOK_SLOW_DAYS = 14;
 export type LeadWall = {
   generatedAt: string;
   today: string;
+  period: WallPeriodInfo;
   counts: {
     open: number;
     newToday: number;
-    newThisMonth: number;
+    newInPeriod: number;
     dueToday: number;
     overdue: number;
     noPlan: number;
@@ -86,12 +97,13 @@ export type LeadWall = {
 export type ProcurementWall = {
   generatedAt: string;
   today: string;
+  period: WallPeriodInfo;
   counts: {
     open: number;
     waitingApproval: number;
     overdue: number;
     createdToday: number;
-    createdThisMonth: number;
+    createdInPeriod: number;
   };
   money: { requested: number; approved: number; paid: number; unpaid: number };
   overdue: WallRow[];
@@ -105,15 +117,16 @@ export type ProcurementWall = {
 export type HrWall = {
   generatedAt: string;
   today: string;
+  period: WallPeriodInfo;
   counts: {
     pendingLeave: number;
     pendingAdvance: number;
     onLeaveToday: number;
-    leaveThisMonth: number;
+    leaveInPeriod: number;
     certOverdue: number;
     lateNotice: number;
   };
-  money: { advancePending: number; advanceThisMonth: number };
+  money: { advancePending: number; advanceInPeriod: number };
   pending: WallRow[];
   onLeaveToday: WallRow[];
   byType: WallRank[];
@@ -125,13 +138,14 @@ export type HrWall = {
 export type ClaimWall = {
   generatedAt: string;
   today: string;
+  period: WallPeriodInfo;
   counts: {
     open: number;
     overdue: number;
     waitingMaker: number;
     waitingDelivery: number;
     openedToday: number;
-    openedThisMonth: number;
+    openedInPeriod: number;
   };
   overdue: WallRow[];
   waitingMaker: WallRow[];
@@ -144,14 +158,16 @@ export type ClaimWall = {
 export type SaleWorkWall = {
   generatedAt: string;
   today: string;
+  period: WallPeriodInfo;
   counts: {
     staffTotal: number;
-    reportedToday: number;
-    notReportedToday: number;
-    itemsDoneToday: number;
-    itemsTotalToday: number;
+    /** ส่งใบงานอย่างน้อยหนึ่งวันในช่วงที่เลือก */
+    reported: number;
+    notReported: number;
+    itemsDone: number;
+    itemsTotal: number;
   };
-  /** เปอร์เซ็นต์งานที่ทำครบของวันนี้ */
+  /** เปอร์เซ็นต์งานที่ทำครบในช่วงที่เลือก */
   donePct: number;
   notReported: WallRow[];
   byStaff: WallRank[];
@@ -166,16 +182,17 @@ export const INSP_STALE_DAYS = 45;
 export type InspectionWall = {
   generatedAt: string;
   today: string;
+  period: WallPeriodInfo;
   counts: {
-    inspectedThisMonth: number;
+    inspectedInPeriod: number;
     inspectedToday: number;
     branchesCovered: number;
     branchesTotal: number;
     branchesNeverInspected: number;
     draft: number;
   };
-  money: { fineThisMonth: number; bonusThisMonth: number };
-  /** เฉลี่ยเปอร์เซ็นต์คะแนนของใบที่ส่งผลแล้วในเดือนนี้ */
+  money: { fineInPeriod: number; bonusInPeriod: number };
+  /** เฉลี่ยเปอร์เซ็นต์คะแนนของใบที่ส่งผลแล้วในช่วงที่เลือก */
   avgPct: number;
   /** สาขาคะแนนต่ำสุดจากผลตรวจล่าสุดของแต่ละสาขา */
   worstBranches: WallRow[];

@@ -10,6 +10,7 @@ import {
 import { listActivities } from "./marketing-db";
 import { listMemos } from "./memo-db";
 import { MEMO_STATUS_LABEL, type MktMemoStatus } from "./marketing-types";
+import { type WallPeriod } from "./wall-period";
 import { MKT_SLOW_DAYS, type MarketingWall } from "./wall-types";
 
 /** จำนวนใบที่แสดงในแต่ละรายการบนจอ */
@@ -39,16 +40,16 @@ function daysBetween(from: string, to: string): number {
 const baht = (n: number) => `${Math.round(n).toLocaleString("th-TH")} ฿`;
 
 export async function buildMarketingWall(input: {
-  from?: string | null;
-  to?: string | null;
+  period: WallPeriod;
   companyId?: string | null;
   activityTypeId?: string | null;
 }): Promise<MarketingWall> {
   const today = workDateOf();
+  const { period } = input;
   // Memo ไม่มีประเภทกิจกรรม จึงกรองด้วยช่วงวันที่และบริษัทเท่านั้น
   const memoQuery = {
-    from: input.from || undefined,
-    to: input.to || undefined,
+    from: period.from,
+    to: period.to,
     company_id: input.companyId || undefined,
   };
   const query = { ...memoQuery, activity_type_id: input.activityTypeId || undefined };
@@ -149,15 +150,10 @@ export async function buildMarketingWall(input: {
     value: memoTotals.byStatus[s],
   }));
 
-  const label =
-    input.from || input.to
-      ? `${input.from ?? "เริ่มต้น"} ถึง ${input.to ?? "ปัจจุบัน"}`
-      : "ทั้งหมดตั้งแต่เริ่มระบบ";
-
   return {
     generatedAt: new Date().toISOString(),
     today,
-    period: { from: input.from ?? null, to: input.to ?? null, label },
+    period,
     money: {
       request: Math.round(request),
       approved: Math.round(approved),

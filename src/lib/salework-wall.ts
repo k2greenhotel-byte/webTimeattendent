@@ -2,6 +2,7 @@ import "server-only";
 import { workDateOf } from "./datetime";
 import { buildStaffSummaries, buildTaskSummaries } from "./salework";
 import { listItemStats, listWorkOwners } from "./salework-db";
+import type { WallPeriod } from "./wall-period";
 import type { SaleWorkWall, WallRow } from "./wall-types";
 
 /**
@@ -22,44 +23,48 @@ export type { SaleWorkWall };
 
 export async function buildSaleWorkWall(input: {
   branchId?: string | null;
+  period: WallPeriod;
 }): Promise<SaleWorkWall> {
   const today = workDateOf();
+  const { period } = input;
 
   const [rows, owners] = await Promise.all([
-    listItemStats({ from: today, to: today, branch_id: input.branchId ?? null }),
+    listItemStats({ from: period.from, to: period.to, branch_id: input.branchId ?? null }),
     listWorkOwners(),
   ]);
 
   const staff = buildStaffSummaries(rows);
   const tasks = buildTaskSummaries(rows);
 
-  // ใครส่งใบงานแล้ววันนี้ — นับจากรายการที่มี submitted_at
+  // ใครส่งใบงานแล้วในช่วงนี้ — นับจากรายการที่มี submitted_at
   const submittedOwners = new Set(
     rows.filter((r) => r.submitted_at).map((r) => r.owner_id ?? r.owner_name),
   );
   const notReportedOwners = owners.filter((o) => !submittedOwners.has(o.id));
 
-  const itemsTotalToday = rows.length;
-  const itemsDoneToday = rows.filter((r) => r.done).length;
+  const itemsTotal = rows.length;
+  const itemsDone = rows.filter((r) => r.done).length;
 
+  const isToday = period.from === today && period.to === today;
   const notReported: WallRow[] = notReportedOwners.slice(0, TOP_N).map((o) => ({
     key: o.id,
     title: o.name,
-    detail: "ยังไม่ส่งใบงานวันนี้",
+    detail: isToday ? "ยังไม่ส่งใบงานวันนี้" : `ไม่ส่งใบงานเลยใน ${period.label}`,
     right: "รอส่ง",
   }));
 
   return {
     generatedAt: new Date().toISOString(),
     today,
+    period,
     counts: {
       staffTotal: owners.length,
-      reportedToday: submittedOwners.size,
-      notReportedToday: notReportedOwners.length,
-      itemsDoneToday,
-      itemsTotalToday,
+      reported: submittedOwners.size,
+      notReported: notReportedOwners.length,
+      itemsDone,
+      itemsTotal,
     },
-    donePct: itemsTotalToday > 0 ? Math.round((itemsDoneToday / itemsTotalToday) * 100) : 0,
+    donePct: itemsTotal > 0 ? Math.round((itemsDone / itemsTotal) * 100) : 0,
     notReported,
     byStaff: staff
       .map((s) => ({

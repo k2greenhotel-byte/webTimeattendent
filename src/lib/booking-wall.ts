@@ -6,11 +6,13 @@ import {
   deliveryPipeline,
   describeVehicle,
   isOutOfStock,
+  staffNameOf,
 } from "./booking";
 import { listBookings } from "./booking-db";
 import { CONTRACT_STATUS_LABEL, type BookingRow } from "./booking-types";
-import { monthBounds, workDateOf } from "./datetime";
-import { BOOK_SLOW_DAYS, type BookingWall, type WallRow } from "./wall-types";
+import { workDateOf } from "./datetime";
+import { inPeriod, type WallPeriod } from "./wall-period";
+import { BOOK_SLOW_DAYS, type BookingWall, type WallRank, type WallRow } from "./wall-types";
 
 /**
  * ข้อมูลจอ War Room ของระบบจองรถ
@@ -38,11 +40,25 @@ function rowOf(r: BookingRow, right: string, extra?: string): WallRow {
   };
 }
 
+/** นับตามป้ายชื่อแล้วเรียงมากไปน้อย — ใช้จัดอันดับเฉพาะใบที่รับจองในช่วงที่เลือก */
+function rankBy(rows: BookingRow[], labelOf: (r: BookingRow) => string | null): WallRank[] {
+  const tally = new Map<string, number>();
+  for (const r of rows) {
+    const label = labelOf(r) ?? "ไม่ระบุ";
+    tally.set(label, (tally.get(label) ?? 0) + 1);
+  }
+  return [...tally.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, TOP_N);
+}
+
 export async function buildBookingWall(input: {
   branchId?: string | null;
+  period: WallPeriod;
 }): Promise<BookingWall> {
   const today = workDateOf();
-  const month = monthBounds(Number(today.slice(0, 4)), Number(today.slice(5, 7)));
+  const { period } = input;
 
   const rows = await listBookings(input.branchId ? { branch_id: input.branchId } : {});
 
@@ -52,13 +68,10 @@ export async function buildBookingWall(input: {
 
   const open = rows.filter((r) => r.doc_status === "active");
   const bookedToday = open.filter((r) => r.booking_date === today).length;
-  const bookedThisMonth = open.filter(
-    (r) => r.booking_date >= month.from && r.booking_date <= month.to,
-  ).length;
 
-  const depositThisMonth = open
-    .filter((r) => r.booking_date >= month.from && r.booking_date <= month.to)
-    .reduce((sum, r) => sum + (r.deposit_amount ?? 0), 0);
+  // ใบที่รับจองในช่วงที่เลือก — ตัวเลขกลุ่มนี้ขยับตามตัวกรอง
+  const inRange = open.filter((r) => inPeriod(r.booking_date, period));
+  const depositInPeriod = inRange.reduce((sum, r) => sum + (r.deposit_amount ?? 0), 0);
 
   // ---- รอส่งมอบนานที่สุด (เรียงมาแล้วจาก deliveryPipeline) ----
   const waitingLong = pipeline.rows.slice(0, TOP_N).map((r) => {
@@ -79,19 +92,20 @@ export async function buildBookingWall(input: {
   return {
     generatedAt: new Date().toISOString(),
     today,
+    period,
     counts: {
       openBookings: overview.open,
       bookedToday,
-      bookedThisMonth,
+      bookedInPeriod: inRange.length,
       awaitingDelivery: pipeline.total,
       outOfStock: overview.needOrder,
       docPending: docPendingRows.length,
     },
-    money: { total: Math.round(overview.depositOpen), thisMonth: Math.round(depositThisMonth) },
+    money: { total: Math.round(overview.depositOpen), inPeriod: Math.round(depositInPeriod) },
     waitingLong,
     docPending,
-    byBranch: rankings.topBranches.map((b) => ({ label: b.label, value: b.count })),
-    byStaff: rankings.topStaff.map((s) => ({ label: s.label, value: s.count })),
+    byBranch: rankBy(inRange, (r) => r.branch_name),
+    byStaff: rankBy(inRange, staffNameOf),
     byModel: rankings.topModelsOutOfStock.length
       ? rankings.topModelsOutOfStock.map((m) => ({
           label: m.label,

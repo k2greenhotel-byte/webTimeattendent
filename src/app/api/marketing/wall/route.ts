@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildMarketingWall } from "@/lib/marketing-wall";
 import { checkPermission } from "@/lib/session";
+import { resolvePeriod } from "@/lib/wall-period";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,8 +18,7 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   try {
     const wall = await buildMarketingWall({
-      from: sp.get("from"),
-      to: sp.get("to"),
+      period: resolvePeriod(sp.get("from"), sp.get("to")),
       companyId: sp.get("company"),
       activityTypeId: sp.get("type"),
     });

@@ -3,12 +3,16 @@
 import { useState } from "react";
 import WallShell from "@/components/wall/WallShell";
 import { AlertList, Panel, RankBars, shortBaht, StatTile } from "@/components/wall/WallParts";
+import {
+  useWallPeriod,
+  WallPeriodPicker,
+  WallSelect,
+  type Option,
+} from "@/components/wall/WallFilters";
 import { MKT_SLOW_DAYS, type MarketingWall } from "@/lib/wall-types";
 
 /** ยอดเงินไม่ได้เปลี่ยนทุกนาทีเหมือนการลงเวลา จึงรีเฟรชห่างกว่า */
 const REFRESH_MS = 2 * 60_000;
-
-type Option = { id: string; name: string };
 
 export default function MarketingWallBoard({
   companies,
@@ -17,19 +21,13 @@ export default function MarketingWallBoard({
   companies: Option[];
   activityTypes?: Option[];
 }) {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [company, setCompany] = useState("");
   const [type, setType] = useState("");
+  const { state, setState, period } = useWallPeriod();
 
-  const qs = new URLSearchParams();
-  if (from) qs.set("from", from);
-  if (to) qs.set("to", to);
+  const qs = new URLSearchParams({ from: period.from, to: period.to });
   if (company) qs.set("company", company);
   if (type) qs.set("type", type);
-
-  const inputCls =
-    "rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100";
 
   return (
     <WallShell<MarketingWall>
@@ -38,60 +36,22 @@ export default function MarketingWallBoard({
       refreshMs={REFRESH_MS}
       controls={
         <>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className={inputCls}
-            aria-label="ตั้งแต่วันที่"
-          />
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className={inputCls}
-            aria-label="ถึงวันที่"
-          />
-          <select
+          <WallPeriodPicker state={state} onChange={setState} period={period} />
+          <WallSelect
             value={company}
-            onChange={(e) => setCompany(e.target.value)}
-            className={inputCls}
-            aria-label="บริษัทที่ขอเบิก"
-          >
-            <option value="">ทุกบริษัท</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            onChange={setCompany}
+            options={companies}
+            allLabel="ทุกบริษัท"
+            label="บริษัทที่ขอเบิก"
+          />
           {activityTypes.length > 0 && (
-            <select
+            <WallSelect
               value={type}
-              onChange={(e) => setType(e.target.value)}
-              className={inputCls}
-              aria-label="ประเภทกิจกรรม"
-            >
-              <option value="">ทุกประเภทกิจกรรม</option>
-              {activityTypes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {(from || to || company || type) && (
-            <button
-              onClick={() => {
-                setFrom("");
-                setTo("");
-                setCompany("");
-                setType("");
-              }}
-              className="rounded-md bg-sky-500 px-3 py-1 text-sm text-white"
-            >
-              ล้างตัวกรอง
-            </button>
+              onChange={setType}
+              options={activityTypes}
+              allLabel="ทุกประเภทกิจกรรม"
+              label="ประเภทกิจกรรม"
+            />
           )}
         </>
       }
@@ -119,7 +79,7 @@ export default function MarketingWallBoard({
               tone="amber"
             />
             <StatTile
-              label="ใบกิจกรรมที่ใช้งาน"
+              label={`ใบกิจกรรม ${d.period.label}`}
               value={d.counts.activities}
               sub={`Memo ${d.counts.memos} ใบ`}
               tone="sky"

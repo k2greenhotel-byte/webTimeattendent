@@ -1,8 +1,9 @@
 import "server-only";
-import { monthBounds, workDateOf } from "./datetime";
+import { workDateOf } from "./datetime";
 import { isOverdue, overdueDays, remainingToPay, summarizeDocs, urgencyText } from "./procurement";
 import { listDocs } from "./procurement-db";
 import type { PrDocRow } from "./procurement-types";
+import { inPeriod, type WallPeriod } from "./wall-period";
 import type { ProcurementWall, WallRank, WallRow } from "./wall-types";
 
 /**
@@ -15,6 +16,10 @@ import type { ProcurementWall, WallRank, WallRow } from "./wall-types";
  *
  * เกณฑ์ "เลยกำหนด" และยอดเงินใช้ฟังก์ชันกลางใน procurement.ts
  * ชุดเดียวกับหน้า Dashboard และหน้าสอบถาม
+ *
+ * ตัวเลขแบ่งสองพวก อย่าปนกัน:
+ *   • ค้างอยู่ตอนนี้ (ยังไม่เสร็จ รออนุมัติ เลยกำหนด ยอดค้างจ่าย) — ไม่ขึ้นกับช่วงที่เลือก
+ *   • เกิดขึ้นในช่วง (เปิดใบใหม่ ยอดขอ/อนุมัติ/จ่าย) — นับเฉพาะใบที่เปิดในช่วง from–to
  */
 
 const TOP_N = 8;
@@ -46,12 +51,16 @@ function rank(rows: PrDocRow[], keyOf: (r: PrDocRow) => string): WallRank[] {
 
 export async function buildProcurementWall(input: {
   branchId?: string | null;
+  period: WallPeriod;
 }): Promise<ProcurementWall> {
   const today = workDateOf();
-  const month = monthBounds(Number(today.slice(0, 4)), Number(today.slice(5, 7)));
+  const { period } = input;
 
   const rows = await listDocs(input.branchId ? { branch_id: input.branchId } : {});
-  const summary = summarizeDocs(rows, today);
+
+  // เงิน "ขอ/อนุมัติ/จ่าย" นับเฉพาะใบที่เปิดในช่วงที่เลือก — ตัวเลขกิจกรรม ขยับตามตัวกรอง
+  const inRange = rows.filter((r) => inPeriod(r.doc_date, period));
+  const summary = summarizeDocs(inRange, today);
 
   const live = rows.filter((r) => r.doc_status !== "cancelled");
   const openRows = live.filter((r) => !r.done_date);
@@ -60,18 +69,19 @@ export async function buildProcurementWall(input: {
     .filter((r) => isOverdue(r, today))
     .sort((a, b) => overdueDays(b, today) - overdueDays(a, today));
 
+  // ยอดค้างจ่าย — สถานะปัจจุบัน ไม่ขึ้นกับช่วงที่เลือก
   const unpaid = live.reduce((sum, r) => sum + remainingToPay(r), 0);
 
   return {
     generatedAt: new Date().toISOString(),
     today,
+    period,
     counts: {
       open: openRows.length,
       waitingApproval: waitingRows.length,
       overdue: overdueRows.length,
       createdToday: live.filter((r) => r.doc_date === today).length,
-      createdThisMonth: live.filter((r) => r.doc_date >= month.from && r.doc_date <= month.to)
-        .length,
+      createdInPeriod: live.filter((r) => inPeriod(r.doc_date, period)).length,
     },
     money: {
       requested: Math.round(summary.requested),
@@ -85,6 +95,7 @@ export async function buildProcurementWall(input: {
     waitingApproval: waitingRows
       .slice(0, TOP_N)
       .map((r) => rowOf(r, baht(r.requested_amount), urgencyText(r))),
+    // งานค้างรายสาขา/ประเภท — สถานะปัจจุบันของ backlog ไม่ขึ้นกับช่วงที่เลือก
     byBranch: rank(openRows, (r) => r.branch_name ?? "ไม่ระบุสาขา"),
     byType: rank(openRows, (r) => r.type_name ?? "ไม่ระบุประเภท"),
   };

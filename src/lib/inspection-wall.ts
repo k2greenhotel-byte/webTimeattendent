@@ -1,8 +1,9 @@
 import "server-only";
-import { monthBounds, workDateOf } from "./datetime";
+import { workDateOf } from "./datetime";
 import { listBranches } from "./db";
 import { avgPctByKey, daysSince, latestByBranch, summarizeInspections } from "./inspection";
 import { listFailedItems, listInspections } from "./inspection-db";
+import { inPeriod, type WallPeriod } from "./wall-period";
 import { INSP_STALE_DAYS, type InspectionWall, type WallRank, type WallRow } from "./wall-types";
 
 /**
@@ -23,23 +24,27 @@ export type { InspectionWall };
 export async function buildInspectionWall(input: {
   companyId?: string | null;
   templateId?: string | null;
+  branchId?: string | null;
+  period: WallPeriod;
 }): Promise<InspectionWall> {
   const today = workDateOf();
-  const month = monthBounds(Number(today.slice(0, 4)), Number(today.slice(5, 7)));
+  const { period } = input;
 
-  const [rows, branches, failedItems] = await Promise.all([
+  const [rows, allBranches, failedItems] = await Promise.all([
     listInspections({
       company_id: input.companyId ?? null,
       template_id: input.templateId ?? null,
+      branch_id: input.branchId ?? null,
     }),
     listBranches(true, input.companyId ?? null),
-    listFailedItems({ from: month.from, to: month.to }),
+    listFailedItems({ from: period.from, to: period.to, branchId: input.branchId ?? null }),
   ]);
 
-  const thisMonth = rows.filter(
-    (r) => r.inspect_date >= month.from && r.inspect_date <= month.to,
-  );
-  const monthSummary = summarizeInspections(thisMonth);
+  // เลือกสาขาเดียว = ตัวหารของ "สาขาทั้งหมด" ต้องเหลือสาขานั้นสาขาเดียวด้วย
+  const branches = input.branchId ? allBranches.filter((b) => b.id === input.branchId) : allBranches;
+
+  const inRange = rows.filter((r) => inPeriod(r.inspect_date, period));
+  const periodSummary = summarizeInspections(inRange);
 
   // ผลตรวจล่าสุดของแต่ละสาขา (คะแนนต่ำสุดขึ้นก่อน)
   const latest = latestByBranch(rows);
@@ -72,7 +77,7 @@ export async function buildInspectionWall(input: {
     right: `${r.score_pct.toFixed(0)}%`,
   }));
 
-  const byBranch: WallRank[] = avgPctByKey(thisMonth, (r) => r.branch_name, "ไม่ระบุสาขา")
+  const byBranch: WallRank[] = avgPctByKey(inRange, (r) => r.branch_name, "ไม่ระบุสาขา")
     .slice()
     .reverse()
     .slice(0, TOP_N)
@@ -91,18 +96,19 @@ export async function buildInspectionWall(input: {
   return {
     generatedAt: new Date().toISOString(),
     today,
+    period,
     counts: {
-      inspectedThisMonth: monthSummary.submitted,
+      inspectedInPeriod: periodSummary.submitted,
       inspectedToday: rows.filter((r) => r.inspect_date === today && r.status === "submitted").length,
       branchesCovered: new Set(
-        thisMonth.filter((r) => r.status === "submitted").map((r) => r.branch_id),
+        inRange.filter((r) => r.status === "submitted").map((r) => r.branch_id),
       ).size,
       branchesTotal: branches.length,
       branchesNeverInspected: neverInspected.length,
       draft: rows.filter((r) => r.status === "draft").length,
     },
-    money: { fineThisMonth: monthSummary.totalFine, bonusThisMonth: monthSummary.totalBonus },
-    avgPct: monthSummary.avgPct,
+    money: { fineInPeriod: periodSummary.totalFine, bonusInPeriod: periodSummary.totalBonus },
+    avgPct: periodSummary.avgPct,
     worstBranches,
     overdueBranches: [...neverInspected, ...staleInspected].slice(0, TOP_N),
     topFailedItems,

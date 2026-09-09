@@ -144,7 +144,11 @@ export default function WallRotator({
       {current.key === "hr" && <HrWallBoard branches={branches} />}
       {current.key === "salework" && <SaleWorkWallBoard branches={branches} />}
       {current.key === "inspection" && (
-        <InspectionWallBoard companies={inspectionCompanies} templates={inspectionTemplates} />
+        <InspectionWallBoard
+          companies={inspectionCompanies}
+          templates={inspectionTemplates}
+          branches={branches}
+        />
       )}
       {current.key === "db2" && <Db2WallBoard />}
     </div>

@@ -1,5 +1,5 @@
 import "server-only";
-import { monthBounds, workDateOf } from "./datetime";
+import { workDateOf } from "./datetime";
 import { isCertOverdue } from "./leave";
 import { listAdvanceRequests, listLeaveRequests } from "./leave-db";
 import {
@@ -7,6 +7,7 @@ import {
   type AdvanceRequestRow,
   type LeaveRequestRow,
 } from "./leave-types";
+import { inPeriod, type WallPeriod } from "./wall-period";
 import type { HrWall, WallRank, WallRow } from "./wall-types";
 
 /**
@@ -61,9 +62,12 @@ function advanceRow(r: AdvanceRequestRow, right: string): WallRow {
   };
 }
 
-export async function buildHrWall(input: { branchId?: string | null }): Promise<HrWall> {
+export async function buildHrWall(input: {
+  branchId?: string | null;
+  period: WallPeriod;
+}): Promise<HrWall> {
   const today = workDateOf();
-  const month = monthBounds(Number(today.slice(0, 4)), Number(today.slice(5, 7)));
+  const { period } = input;
   const scope = { branchId: input.branchId ?? null };
 
   const [leaves, advances] = await Promise.all([
@@ -80,13 +84,15 @@ export async function buildHrWall(input: { branchId?: string | null }): Promise<
   );
 
   const certOverdue = leaves.filter((r) => isCertOverdue(r, today));
-  const lateNotice = leaves.filter(
-    (r) => r.is_late_notice && r.request_date >= month.from && r.request_date <= month.to,
-  );
+  // แจ้งกระชั้นชิดที่ยังรออนุมัติ — สถานะปัจจุบัน ไม่ขึ้นกับช่วงที่เลือก (เป็นสับเซตของ pendingLeave)
+  const lateNoticePending = pendingLeave.filter((r) => r.is_late_notice);
+
+  // ลาที่เกิดขึ้นในช่วงที่เลือก — ใช้ทำอันดับและยอดกิจกรรม ขยับตามตัวกรอง
+  const leavesInPeriod = leaves.filter((r) => inPeriod(r.request_date, period));
 
   const advancePending = pendingAdvance.reduce((sum, r) => sum + (r.amount ?? 0), 0);
-  const advanceThisMonth = advances
-    .filter((r) => r.request_date >= month.from && r.request_date <= month.to)
+  const advanceInPeriod = advances
+    .filter((r) => inPeriod(r.request_date, period))
     .reduce((sum, r) => sum + (r.approved_amount || r.amount || 0), 0);
 
   // รายการรออนุมัติ — ใบลาก่อน แล้วต่อด้วยใบขอเบิกเงิน
@@ -98,31 +104,24 @@ export async function buildHrWall(input: { branchId?: string | null }): Promise<
   return {
     generatedAt: new Date().toISOString(),
     today,
+    period,
     counts: {
       pendingLeave: pendingLeave.length,
       pendingAdvance: pendingAdvance.length,
       onLeaveToday: onLeaveToday.length,
-      leaveThisMonth: leaves.filter(
-        (r) => r.request_date >= month.from && r.request_date <= month.to,
-      ).length,
+      leaveInPeriod: leavesInPeriod.length,
       certOverdue: certOverdue.length,
-      lateNotice: lateNotice.length,
+      lateNotice: lateNoticePending.length,
     },
     money: {
       advancePending: Math.round(advancePending),
-      advanceThisMonth: Math.round(advanceThisMonth),
+      advanceInPeriod: Math.round(advanceInPeriod),
     },
     pending,
     onLeaveToday: onLeaveToday
       .slice(0, TOP_N)
       .map((r) => leaveRow(r, `${r.total_days} วัน`, r.detail ?? undefined)),
-    byType: rank(
-      leaves.filter((r) => r.request_date >= month.from && r.request_date <= month.to),
-      (r) => r.type_name,
-    ),
-    byBranch: rank(
-      leaves.filter((r) => r.request_date >= month.from && r.request_date <= month.to),
-      (r) => r.branch_name ?? "ไม่ระบุสาขา",
-    ),
+    byType: rank(leavesInPeriod, (r) => r.type_name),
+    byBranch: rank(leavesInPeriod, (r) => r.branch_name ?? "ไม่ระบุสาขา"),
   };
 }

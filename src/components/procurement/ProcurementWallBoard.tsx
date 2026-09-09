@@ -3,16 +3,21 @@
 import { useState } from "react";
 import WallShell from "@/components/wall/WallShell";
 import { AlertList, Panel, RankBars, shortBaht, StatTile } from "@/components/wall/WallParts";
+import {
+  useWallPeriod,
+  WallPeriodPicker,
+  WallSelect,
+  type Option,
+} from "@/components/wall/WallFilters";
 import type { ProcurementWall } from "@/lib/wall-types";
 
 const REFRESH_MS = 2 * 60_000;
 
-type Branch = { id: string; name: string };
-
-export default function ProcurementWallBoard({ branches }: { branches: Branch[] }) {
+export default function ProcurementWallBoard({ branches }: { branches: Option[] }) {
   const [branch, setBranch] = useState("");
+  const { state, setState, period } = useWallPeriod();
 
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams({ from: period.from, to: period.to });
   if (branch) qs.set("branch", branch);
 
   return (
@@ -21,19 +26,16 @@ export default function ProcurementWallBoard({ branches }: { branches: Branch[] 
       endpoint={`/api/procurement/wall?${qs}`}
       refreshMs={REFRESH_MS}
       controls={
-        <select
-          value={branch}
-          onChange={(e) => setBranch(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
-          aria-label="สาขา"
-        >
-          <option value="">ทุกสาขา</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <>
+          <WallPeriodPicker state={state} onChange={setState} period={period} />
+          <WallSelect
+            value={branch}
+            onChange={setBranch}
+            options={branches}
+            allLabel="ทุกสาขา"
+            label="สาขา"
+          />
+        </>
       }
     >
       {(d) => (
@@ -54,13 +56,13 @@ export default function ProcurementWallBoard({ branches }: { branches: Branch[] 
             <StatTile
               label="งานที่ยังไม่เสร็จ"
               value={d.counts.open}
-              sub={`เดือนนี้เปิดใหม่ ${d.counts.createdThisMonth} ใบ`}
+              sub={`เปิดใหม่ ${d.period.label} ${d.counts.createdInPeriod} ใบ`}
               tone="sky"
             />
             <StatTile
               label="อนุมัติแล้วยังไม่จ่าย"
               value={shortBaht(d.money.unpaid)}
-              sub={`จ่ายไปแล้ว ${shortBaht(d.money.paid)} บาท`}
+              sub={`จ่ายไปแล้ว ${d.period.label} ${shortBaht(d.money.paid)} บาท`}
               tone="violet"
             />
           </div>

@@ -3,16 +3,21 @@
 import { useState } from "react";
 import WallShell from "@/components/wall/WallShell";
 import { AlertList, Panel, RankBars, shortBaht, StatTile } from "@/components/wall/WallParts";
+import {
+  useWallPeriod,
+  WallPeriodPicker,
+  WallSelect,
+  type Option,
+} from "@/components/wall/WallFilters";
 import type { HrWall } from "@/lib/wall-types";
 
 const REFRESH_MS = 2 * 60_000;
 
-type Branch = { id: string; name: string };
-
-export default function HrWallBoard({ branches }: { branches: Branch[] }) {
+export default function HrWallBoard({ branches }: { branches: Option[] }) {
   const [branch, setBranch] = useState("");
+  const { state, setState, period } = useWallPeriod();
 
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams({ from: period.from, to: period.to });
   if (branch) qs.set("branch", branch);
 
   return (
@@ -21,19 +26,16 @@ export default function HrWallBoard({ branches }: { branches: Branch[] }) {
       endpoint={`/api/hr/wall?${qs}`}
       refreshMs={REFRESH_MS}
       controls={
-        <select
-          value={branch}
-          onChange={(e) => setBranch(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
-          aria-label="สาขา"
-        >
-          <option value="">ทุกสาขา</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <>
+          <WallPeriodPicker state={state} onChange={setState} period={period} />
+          <WallSelect
+            value={branch}
+            onChange={setBranch}
+            options={branches}
+            allLabel="ทุกสาขา"
+            label="สาขา"
+          />
+        </>
       }
     >
       {(d) => (
@@ -60,7 +62,7 @@ export default function HrWallBoard({ branches }: { branches: Branch[] }) {
             <StatTile
               label="ขอเบิกที่รออนุมัติ"
               value={shortBaht(d.money.advancePending)}
-              sub={`เดือนนี้อนุมัติไป ${shortBaht(d.money.advanceThisMonth)} บาท`}
+              sub={`อนุมัติไป ${d.period.label} ${shortBaht(d.money.advanceInPeriod)} บาท`}
               tone="violet"
             />
           </div>
@@ -80,10 +82,10 @@ export default function HrWallBoard({ branches }: { branches: Branch[] }) {
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <Panel title="ลาเดือนนี้แยกตามประเภท" hint={`ทั้งเดือน ${d.counts.leaveThisMonth} ใบ`}>
+            <Panel title="ลาแยกตามประเภท" hint={`${d.period.label} · ${d.counts.leaveInPeriod} ใบ`}>
               <RankBars rows={d.byType} unit="ใบ" tone="violet" />
             </Panel>
-            <Panel title="ลาเดือนนี้แยกตามสาขา" hint={`แจ้งกระชั้นชิด ${d.counts.lateNotice} ใบ`}>
+            <Panel title="ลาแยกตามสาขา" hint={`แจ้งกระชั้นชิดที่รออนุมัติ ${d.counts.lateNotice} ใบ`}>
               <RankBars rows={d.byBranch} unit="ใบ" tone="emerald" />
             </Panel>
           </div>
