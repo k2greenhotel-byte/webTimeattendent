@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ApprovalWallBoard from "@/components/approval/ApprovalWallBoard";
 import AttWallBoard from "@/components/att/AttWallBoard";
 import BookingWallBoard from "@/components/booking/BookingWallBoard";
 import ClaimWallBoard from "@/components/claim/ClaimWallBoard";
@@ -22,6 +23,7 @@ import SaleWorkWallBoard from "@/components/salework/SaleWorkWallBoard";
 
 export type WallScreen = {
   key:
+    | "approval"
     | "att"
     | "marketing"
     | "booking"
@@ -135,6 +137,7 @@ export default function WallRotator({
         </div>
       </div>
 
+      {current.key === "approval" && <ApprovalWallBoard />}
       {current.key === "att" && <AttWallBoard />}
       {current.key === "marketing" && (
         <MarketingWallBoard companies={companies} activityTypes={activityTypes} />

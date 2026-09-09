@@ -15,6 +15,7 @@ export const dynamic = "force-dynamic";
  */
 
 const SCREENS: { menu: string; key: WallScreen["key"]; label: string }[] = [
+  { menu: "APV_WALL", key: "approval", label: "รออนุมัติ" },
   { menu: "ATT_WALL", key: "att", label: "การลงเวลา" },
   { menu: "MKT_WALL", key: "marketing", label: "เงินค่าส่งเสริม" },
   { menu: "BOOK_WALL", key: "booking", label: "จองรถ" },

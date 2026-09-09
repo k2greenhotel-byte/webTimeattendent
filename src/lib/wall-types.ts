@@ -183,6 +183,38 @@ export type SaleWorkWall = {
   byTask: { label: string; total: number; byStaff: Record<string, number> }[];
 };
 
+// ---------- กล่องอนุมัติรวม ----------
+
+/** รออนุมัติเกินกี่วันถือว่าดองนาน ต้องเร่ง */
+export const APV_SLOW_DAYS = 3;
+
+export type ApprovalWall = {
+  generatedAt: string;
+  today: string;
+  period: WallPeriodInfo;
+  counts: {
+    /** รออนุมัติตอนนี้ทั้งหมด (ทุกโปรแกรมที่ผู้ใช้คนนี้มีสิทธิ์เห็น) */
+    pending: number;
+    central: number;
+    procurement: number;
+    leave: number;
+    advance: number;
+    /** ค้างเกิน APV_SLOW_DAYS วัน */
+    slow: number;
+    /** ยื่นเข้ามาในช่วงที่เลือก */
+    submittedInPeriod: number;
+  };
+  money: { pendingAmount: number };
+  /** ค้างนานที่สุดขึ้นก่อน — คิวที่ต้องเคลียร์ */
+  oldest: WallRow[];
+  /** แยกตามโปรแกรม */
+  byModule: WallRank[];
+  /** แยกตามผู้ยื่น */
+  byRequester: WallRank[];
+  /** โปรแกรมที่อ่านข้อมูลไม่ได้ตอนนี้ — บอกบนจอว่าตัวเลขยังไม่ครบ */
+  unavailable: string[];
+};
+
 // ---------- ตรวจสอบสาขา ----------
 
 /** ไม่ได้ตรวจสาขานี้มากี่วันถือว่านานเกินไป ควรจัดคิวเข้าไปตรวจ */
@@ -212,6 +244,7 @@ export type InspectionWall = {
   /** คะแนนเฉลี่ยรายสาขา (สูงสุดก่อน) */
   byBranch: WallRank[];
 };
+
 // ---------- ตรวจเช็คโรงแรมประจำวัน ----------
 
 /** งานประจำวัน — ไม่ได้ตรวจสาขานี้เกินกี่วันถือว่าหลุดคิว */
