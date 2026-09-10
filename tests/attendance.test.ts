@@ -26,6 +26,8 @@ const settings: WorkSettings = {
   count_ot: true,
   ot_grace_min: 30,
   workdays: [1, 2, 3, 4, 5, 6],
+  is_open_time: false,
+  open_time_min_minutes: 540,
   require_gps: false,
   site_lat: null,
   site_lng: null,
@@ -306,6 +308,8 @@ describe("resolveSettings (องค์กร + กะ + สาขา)", () => {
     ot_grace_min: 30,
     workdays: [1, 2, 3, 4, 5, 6],
     is_default: true,
+    is_open_time: false,
+    open_time_min_minutes: 540,
   };
 
   const afternoon: WorkSchedule = { ...morning, id: "s2", name: "กะสาย", work_start: "09:00", is_default: false };
@@ -508,6 +512,8 @@ describe("กะข้ามเที่ยงคืน (กะดึกโร�
       ot_grace_min: 30,
       workdays: [0, 1, 2, 3, 4, 5, 6],
       is_default: false,
+      is_open_time: false,
+      open_time_min_minutes: 540,
     };
     expect(resolveSettings(org, base, null).crosses_midnight).toBe(true);
     expect(resolveSettings(org, { ...base, work_start: "08:00", work_end: "17:00" }, null).crosses_midnight).toBe(false);
@@ -580,5 +586,63 @@ describe("วันหยุดตามตารางเวร", () => {
     );
     expect(s.status).toBe("incomplete");
     expect(s.workMinutes).toBe(480);
+  });
+});
+
+describe("กะ Open Time (ไม่มีเวลาเข้า-ออกตายตัว เช่น ผู้จัดการ, ช่างซ่อม)", () => {
+  const openSettings: WorkSettings = { ...settings, is_open_time: true, open_time_min_minutes: 540 };
+
+  it("ทำงานครบ 9 ชม.พอดี ไม่ถือว่าสาย", () => {
+    const s = computeDaySummary(
+      {
+        work_date: D,
+        check_in_at: at(D, "10:00"),
+        break_out_at: at(D, "12:00"),
+        break_in_at: at(D, "13:00"),
+        check_out_at: at(D, "19:00"),
+      },
+      openSettings,
+    );
+    expect(s.lateMinutes).toBe(0);
+    expect(s.earlyLeaveMinutes).toBe(0);
+    expect(s.otMinutes).toBe(0);
+    expect(s.flags).not.toContain("มาสาย");
+  });
+
+  it("ทำงานรวมน้อยกว่าขั้นต่ำ ถือว่าสาย ไม่ว่าจะเข้างานเวลาไหน", () => {
+    const s = computeDaySummary(
+      {
+        work_date: D,
+        check_in_at: at(D, "06:00"), // เข้าเช้ากว่ากะปกติมาก แต่ยังคำนวณสายจากชั่วโมงรวม
+        break_out_at: at(D, "12:00"),
+        break_in_at: at(D, "13:00"),
+        check_out_at: at(D, "14:00"),
+      },
+      openSettings,
+    );
+    // ชั่วโมงรวม = 06:00-14:00 = 480 นาที < ขั้นต่ำ 540 นาที → สาย 60 นาที
+    expect(s.lateMinutes).toBe(60);
+    expect(s.flags).toContain("มาสาย");
+  });
+
+  it("ทำงานเกินขั้นต่ำ ไม่มี OT (Open Time ไม่มีเวลาเลิกมาตรฐานให้เทียบ)", () => {
+    const s = computeDaySummary(
+      {
+        work_date: D,
+        check_in_at: at(D, "08:00"),
+        break_out_at: at(D, "12:00"),
+        break_in_at: at(D, "13:00"),
+        check_out_at: at(D, "20:00"),
+      },
+      openSettings,
+    );
+    expect(s.lateMinutes).toBe(0);
+    expect(s.otMinutes).toBe(0);
+  });
+
+  it("ยังไม่ลงเวลาออกงาน ไม่ตัดสินว่าสาย (รอให้ครบก่อน)", () => {
+    const s = computeDaySummary({ work_date: D, check_in_at: at(D, "08:00") }, openSettings);
+    expect(s.lateMinutes).toBe(0);
+    expect(s.status).toBe("incomplete");
   });
 });

@@ -56,6 +56,8 @@ export function resolveSettings(
     count_ot: schedule.count_ot,
     ot_grace_min: schedule.ot_grace_min,
     workdays: schedule.workdays,
+    is_open_time: schedule.is_open_time,
+    open_time_min_minutes: schedule.open_time_min_minutes,
   };
 }
 
@@ -103,7 +105,8 @@ function minutesFrom(from: Date, to: string | null | undefined): number | null {
 /**
  * คำนวณสรุปการทำงานของ 1 วัน
  * - สาย        = เวลาเข้างานจริง − เวลาเริ่มงานมาตรฐาน − นาทีผ่อนผัน
- * - กลับก่อน   = เวลาเลิกงานมาตรฐาน − เวลาออกจริง − นาทีผ่อนผัน
+ *                (กะ Open Time: ไม่เทียบเวลาเข้างาน แต่ถ้าชั่วโมงทำงานรวม < ขั้นต่ำที่ตั้งไว้ ถือว่ามาสาย)
+ * - กลับก่อน   = เวลาเลิกงานมาตรฐาน − เวลาออกจริง − นาทีผ่อนผัน (กะ Open Time ไม่มีค่านี้)
  * - เวลาพัก    = เข้าบ่าย − ออกพัก (ถ้าลงไม่ครบใช้โควตามาตรฐานแทน)
  * - ธุระ       = รวมทุกรอบที่ออกไปทำธุระแล้วกลับเข้ามา (errand_punches)
  * - พักเกิน    = (เวลาพัก + ธุระ) − โควตา (พักกลางวันและธุระใช้โควตาก้อนเดียวกัน ปกติ 1 ชม.)
@@ -135,16 +138,28 @@ export function computeDaySummary(
   const punchCount = PUNCH_ORDER.length - missing.length;
 
   const expected = expectedTimes(punches.work_date, settings);
+  const span = diffMinutes(checkInAt, checkOutAt);
 
-  // ---- สาย: เข้าจริงช้ากว่าเวลาเริ่มที่คาดหวัง ----
-  const inOffset = minutesFrom(expected.start, checkInAt);
-  const lateMinutes =
-    inOffset === null ? 0 : Math.max(0, Math.round(inOffset - settings.late_grace_min));
+  let lateMinutes: number;
+  let earlyLeaveMinutes: number;
+  let outOffset: number | null;
+  if (settings.is_open_time) {
+    // ---- Open Time (ผู้จัดการ, ช่างซ่อม ฯลฯ): ไม่มีเวลาเข้า-ออกตายตัว
+    // ใช้ชั่วโมงทำงานรวม (ออกงาน - เข้างาน) เทียบกับขั้นต่ำแทน น้อยกว่าถือว่ามาสาย
+    // ไม่มีเวลาเลิกมาตรฐานให้เทียบ จึงไม่มีกลับก่อนเวลา/OT
+    lateMinutes = span === null ? 0 : Math.max(0, Math.round(settings.open_time_min_minutes - span));
+    earlyLeaveMinutes = 0;
+    outOffset = null;
+  } else {
+    // ---- สาย: เข้าจริงช้ากว่าเวลาเริ่มที่คาดหวัง ----
+    const inOffset = minutesFrom(expected.start, checkInAt);
+    lateMinutes = inOffset === null ? 0 : Math.max(0, Math.round(inOffset - settings.late_grace_min));
 
-  // ---- กลับก่อนเวลา: ออกจริงเร็วกว่าเวลาเลิกที่คาดหวัง ----
-  const outOffset = minutesFrom(expected.end, checkOutAt);
-  const earlyLeaveMinutes =
-    outOffset === null ? 0 : Math.max(0, Math.round(-outOffset - settings.early_leave_grace_min));
+    // ---- กลับก่อนเวลา: ออกจริงเร็วกว่าเวลาเลิกที่คาดหวัง ----
+    outOffset = minutesFrom(expected.end, checkOutAt);
+    earlyLeaveMinutes =
+      outOffset === null ? 0 : Math.max(0, Math.round(-outOffset - settings.early_leave_grace_min));
+  }
 
   // ---- เวลาพักเที่ยง (ไม่ลงเวลาพัก = ถือว่าใช้เต็มโควตา) ----
   const breakActual = diffMinutes(breakOutAt, breakInAt);
@@ -161,7 +176,6 @@ export function computeDaySummary(
 
   // ---- ชั่วโมงทำงานสุทธิ ----
   // นโยบาย fixed = หักพักเที่ยงเต็มโควตาเสมอ แต่ถ้าออกไปทำธุระจนรวมเกินโควตา ต้องหักตามจริง
-  const span = diffMinutes(checkInAt, checkOutAt);
   const deduct =
     settings.break_policy === "fixed"
       ? Math.max(settings.break_allow_minutes, personalMinutes)

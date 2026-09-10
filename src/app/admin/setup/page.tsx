@@ -247,6 +247,9 @@ export default async function SetupPage({
                   ชื่อกะ{" "}
                   {s.is_default && (
                     <span className="badge bg-emerald-50 text-emerald-700">กะเริ่มต้น</span>
+                  )}{" "}
+                  {s.is_open_time && (
+                    <span className="badge bg-violet-50 text-violet-700">Open Time</span>
                   )}
                 </label>
                 <input name="name" defaultValue={s.name} className="input" required />
@@ -342,6 +345,33 @@ export default async function SetupPage({
                 คำนวณ OT
               </label>
 
+              <div className="sm:col-span-2 rounded-lg border border-dashed border-slate-200 p-2">
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" name="is_open_time" defaultChecked={s.is_open_time} />
+                  Open Time (ไม่มีเวลาเข้า-ออกตายตัว เช่น ผู้จัดการ, ช่างซ่อม)
+                </label>
+                <p className="mt-1 text-xs text-slate-400">
+                  ไม่เทียบเวลาเข้างานกับเวลาเริ่มด้านบน แต่เอาเวลาออกงานหักเวลาเข้างานเทียบกับขั้นต่ำ
+                  ด้านล่าง — ถ้าชั่วโมงทำงานรวมน้อยกว่าขั้นต่ำถือว่ามาสาย
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <label className="label mb-0" htmlFor={`open_min_${s.id}`}>
+                    ชั่วโมงทำงานขั้นต่ำ (นาที)
+                  </label>
+                  <input
+                    id={`open_min_${s.id}`}
+                    name="open_time_min_minutes"
+                    type="number"
+                    min={1}
+                    defaultValue={s.open_time_min_minutes}
+                    className="input w-24"
+                  />
+                  <span className="text-xs text-slate-400">
+                    = {(s.open_time_min_minutes / 60).toFixed(1)} ชม.
+                  </span>
+                </div>
+              </div>
+
               <button type="submit" className="btn-secondary">
                 บันทึกกะนี้
               </button>
@@ -415,6 +445,26 @@ export default async function SetupPage({
               <input type="checkbox" name="count_ot" defaultChecked />
               คำนวณ OT
             </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-200 p-2">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" name="is_open_time" />
+              Open Time (ไม่มีเวลาเข้า-ออกตายตัว เช่น ผู้จัดการ, ช่างซ่อม)
+            </label>
+            <label className="label mb-0" htmlFor="new_open_time_min_minutes">
+              ชั่วโมงทำงานขั้นต่ำ (นาที)
+            </label>
+            <input
+              id="new_open_time_min_minutes"
+              name="open_time_min_minutes"
+              type="number"
+              min={1}
+              defaultValue={540}
+              className="input w-24"
+            />
+            <span className="text-xs text-slate-400">= 9.0 ชม.</span>
+          </div>
+          <div className="mt-3 flex justify-end">
             <button type="submit" className="btn-primary">
               เพิ่มกะทำงาน
             </button>

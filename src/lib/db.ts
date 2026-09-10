@@ -55,6 +55,8 @@ const FALLBACK_SCHEDULE: WorkSchedule = {
   ot_grace_min: 30,
   workdays: [1, 2, 3, 4, 5, 6],
   is_default: true,
+  is_open_time: false,
+  open_time_min_minutes: 540,
 };
 
 function timeOnly(value: unknown, fallback: string): string {

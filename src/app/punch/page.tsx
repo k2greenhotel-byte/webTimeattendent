@@ -63,10 +63,10 @@ export default async function PunchPage({
   const errandGate = canErrand("out", done, errandRounds.some((r) => r.isOpen));
 
   const standardTime: Record<PunchType, string> = {
-    check_in: settings.work_start,
+    check_in: settings.is_open_time ? "ไม่กำหนดเวลาตายตัว" : settings.work_start,
     break_out: settings.break_start,
     break_in: settings.break_end,
-    check_out: settings.work_end,
+    check_out: settings.is_open_time ? "ไม่กำหนดเวลาตายตัว" : settings.work_end,
   };
 
   return (
@@ -85,8 +85,15 @@ export default async function PunchPage({
           </p>
           <p className="text-xs text-slate-500">
             {assignment ? "กะวันนี้" : "กะทำงาน"}: <span className="font-medium text-slate-700">{settings.schedule_name}</span>{" "}
-            {settings.work_start} - {settings.work_end}
-            {settings.crosses_midnight ? " (ข้ามเที่ยงคืน)" : ""} · พักได้ {settings.break_allow_minutes} นาที
+            {settings.is_open_time ? (
+              <>Open Time (ทำงานอย่างน้อย {(settings.open_time_min_minutes / 60).toFixed(1)} ชม.)</>
+            ) : (
+              <>
+                {settings.work_start} - {settings.work_end}
+                {settings.crosses_midnight ? " (ข้ามเที่ยงคืน)" : ""}
+              </>
+            )}{" "}
+            · พักได้ {settings.break_allow_minutes} นาที
           </p>
           {isYesterdayShift && (
             <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">

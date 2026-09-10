@@ -40,6 +40,10 @@ export type WorkSchedule = {
   ot_grace_min: number;
   workdays: number[];
   is_default: boolean;
+  /** ไม่มีเวลาเข้า-ออกตายตัว (เช่น ผู้จัดการ, ช่างซ่อม) — ดู open_time_min_minutes */
+  is_open_time: boolean;
+  /** ชั่วโมงทำงานขั้นต่ำสำหรับกะ Open Time (นาที) — น้อยกว่านี้ถือว่ามาสาย */
+  open_time_min_minutes: number;
 };
 
 export type Branch = {
@@ -192,6 +196,10 @@ export type WorkSettings = {
   count_ot: boolean;
   ot_grace_min: number;
   workdays: number[];
+  /** ไม่มีเวลาเข้า-ออกตายตัว — ดู open_time_min_minutes */
+  is_open_time: boolean;
+  /** ชั่วโมงทำงานขั้นต่ำสำหรับกะ Open Time (นาที) — น้อยกว่านี้ถือว่ามาสาย */
+  open_time_min_minutes: number;
   require_gps: boolean;
   site_lat: number | null;
   site_lng: number | null;

@@ -136,6 +136,8 @@ function readSchedule(form: FormData): Omit<WorkSchedule, "id" | "is_default"> {
     count_ot: form.get("count_ot") === "on",
     ot_grace_min: num(form, "ot_grace_min", 30),
     workdays: [0, 1, 2, 3, 4, 5, 6].filter((d) => form.get(`workday_${d}`) === "on"),
+    is_open_time: form.get("is_open_time") === "on",
+    open_time_min_minutes: num(form, "open_time_min_minutes", 540),
   };
 }
 
