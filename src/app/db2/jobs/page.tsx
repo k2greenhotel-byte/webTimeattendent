@@ -1,4 +1,5 @@
 import Link from "next/link";
+import OpenJobsPanel from "@/components/db2/OpenJobsPanel";
 import {
   Db2ApiError,
   db2Jobs,
@@ -16,9 +17,6 @@ import { requirePermission } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** ป้ายสถานะงานในระบบซ่อม (SWSTATUS) — ค่าที่ยืนยันจากข้อมูลจริงเท่านั้น */
-const SW_LABEL: Record<string, string> = { F: "ปิดงานแล้ว", R: "กำลังซ่อม", W: "รอ" };
 
 export default async function Db2JobsPage({
   searchParams,
@@ -150,117 +148,11 @@ export default async function Db2JobsPage({
             {k.open > 0 && <> · ในจำนวนนี้ยังไม่ปิด job {fmtInt(k.open)} ใบ</>}
           </p>
 
-          {/* งานค้างปิด job — ยอดสะสมทั้งฐาน ไม่ขึ้นกับช่วงวันที่ด้านบน */}
-          <section className="card border-amber-200 bg-amber-50/40">
-            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-semibold text-slate-800">
-                งานซ่อมที่ค้างปิด job — {fmtInt(data.open.totals.jobs)} ใบ
-                {locat ? ` (สาขา ${locat})` : " (ทุกสาขา)"}
-              </h2>
-              <span className="text-xs text-slate-500">
-                นับทั้งฐานข้อมูล ไม่ขึ้นกับช่วงวันที่ที่เลือก · เงินที่ลงไว้แล้วในใบเหล่านี้ {fmtBaht(data.open.totals.net)} บาท
-              </span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-5">
-              <AgeBox label="ค้าง ≤ 7 วัน" value={data.open.totals.age.d7} tone="ok" />
-              <AgeBox label="8–30 วัน" value={data.open.totals.age.d30} tone="ok" />
-              <AgeBox label="31–90 วัน" value={data.open.totals.age.d90} tone="warn" />
-              <AgeBox label="91–365 วัน" value={data.open.totals.age.d365} tone="warn" />
-              <AgeBox label="เกิน 1 ปี" value={data.open.totals.age.over} tone="bad" />
-            </div>
-
-            <h3 className="mt-4 mb-1 text-sm font-semibold text-slate-700">แยกตามสาขา</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-slate-500">
-                  <tr>
-                    <th className="py-1">สาขา</th>
-                    <th className="py-1 text-right">ใบค้าง</th>
-                    <th className="py-1 text-right">เกิน 1 ปี</th>
-                    <th className="py-1">ใบเก่าสุดรับเมื่อ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.open.byBranch.map((b) => (
-                    <tr key={b.key} className="border-t border-amber-100">
-                      <td className="py-1">
-                        {b.label ?? b.key} <span className="text-slate-400">({b.key})</span>
-                      </td>
-                      <td className="py-1 text-right tabular-nums font-semibold">{fmtInt(b.jobs)}</td>
-                      <td className="py-1 text-right tabular-nums text-rose-700">{fmtInt(b.overYear)}</td>
-                      <td className="py-1">{fmtDate(b.oldest)}</td>
-                    </tr>
-                  ))}
-                  {data.open.byBranch.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-3 text-center text-slate-500">
-                        ไม่มีงานค้างปิด
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <h3 className="mt-4 mb-1 text-sm font-semibold text-slate-700">
-              รายการค้างนานที่สุด {fmtInt(Math.min(data.open.list.length, data.open.listLimit))} ใบแรก
-              {data.open.totals.jobs > data.open.list.length && (
-                <span className="ml-1 font-normal text-slate-500">
-                  (จากทั้งหมด {fmtInt(data.open.totals.jobs)} ใบ — เลือกสาขาเพื่อดูให้ครบ)
-                </span>
-              )}
-            </h3>
-            <div className="max-h-[28rem] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-amber-50 text-left text-xs text-slate-500">
-                  <tr>
-                    <th className="py-1">เลขที่ใบงาน</th>
-                    <th className="py-1">สาขา</th>
-                    <th className="py-1">รับรถ</th>
-                    <th className="py-1 text-right">ค้าง (วัน)</th>
-                    <th className="py-1">สถานะ</th>
-                    <th className="py-1">ช่าง</th>
-                    <th className="py-1">ประเภทงาน</th>
-                    <th className="py-1">รถ / ทะเบียน</th>
-                    <th className="py-1">ลูกค้า</th>
-                    <th className="py-1">โทร</th>
-                    <th className="py-1 text-right">เงินในใบ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.open.list.map((j) => (
-                    <tr key={j.jobno} className="border-t border-amber-100 align-top">
-                      <td className="py-1 font-mono text-xs">{j.jobno}</td>
-                      <td className="py-1">{j.branch ?? j.locat}</td>
-                      <td className="py-1 whitespace-nowrap">{fmtDate(j.recvDate)}</td>
-                      <td
-                        className={`py-1 text-right tabular-nums ${j.ageDays > 365 ? "font-semibold text-rose-700" : j.ageDays > 30 ? "text-amber-700" : ""}`}
-                      >
-                        {fmtInt(j.ageDays)}
-                      </td>
-                      <td className="py-1">{SW_LABEL[j.swstatus] ?? (j.swstatus || "—")}</td>
-                      <td className="py-1">{j.repName ?? (j.repcod || "—")}</td>
-                      <td className="py-1">{j.reptypeName ?? j.reptype}</td>
-                      <td className="py-1">
-                        {j.modelName ?? j.model}
-                        {j.regno && <span className="block text-xs text-slate-500">{j.regno}</span>}
-                      </td>
-                      <td className="py-1">{j.customer || "—"}</td>
-                      <td className="py-1 whitespace-nowrap">{j.mobile || j.tel || "—"}</td>
-                      <td className="py-1 text-right tabular-nums">{fmtBaht(j.net)}</td>
-                    </tr>
-                  ))}
-                  {data.open.list.length === 0 && (
-                    <tr>
-                      <td colSpan={11} className="py-3 text-center text-slate-500">
-                        ไม่มีงานค้างปิด
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <OpenJobsPanel
+            open={data.open}
+            branchFilter={locat}
+            branchLabel={data.branches.find((b) => b.key === locat)?.label}
+          />
 
           <section className="card">
             <h2 className="mb-2 font-semibold text-slate-800">รายเดือน 13 เดือนล่าสุด</h2>
@@ -336,17 +228,6 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
       <div className="text-xs text-slate-500">{label}</div>
       <div className="text-2xl font-semibold tabular-nums text-slate-800">{value}</div>
       {hint && <div className="text-xs text-slate-500">{hint}</div>}
-    </div>
-  );
-}
-
-function AgeBox({ label, value, tone }: { label: string; value: number; tone: "ok" | "warn" | "bad" }) {
-  const color =
-    tone === "bad" ? "text-rose-700" : tone === "warn" ? "text-amber-700" : "text-slate-700";
-  return (
-    <div className="rounded-xl bg-white px-3 py-2 shadow-sm">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className={`text-xl font-semibold tabular-nums ${color}`}>{fmtInt(value)}</div>
     </div>
   );
 }

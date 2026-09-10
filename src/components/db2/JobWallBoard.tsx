@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { OPEN_BUCKET, OPEN_BUCKET_ORDER, type Db2OpenBucket } from "@/lib/db2-jobs";
 
 /**
  * จอ War Room งานซ่อม — เปิดค้างบนจอมอนิเตอร์/ทีวี พื้นมืด ตัวเลขใหญ่ รีเฟรชเองทุก 60 วินาที
@@ -37,6 +38,8 @@ type OpenJob = {
   reptype: string;
   reptypeName: string | null;
   swstatus: string;
+  bucket: Bucket;
+  billable: number;
   modelName: string | null;
   model: string;
   regno: string;
@@ -62,12 +65,24 @@ type Jobs = {
   monthly: (Agg & { year: number; month: number })[];
   open: {
     totals: { jobs: number; net: number; age: { d7: number; d30: number; d90: number; d365: number; over: number } };
-    byBranch: { key: string; label: string | null; jobs: number; oldest: string | null; overYear: number }[];
+    byBranch: {
+      key: string;
+      label: string | null;
+      jobs: number;
+      oldest: string | null;
+      overYear: number;
+      nonClaim: number;
+      withMoney: number;
+      billable: number;
+    }[];
+    byBucket: { key: Bucket; jobs: number; billable: number; overYear: number }[];
+    byType: { key: string; label: string | null; jobs: number; overYear: number }[];
     listLimit: number;
     list: OpenJob[];
   };
   branches: { key: string; label: string | null }[];
 };
+type Bucket = Db2OpenBucket;
 type Metric = "jobs" | "net" | "profit" | "labour";
 type Preset = "today" | "mtd" | "month" | "ytd" | "custom";
 
@@ -88,6 +103,8 @@ const REFRESH_MS = 60_000;
 const TH_M = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const TH_MF = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 const SW_LABEL: Record<string, string> = { F: "ปิดแล้ว", R: "กำลังซ่อม", W: "รอ" };
+/** กลุ่มสาเหตุที่ใบยังไม่ปิด — ป้ายชุดเดียวกับหน้า dashboard (src/lib/db2-jobs.ts) */
+const BUCKETS = OPEN_BUCKET_ORDER.map((key) => ({ key, ...OPEN_BUCKET[key] }));
 
 const int = (n: number) => Math.round(n).toLocaleString("th-TH");
 const baht = (n: number) => n.toLocaleString("th-TH", { maximumFractionDigits: 0 });
@@ -131,6 +148,8 @@ export default function JobWallBoard() {
     try {
       const qs = new URLSearchParams(range);
       if (locat) qs.set("locat", locat);
+      // จอนี้โชว์ใบที่ค้างนานสุดแค่ 10 ใบ — ดึงมา 20 พอ (เต็มชุดคือพันกว่าใบ ~800KB ทุกนาที)
+      qs.set("openLimit", "20");
       const res = await fetch(`/api/db2/jobs?${qs}`, { cache: "no-store" });
       const body = await res.json();
       if (!res.ok || body.ok === false) {
@@ -307,32 +326,49 @@ export default function JobWallBoard() {
             <div className="mb-4 grid gap-4 lg:grid-cols-3">
               <div className="rounded-2xl border border-amber-700/50 bg-slate-900 p-4">
                 <h2 className="mb-1 font-semibold text-amber-300">งานค้างปิด job (ทั้งหมด ณ ตอนนี้)</h2>
-                <div className="text-5xl font-bold tabular-nums text-amber-400">{int(data.open.totals.jobs)}</div>
-                <p className="mt-1 text-xs text-slate-400">
-                  นับทั้งฐาน ไม่ขึ้นกับช่วงวันที่ · เงินที่ลงไว้แล้ว {compact(data.open.totals.net)} บาท
-                </p>
-                <div className="mt-3 space-y-1 text-sm">
-                  {(
-                    [
-                      ["ค้าง ≤ 7 วัน", age.d7, "text-slate-200"],
-                      ["8–30 วัน", age.d30, "text-slate-200"],
-                      ["31–90 วัน", age.d90, "text-amber-300"],
-                      ["91–365 วัน", age.d365, "text-orange-400"],
-                      ["เกิน 1 ปี", age.over, "text-rose-400"],
-                    ] as [string, number, string][]
-                  ).map(([label, v, color]) => (
-                    <div key={label} className="flex items-center gap-2">
-                      <span className="w-24 shrink-0 text-slate-400">{label}</span>
-                      <div className="h-2 flex-1 rounded-full bg-slate-800">
-                        <div
-                          className="h-2 rounded-full bg-amber-500"
-                          style={{ width: `${data.open.totals.jobs ? (v / data.open.totals.jobs) * 100 : 0}%` }}
-                        />
-                      </div>
-                      <span className={`w-14 shrink-0 text-right font-semibold tabular-nums ${color}`}>{int(v)}</span>
-                    </div>
-                  ))}
+                <div className="flex items-baseline gap-3">
+                  <span className="text-5xl font-bold tabular-nums text-amber-400">{int(data.open.totals.jobs)}</span>
+                  <span className="text-sm text-slate-400">
+                    ไม่ใช่งานเคลม{" "}
+                    <span className="text-lg font-semibold text-orange-300">
+                      {int(data.open.byBranch.reduce((s, b) => s + (b.nonClaim ?? 0), 0))}
+                    </span>{" "}
+                    ใบ
+                  </span>
                 </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  นับทั้งฐาน ไม่ขึ้นกับช่วงวันที่ · ยอดที่ยังต้องเก็บจากลูกค้า{" "}
+                  <span className="font-semibold text-rose-300">
+                    {baht((data.open.byBucket ?? []).reduce((s, b) => s + b.billable, 0))} บาท
+                  </span>
+                </p>
+                <div className="mt-3 space-y-1.5 text-sm">
+                  {BUCKETS.map((b) => {
+                    const row = (data.open.byBucket ?? []).find((x) => x.key === b.key);
+                    const v = row?.jobs ?? 0;
+                    return (
+                      <div key={b.key} className="flex items-center gap-2">
+                        <span className="w-40 shrink-0 truncate text-slate-300">{b.label}</span>
+                        <div className="h-2 flex-1 rounded-full bg-slate-800">
+                          <div
+                            className="h-2 rounded-full"
+                            style={{
+                              width: `${data.open.totals.jobs ? (v / data.open.totals.jobs) * 100 : 0}%`,
+                              background: b.color,
+                            }}
+                          />
+                        </div>
+                        <span className="w-14 shrink-0 text-right font-semibold tabular-nums" style={{ color: b.color }}>
+                          {int(v)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-slate-400">
+                  อายุ: ≤7 วัน {int(age.d7)} · 8–30 {int(age.d30)} · 31–90 {int(age.d90)} · 91–365 {int(age.d365)} ·{" "}
+                  <span className="text-rose-400">เกิน 1 ปี {int(age.over)}</span>
+                </p>
               </div>
 
               <div className="rounded-2xl bg-slate-900 p-4">
@@ -343,6 +379,7 @@ export default function JobWallBoard() {
                       <span className="truncate text-slate-200">{b.label ?? b.key}</span>
                       <span className="shrink-0 tabular-nums">
                         <span className="text-lg font-semibold text-amber-400">{int(b.jobs)}</span>
+                        <span className="ml-2 text-xs text-orange-300">ไม่ใช่เคลม {int(b.nonClaim ?? 0)}</span>
                         <span className="ml-2 text-xs text-rose-400">เกิน 1 ปี {int(b.overYear)}</span>
                         <span className="ml-2 text-xs text-slate-500">เก่าสุด {thDate(b.oldest)}</span>
                       </span>
@@ -362,6 +399,12 @@ export default function JobWallBoard() {
                         <span className="ml-2 text-slate-200">{j.customer || j.regno || j.modelName || j.model || "—"}</span>
                         <span className="ml-2 text-xs text-slate-500">
                           {j.branch ?? j.locat} · {j.repName ?? j.repcod} · {SW_LABEL[j.swstatus] ?? j.swstatus}
+                        </span>
+                        <span
+                          className="ml-2 text-xs"
+                          style={{ color: BUCKETS.find((b) => b.key === j.bucket)?.color ?? "#94a3b8" }}
+                        >
+                          {BUCKETS.find((b) => b.key === j.bucket)?.label ?? j.bucket}
                         </span>
                       </span>
                       <span className="shrink-0 tabular-nums text-rose-400">{int(j.ageDays)} วัน</span>

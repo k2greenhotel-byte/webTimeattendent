@@ -1,5 +1,6 @@
 import "server-only";
 import { Db2Unreachable, db2Fetch, type Db2Upstream } from "./db2-fetch";
+import type { Db2OpenBucket } from "./db2-jobs";
 
 /**
  * ไคลเอนต์เรียก "แอปข้อมูลสดจากระบบขาย (Db2)" ที่รันในบริษัท (เซิร์ฟเวอร์ 192.168.1.200)
@@ -601,7 +602,13 @@ export type Db2OpenJob = {
   mobile: string;
   tel: string;
   net: number;
+  /** มูลค่าที่ต้องเก็บจากลูกค้าและยังไม่จบ (รายการ CLAIM='N' รวม VAT) — ไม่นับของเคลม/ประกัน */
+  billable: number;
+  /** สาเหตุที่ยังไม่ปิด — ดูคำอธิบายที่ OPEN_BUCKET */
+  bucket: Db2OpenBucket;
 };
+
+export type { Db2OpenBucket };
 
 export type Db2Jobs = {
   generatedAt: string;
@@ -633,7 +640,19 @@ export type Db2Jobs = {
       net: number;
       age: { d7: number; d30: number; d90: number; d365: number; over: number };
     };
-    byBranch: { key: string; label: string | null; jobs: number; oldest: string | null; overYear: number }[];
+    byBranch: {
+      key: string;
+      label: string | null;
+      jobs: number;
+      oldest: string | null;
+      overYear: number;
+      /** ตัวเลขที่สาขาต้องตามจริง — ตัดงานเคลมออกแล้ว */
+      nonClaim: number;
+      withMoney: number;
+      billable: number;
+    }[];
+    byBucket: { key: Db2OpenBucket; jobs: number; billable: number; overYear: number }[];
+    byType: { key: string; label: string | null; jobs: number; overYear: number }[];
     listLimit: number;
     list: Db2OpenJob[];
   };
@@ -646,12 +665,16 @@ export type Db2Jobs = {
  * ถ้าเครื่องในบริษัทยังไม่ได้ build เวอร์ชันที่มีเอนด์พอยต์นี้ จะได้ Db2ApiError สถานะ 404
  * หน้าจอที่เรียกต้องดักไว้แล้วบอกผู้ใช้ว่าให้อัปเดตแอป Db2 ก่อน (ไม่ใช่ปล่อยหน้าขาว)
  */
-export function db2Jobs(f: { from?: string; to?: string; locat?: string; reptype?: string; repcod?: string } = {}) {
+export function db2Jobs(
+  f: { from?: string; to?: string; locat?: string; reptype?: string; repcod?: string; openLimit?: number } = {},
+) {
   return call<Db2Jobs>("/api/jobs", {
     from: f.from,
     to: f.to,
     locat: f.locat,
     reptype: f.reptype,
     repcod: f.repcod,
+    // จอที่ใช้แค่ยอดรวมส่ง openLimit น้อย ๆ ได้ ไม่ต้องลากรายการงานค้างทั้งพันใบมาทุกครั้ง
+    openLimit: f.openLimit === undefined ? undefined : String(f.openLimit),
   });
 }
