@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     { "name": "webTimeattendent", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 },
-    { "name": "webTimeattendent-3300", "runtimeExecutable": "node", "runtimeArgs": ["scripts/dev-isolated.mjs", "3300"], "port": 3300 }
+    { "name": "webTimeattendent-3300", "runtimeExecutable": "node", "runtimeArgs": ["scripts/dev-isolated.mjs", "3300"], "port": 3300 },
+    {
+      "name": "db2-sales-dev",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["--prefix", "D:/claude code/DB2/db2-nextjs-starter/db2-nextjs-starter", "run", "dev"],
+      "port": 3000
+    }
   ]
 }

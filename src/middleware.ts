@@ -101,5 +101,8 @@ export const config = {
     "/inspection",
     "/inspection/:path*",
     "/api/inspection/:path*",
+    "/audit",
+    "/audit/:path*",
+    "/api/audit/:path*",
   ],
 };

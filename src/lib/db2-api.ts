@@ -475,3 +475,70 @@ export function db2Officers(
   const qs = search.toString();
   return call<Db2OfficerResult>(`/api/officers${qs ? `?${qs}` : ""}`);
 }
+
+/* -------------------------------------------------------------------------- */
+/* รายการขายรายใบในช่วงวันที่ (ใช้โดยระบบตรวจสอบบัญชี)                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ใบสั่งขายหนึ่งใบจาก VIEW_SALEALL พร้อมชื่อที่ผู้ตรวจสอบต้องเห็น
+ * (ลูกค้า · สาขาที่ขาย · พนักงานขาย · ยี่ห้อ/รุ่น · บริษัทไฟแนนซ์)
+ * `contno` = เลขที่สัญญาขาย ใช้เป็นกุญแจคู่ขนานกับตาราง aud_checks ฝั่ง Supabase
+ */
+export type Db2Sale = {
+  locat: string;
+  contno: string;
+  saleDate: string | null;
+  /** H ผ่อน · C สด · F ไฟแนนซ์ · A ส่งเอเย่นต์ */
+  channel: string;
+  channelLabel: string;
+  /** N รถใหม่ · O รถเก่า */
+  condition: string;
+  strno: string;
+  brand: string;
+  model: string;
+  modelName: string;
+  color: string;
+  salcod: string;
+  salesman: string;
+  fincod: string;
+  /** ชื่อบริษัทไฟแนนซ์ (มีเฉพาะการขายผ่านไฟแนนซ์) */
+  finance: string;
+  cuscod: string;
+  customer: string;
+  mobile: string;
+  /** ราคาขายก่อน VAT */
+  price: number | null;
+  /** ราคารวม VAT */
+  gross: number | null;
+};
+
+export type Db2SaleResult = {
+  filters: { from: string; to: string; locat?: string; tsale?: string };
+  matched: number;
+  count: number;
+  truncated: boolean;
+  sales: Db2Sale[];
+  branches: string[];
+};
+
+/**
+ * รายการขายรายใบในช่วงวันที่ — ต้องมีเอนด์พอยต์ `/api/sales` ในแอป Db2 (เพิ่มไว้แล้วในโปรเจกต์แอป Db2)
+ * ถ้าแอปฝั่งบริษัทยังไม่ได้ build เวอร์ชันที่มีเอนด์พอยต์นี้ จะได้ Db2ApiError สถานะ 404
+ * หน้าจอที่เรียกต้องดักไว้แล้วบอกผู้ใช้ว่าให้อัปเดตแอป Db2 ก่อน
+ */
+export function db2Sales(f: {
+  from: string;
+  to: string;
+  locat?: string;
+  tsale?: string;
+  limit?: number;
+}) {
+  return call<Db2SaleResult>("/api/sales", {
+    from: f.from,
+    to: f.to,
+    locat: f.locat,
+    tsale: f.tsale,
+    limit: f.limit ? String(f.limit) : undefined,
+  });
+}
