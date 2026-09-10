@@ -8,6 +8,9 @@ const NAV = [
   { href: "/salework/setup", label: "4. ตั้งค่าประเภทงาน", menuCode: "SW_SETUP" },
   { href: "/salework/mapping", label: "5. จับคู่กับระบบขาย", menuCode: "SW_MAP" },
   { href: "/salework/wall", label: "จอ War Room", menuCode: "SW_WALL" },
+  // เมนูข้ามโปรแกรม — พนักงานขายยื่นเรื่องขออนุมัติได้จากที่นี่โดยไม่ต้องออกไปหน้ารวมโปรแกรม
+  // ขึ้นเฉพาะคนที่มีสิทธิ์จริง เพราะกรองด้วย readableMenuCodes ซึ่งรวมทุกโปรแกรมอยู่แล้ว
+  { href: "/approvals/new", label: "ยื่นเรื่องขออนุมัติ", menuCode: "APV_NEW" },
 ];
 
 export default function SaleWorkHeader({
