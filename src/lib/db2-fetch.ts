@@ -16,7 +16,15 @@ import "server-only";
  * ส่วน 4xx/500 ที่เป็น JSON คือคำตอบจริงของแอป ส่งกลับทันทีไม่ลองซ้ำ
  */
 
-export class Db2Unreachable extends Error {}
+export class Db2Unreachable extends Error {
+  constructor(
+    message: string,
+    /** 404 = ทุกเส้นทางตอบ "ไม่มี endpoint นี้" (แอปทำงานอยู่ แต่ยังไม่ได้ build เวอร์ชันที่มี endpoint) */
+    public status?: number,
+  ) {
+    super(message);
+  }
+}
 
 export type Db2Upstream = { res: Response; text: string; base: string };
 
@@ -38,6 +46,7 @@ export async function db2Fetch(pathWithQuery: string, timeoutMs = 20_000): Promi
   if (!list.length || !key) throw new Db2Unreachable("ยังไม่ได้ตั้งค่า DB2_API_URL / DB2_API_KEY");
 
   const reasons: string[] = [];
+  let all404 = list.length > 0;
   for (const base of list) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -48,6 +57,7 @@ export async function db2Fetch(pathWithQuery: string, timeoutMs = 20_000): Promi
         cache: "no-store",
       });
       const text = await res.text();
+      if (res.status !== 404) all404 = false;
       const relayDown = res.status >= 520 && res.status <= 530;
       if (relayDown || (!looksJson(text) && res.status >= 500)) {
         reasons.push(`${new URL(base).host} → HTTP ${res.status}`);
@@ -59,11 +69,21 @@ export async function db2Fetch(pathWithQuery: string, timeoutMs = 20_000): Promi
       }
       return { res, text, base };
     } catch (err) {
+      all404 = false;
       const why = err instanceof Error && err.name === "AbortError" ? "หมดเวลารอ" : (err as Error).message;
       reasons.push(`${new URL(base).host} → ${why}`);
     } finally {
       clearTimeout(timer);
     }
+  }
+  // ทุกเส้นทางตอบ 404 = แอปทำงานอยู่แต่ยังไม่รู้จัก path นี้ (ยังไม่ได้ build เวอร์ชันใหม่)
+  // ต้องแยกจาก "เครื่องดับ" ไม่งั้นคนอ่านจะไปไล่หาว่าเซิร์ฟเวอร์ล่ม ทั้งที่แค่ยังไม่ได้ deploy
+  if (all404) {
+    const path = pathWithQuery.split("?")[0];
+    throw new Db2Unreachable(
+      `แอป Db2 ในบริษัทยังไม่มีเอนด์พอยต์ ${path} — ต้อง build แอป Db2 บนเซิร์ฟเวอร์เวอร์ชันที่มีเอนด์พอยต์นี้ก่อน`,
+      404,
+    );
   }
   throw new Db2Unreachable(
     `ต่อระบบขาย (Db2) ไม่ได้ทุกเส้นทาง — เครื่องในบริษัทอาจปิดอยู่ (${reasons.join(" · ")})`,

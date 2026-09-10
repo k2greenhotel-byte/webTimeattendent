@@ -1,5 +1,5 @@
 import "server-only";
-import { db2Fetch, type Db2Upstream } from "./db2-fetch";
+import { Db2Unreachable, db2Fetch, type Db2Upstream } from "./db2-fetch";
 
 /**
  * ไคลเอนต์เรียก "แอปข้อมูลสดจากระบบขาย (Db2)" ที่รันในบริษัท (เซิร์ฟเวอร์ 192.168.1.200)
@@ -35,7 +35,11 @@ async function call<T>(path: string, params: Record<string, string | undefined> 
   try {
     upstream = await db2Fetch(pathWithQuery, TIMEOUT_MS);
   } catch (err) {
-    throw new Db2ApiError(err instanceof Error ? err.message : "ต่อระบบขาย (Db2) ไม่ได้");
+    // คง status ไว้ด้วย — 404 คือ "ยังไม่ได้ build เอนด์พอยต์นี้บนเซิร์ฟเวอร์" ไม่ใช่ "เครื่องดับ"
+    throw new Db2ApiError(
+      err instanceof Error ? err.message : "ต่อระบบขาย (Db2) ไม่ได้",
+      err instanceof Db2Unreachable ? err.status : undefined,
+    );
   }
 
   let body: { ok?: boolean; error?: string };

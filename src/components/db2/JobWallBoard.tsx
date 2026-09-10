@@ -134,12 +134,9 @@ export default function JobWallBoard() {
       const res = await fetch(`/api/db2/jobs?${qs}`, { cache: "no-store" });
       const body = await res.json();
       if (!res.ok || body.ok === false) {
-        // endpoint ยังไม่ได้ build บนเซิร์ฟเวอร์บริษัท → 404 เป็น JSON ปกติ ต้องบอกเป็นภาษาคน
-        throw new Error(
-          res.status === 404 && !body.error
-            ? "แอป Db2 ในบริษัทยังไม่มีเอนด์พอยต์ /api/jobs — ต้องอัปเดตแอป Db2 ก่อน"
-            : (body.error ?? `HTTP ${res.status}`),
-        );
+        // 404 = แอป Db2 บนเซิร์ฟเวอร์ยังไม่ได้ build เวอร์ชันที่มี /api/jobs
+        // (proxy แปลงมาเป็นข้อความไทยที่บอกวิธีแก้ให้แล้ว — คนละกรณีกับเครื่องดับ)
+        throw new Error(body.error ?? `HTTP ${res.status}`);
       }
       setData(body);
       setError(null);

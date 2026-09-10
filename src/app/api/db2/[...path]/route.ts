@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { db2Configured, db2Fetch } from "@/lib/db2-fetch";
+import { Db2Unreachable, db2Configured, db2Fetch } from "@/lib/db2-fetch";
 import { checkPermission, getSessionUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +55,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "ต่อระบบขาย (Db2) ไม่ได้" },
-      { status: 502, headers: { "cache-control": "no-store" } },
+      // 404 = แอป Db2 ยังไม่มี endpoint นี้ (ยังไม่ได้ build) · 502 = ต่อไม่ถึงจริง ๆ
+      { status: err instanceof Db2Unreachable && err.status === 404 ? 404 : 502, headers: { "cache-control": "no-store" } },
     );
   }
 }
