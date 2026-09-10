@@ -14,6 +14,7 @@ import {
   workDateOf,
 } from "@/lib/datetime";
 import {
+  getLeaveDayMap,
   listAssignments,
   listBranches,
   listEmployees,
@@ -21,7 +22,7 @@ import {
   listSchedules,
   listSites,
 } from "@/lib/db";
-import type { ShiftAssignment, WorkSchedule } from "@/lib/types";
+import type { LeaveDay, ShiftAssignment, WorkSchedule } from "@/lib/types";
 import { assignShiftsForm, clearRangeForm, copyPreviousForm, saveCellForm } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -125,8 +126,12 @@ export default async function RosterPage({
   );
   const employeeIds = employees.map((e) => e.id);
 
-  const assignments =
-    employeeIds.length > 0 ? await listAssignments({ from, to, employeeIds }) : [];
+  const [assignments, leaves] = await Promise.all([
+    employeeIds.length > 0 ? listAssignments({ from, to, employeeIds }) : Promise.resolve([]),
+    employeeIds.length > 0
+      ? getLeaveDayMap({ from, to, employeeIds, companyId: scope.companyId })
+      : Promise.resolve(new Map<string, LeaveDay>()),
+  ]);
   const cell = new Map<string, ShiftAssignment>(
     assignments.map((a) => [`${a.employee_id}|${a.work_date}`, a]),
   );
@@ -140,7 +145,12 @@ export default async function RosterPage({
   const [editEmp, editDate] = (params.edit ?? "").split("_");
   const editing =
     editEmp && editDate && employees.some((e) => e.id === editEmp) && dates.includes(editDate)
-      ? { employee: employees.find((e) => e.id === editEmp)!, date: editDate, current: cell.get(`${editEmp}|${editDate}`) ?? null }
+      ? {
+          employee: employees.find((e) => e.id === editEmp)!,
+          date: editDate,
+          current: cell.get(`${editEmp}|${editDate}`) ?? null,
+          leave: leaves.get(`${editEmp}|${editDate}`) ?? null,
+        }
       : null;
 
   // ---- ลิงก์นำทางที่คงตัวกรองไว้ ----
@@ -345,6 +355,13 @@ export default async function RosterPage({
           <p className="font-semibold text-slate-800">
             แก้เวร: {editing.employee.full_name} · {formatThaiDate(editing.date)}
           </p>
+          {editing.leave && (
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              วันนี้มีใบลาที่อนุมัติแล้ว: {editing.leave.typeName}
+              {editing.leave.countsAsAbsent ? " (แจ้งช้ากว่ากติกา นับเป็นขาดงาน)" : ""} —
+              การจัดกะด้านล่างเป็นแผนสำรอง ถ้าใบลานี้ยังไม่ถูกยกเลิก พนักงานจะไม่มาตามกะนี้
+            </p>
+          )}
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-40 flex-1">
               <label className="label" htmlFor="cell_shift">
@@ -447,6 +464,7 @@ export default async function RosterPage({
                     </td>
                     {dates.map((d) => {
                       const a = cell.get(`${e.id}|${d}`);
+                      const leave = leaves.get(`${e.id}|${d}`);
                       const isEditing = editing?.employee.id === e.id && editing.date === d;
                       let label = "";
                       let cls = "text-slate-300";
@@ -461,7 +479,18 @@ export default async function RosterPage({
                         cls = "bg-violet-100 text-violet-800";
                       }
                       if (a?.site_id && !a.is_day_off) label = `📍${label}`;
-                      const title = [a?.site_name ? `ประจำที่ ${a.site_name}` : "", a?.note ?? ""]
+                      // ใบลาที่อนุมัติแล้ว (จากโปรแกรม HR) แสดงทับกะที่จัดไว้ — ไม่ได้ลบกะเดิม
+                      // ถ้าใบลาถูกยกเลิกทีหลัง กะที่จัดไว้เดิมจะกลับมาแสดงเองโดยไม่ต้องจัดใหม่
+                      const scheduledLabel = label;
+                      if (leave && !leave.countsAsAbsent) {
+                        label = "ลา";
+                        cls = "bg-rose-100 text-rose-700";
+                      }
+                      const title = [
+                        a?.site_name ? `ประจำที่ ${a.site_name}` : "",
+                        a?.note ?? "",
+                        leave ? `ใบลาอนุมัติแล้ว: ${leave.typeName}${scheduledLabel ? ` (เดิมจัดกะ ${scheduledLabel})` : ""}` : "",
+                      ]
                         .filter(Boolean)
                         .join(" · ");
                       return (
@@ -491,6 +520,9 @@ export default async function RosterPage({
               </span>
             ))}
             <span className="badge bg-slate-200 text-slate-700">OFF = หยุดเวร</span>
+            <span className="badge bg-rose-100 text-rose-700">
+              ลา = ลาที่อนุมัติแล้ว (จากโปรแกรม HR) · ชี้ที่ช่องดูรายละเอียด
+            </span>
             <span className="badge bg-violet-100 text-violet-800">📍 = ไปประจำนอกสถานที่ (GPS ตรวจที่นั่น)</span>
             <span className="badge bg-slate-50 text-slate-500">– = ใช้กะสาขา</span>
           </div>
