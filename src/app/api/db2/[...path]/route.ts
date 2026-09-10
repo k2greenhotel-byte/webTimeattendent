@@ -21,6 +21,7 @@ const ALLOWED: Record<string, string> = {
   // ค้นรถของลูกค้าจากเลขตัวถัง (INVTRAN + SALEALL + CUSTMAST) — popup ของใบขอเคลม
   vehicles: "CLM_CLAIM",
   customers: "BOOK_ENTRY",
+  jobs: "DB2_JOB_WALL", // งานซ่อม — จอ War Room เรียกเอง (หน้า dashboard ดึงฝั่ง server)
   dashboard: "DB2_DASH",
   stock: "DB2_STOCK",
 };

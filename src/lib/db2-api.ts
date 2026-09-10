@@ -542,3 +542,112 @@ export function db2Sales(f: {
     limit: f.limit ? String(f.limit) : undefined,
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* งานซ่อม (ศูนย์บริการ) — JOBORDER                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ตัวเลขงานซ่อมหนึ่งชุด (นิยามฝั่งแอป Db2 — ดูเหตุผลเต็มใน hp.ts ของแอปนั้น)
+ *   net    รายได้ก่อน VAT = อะไหล่ + น้ำมัน + ค่าแรง + งานนอก + งานสี
+ *   gross  รวม VAT · vat = VAT ของ 5 หมวดนั้น
+ *   cost   ต้นทุนอะไหล่ + น้ำมัน (ค่าแรงไม่มีต้นทุนในใบงาน)
+ *   profit net − cost · labour = ค่าแรงล้วน · open = จำนวนใบที่ยังไม่ปิด job ในชุดนี้
+ * ใบที่ถูกยกเลิก (STATUS='C') ถูกตัดออกจากทุกตัวเลขแล้ว
+ */
+export type Db2JobAgg = {
+  jobs: number;
+  net: number;
+  vat: number;
+  gross: number;
+  cost: number;
+  profit: number;
+  labour: number;
+  open: number;
+};
+
+export type Db2JobItem = Db2JobAgg & { key: string; label: string | null };
+
+export type Db2JobDim = "branch" | "tech" | "reptype" | "receiver" | "model";
+
+/** ใบงานที่ยังค้างปิด — ข้อมูลพอให้ไล่ตามรถได้จริง (ทะเบียน เบอร์โทร ช่างที่รับผิดชอบ) */
+export type Db2OpenJob = {
+  jobno: string;
+  locat: string;
+  branch: string | null;
+  recvDate: string | null;
+  ageDays: number;
+  repcod: string;
+  repName: string | null;
+  recvcod: string;
+  recvName: string | null;
+  reptype: string;
+  reptypeName: string | null;
+  /** F เสร็จ · R กำลังซ่อม · W รอ (ว่าง = ใบเก่าก่อนมีฟิลด์นี้) */
+  swstatus: string;
+  status: string;
+  finishDate: string | null;
+  taxDate: string | null;
+  model: string;
+  modelName: string | null;
+  strno: string;
+  regno: string;
+  cuscod: string;
+  customer: string;
+  mobile: string;
+  tel: string;
+  net: number;
+};
+
+export type Db2Jobs = {
+  generatedAt: string;
+  today: string;
+  range: { from: string; to: string; days: number };
+  filters: { locat: string | null; reptype: string | null; repcod: string | null };
+  truncated: boolean;
+  kpi: Db2JobAgg;
+  today_kpi: Db2JobAgg;
+  quality: {
+    /** วันเฉลี่ยจากวันรับรถถึงวันซ่อมเสร็จ */
+    leadDaysAvg: number | null;
+    sameDayPct: number | null;
+    finished: number;
+    /** ใบที่ยังไม่มีวันที่ใบกำกับภาษี */
+    noTax: number;
+  };
+  compare: {
+    prev: { range: { from: string; to: string }; kpi: Db2JobAgg; label: string };
+    lastYear: { range: { from: string; to: string }; kpi: Db2JobAgg; label: string };
+  };
+  dims: Record<Db2JobDim, { title: string; items: Db2JobItem[] }>;
+  daily: (Db2JobAgg & { date: string })[];
+  monthly: (Db2JobAgg & { year: number; month: number })[];
+  /** งานค้างปิด job — ยอดสะสมทั้งฐาน ไม่ขึ้นกับช่วงวันที่ (กรองตามสาขาเดียวกัน) */
+  open: {
+    totals: {
+      jobs: number;
+      net: number;
+      age: { d7: number; d30: number; d90: number; d365: number; over: number };
+    };
+    byBranch: { key: string; label: string | null; jobs: number; oldest: string | null; overYear: number }[];
+    listLimit: number;
+    list: Db2OpenJob[];
+  };
+  branches: { key: string; label: string | null }[];
+  repTypes: { key: string; label: string }[];
+};
+
+/**
+ * สรุปงานซ่อมในช่วงวันรับรถ + งานค้างปิด job — ต้องมีเอนด์พอยต์ `/api/jobs` ในแอป Db2
+ * ถ้าเครื่องในบริษัทยังไม่ได้ build เวอร์ชันที่มีเอนด์พอยต์นี้ จะได้ Db2ApiError สถานะ 404
+ * หน้าจอที่เรียกต้องดักไว้แล้วบอกผู้ใช้ว่าให้อัปเดตแอป Db2 ก่อน (ไม่ใช่ปล่อยหน้าขาว)
+ */
+export function db2Jobs(f: { from?: string; to?: string; locat?: string; reptype?: string; repcod?: string } = {}) {
+  return call<Db2Jobs>("/api/jobs", {
+    from: f.from,
+    to: f.to,
+    locat: f.locat,
+    reptype: f.reptype,
+    repcod: f.repcod,
+  });
+}

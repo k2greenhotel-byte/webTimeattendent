@@ -27,6 +27,7 @@ const SCREENS: { menu: string; key: WallScreen["key"]; label: string }[] = [
   { menu: "INSP_WALL", key: "inspection", label: "ตรวจสาขา" },
   { menu: "HTL_WALL", key: "hotel", label: "ตรวจเช็คโรงแรม" },
   { menu: "DB2_WALL", key: "db2", label: "ยอดขาย Db2" },
+  { menu: "DB2_JOB_WALL", key: "db2jobs", label: "งานซ่อม Db2" },
 ];
 
 export default async function CombinedWallPage() {
