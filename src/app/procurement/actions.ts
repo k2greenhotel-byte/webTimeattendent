@@ -4,7 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { logAudit } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
-import { parseAmount, validatePurchase, validateRepair, validateRepairUpdate } from "@/lib/procurement";
+import {
+  parseAmount,
+  validateCancel,
+  validatePurchase,
+  validateRepair,
+  validateRepairUpdate,
+  validateRestore,
+  type CancelActor,
+} from "@/lib/procurement";
 import {
   createPurchase,
   createRepair,
@@ -12,24 +20,26 @@ import {
   deletePurchase,
   deleteRepair,
   deleteRepairUpdate,
+  getDoc,
   getPurchase,
   getRepair,
   purchaseDeleteImpact,
   repairDeleteImpact,
+  setDocCancelled,
   updatePurchase,
   updateRepair,
 } from "@/lib/procurement-db";
 import {
   JOB_STATUS_ORDER,
   MAX_PHOTOS,
-  PR_DOC_STATUS_ORDER,
   TECH_KIND_ORDER,
   URGENCY_ORDER,
+  type DocKind,
   type PurchaseInput,
   type RepairInput,
   type RepairUpdateInput,
 } from "@/lib/procurement-types";
-import { requirePermission } from "@/lib/session";
+import { checkPermission, requirePermission } from "@/lib/session";
 
 // ---------- ตัวช่วยอ่านค่าจากฟอร์ม ----------
 
@@ -81,6 +91,10 @@ function readRepair(
       | "approval_no"
       | "approved_date"
       | "approved_by"
+      | "doc_status"
+      | "cancelled_at"
+      | "cancelled_by"
+      | "cancel_reason"
     >;
   },
 ): RepairInput {
@@ -102,7 +116,11 @@ function readRepair(
     tech_name: optText(form, "tech_name"),
     tech_phone: normalizePhone(str(form, "tech_phone")) || optText(form, "tech_phone"),
     tech_kind: pick(form, "tech_kind", TECH_KIND_ORDER) ?? "external",
-    doc_status: pick(form, "doc_status", PR_DOC_STATUS_ORDER) ?? "active",
+    // สถานะเอกสารเปลี่ยนได้จากปุ่มยกเลิก/ดึงกลับเท่านั้น (ตรวจสิทธิ์แยกต่างหาก) ฟอร์มนี้คงค่าเดิม
+    doc_status: keep?.doc_status ?? "active",
+    cancelled_at: keep?.cancelled_at ?? null,
+    cancelled_by: keep?.cancelled_by ?? null,
+    cancel_reason: keep?.cancel_reason ?? null,
     pay_status: keep?.pay_status ?? "requested",
     job_status: pick(form, "job_status", JOB_STATUS_ORDER) ?? "wait_tech",
     approve_status: keep?.approve_status ?? "pending",
@@ -317,6 +335,10 @@ function readPurchase(
       | "approval_no"
       | "approved_date"
       | "approved_by"
+      | "doc_status"
+      | "cancelled_at"
+      | "cancelled_by"
+      | "cancel_reason"
     >;
   },
 ): PurchaseInput {
@@ -337,7 +359,11 @@ function readPurchase(
     requested_amount: parseAmount(str(form, "requested_amount")),
     approved_amount: keep?.approved_amount ?? 0,
     actual_amount: keep?.actual_amount ?? 0,
-    doc_status: pick(form, "doc_status", PR_DOC_STATUS_ORDER) ?? "active",
+    // สถานะเอกสารเปลี่ยนได้จากปุ่มยกเลิก/ดึงกลับเท่านั้น (ตรวจสิทธิ์แยกต่างหาก) ฟอร์มนี้คงค่าเดิม
+    doc_status: keep?.doc_status ?? "active",
+    cancelled_at: keep?.cancelled_at ?? null,
+    cancelled_by: keep?.cancelled_by ?? null,
+    cancel_reason: keep?.cancel_reason ?? null,
     pay_status: keep?.pay_status ?? "requested",
     approve_status: keep?.approve_status ?? "pending",
     reject_reason: keep?.reject_reason ?? null,
@@ -449,4 +475,93 @@ export async function deletePurchaseForm(form: FormData): Promise<void> {
 
   revalidatePath("/procurement/purchases");
   back("/procurement/purchases", `ลบใบขอจัดซื้อและรูป ${filesDeleted} รูปเรียบร้อยแล้ว`);
+}
+
+// ---------- ยกเลิก / ดึงกลับ ใบขอซ่อมและใบขอจัดซื้อ ----------
+
+/**
+ * ประกอบตัวตนของคนที่กำลังจะกดยกเลิก จาก session + สิทธิ์เมนู
+ * ค่าทั้งสามอ่านจากฝั่ง server ล้วน ไม่มีช่องไหนรับมาจากฟอร์ม จึงปลอมไม่ได้
+ */
+async function cancelActorOf(user: { id: string }): Promise<CancelActor> {
+  const [canCancelOthers, isApprover] = await Promise.all([
+    checkPermission("PR_CANCEL", "delete"),
+    checkPermission("PR_APPROVE", "write"),
+  ]);
+  return { userId: user.id, canCancelOthers, isApprover };
+}
+
+/** ยกเลิกหรือดึงกลับ ใช้โค้ดชุดเดียวกันทั้งใบซ่อมและใบซื้อ ต่างแค่คำที่แสดงกับเส้นทาง */
+async function cancelDocForm(
+  form: FormData,
+  kind: DocKind,
+  restore: boolean,
+): Promise<void> {
+  const menu = kind === "repair" ? "PR_REPAIR" : "PR_PURCHASE";
+  const listPath = kind === "repair" ? "/procurement/repairs" : "/procurement/purchases";
+  const label = kind === "repair" ? "ใบขอซ่อม" : "ใบขอจัดซื้อ";
+  const verb = restore ? "ดึงกลับ" : "ยกเลิก";
+
+  // ต้องเข้าหน้านั้นได้ก่อน แล้วค่อยว่ากันด้วยกฎว่าใบใบนี้แตะได้ไหม
+  const user = await requirePermission(menu, "read");
+  const id = str(form, "id");
+  if (!id) back(listPath, `ไม่พบ${label}ที่ต้องการ${verb}`, true);
+
+  const path = `${listPath}/${id}`;
+  const target = await getDoc(id);
+  const actor = await cancelActorOf(user);
+
+  const problem = restore ? validateRestore(target, actor) : validateCancel(target, actor);
+  if (problem) back(path, problem, true);
+
+  if (!restore) {
+    if (form.get("confirm") !== "on") {
+      back(path, `ต้องติ๊ก "ยืนยันยกเลิก" ก่อน`, true);
+    }
+    if (!str(form, "cancel_reason")) {
+      back(path, "กรุณากรอกเหตุผลที่ยกเลิก เพื่อให้คนอื่นที่มาดูทีหลังเข้าใจ", true);
+    }
+  }
+
+  try {
+    await setDocCancelled(kind, id, {
+      cancelled: !restore,
+      by: restore ? null : user.id,
+      reason: restore ? null : str(form, "cancel_reason"),
+    });
+    await logAudit({
+      actor_id: user.id,
+      action: restore ? `restore_${kind}` : `cancel_${kind}`,
+      target_table: kind === "repair" ? "pr_repairs" : "pr_purchases",
+      target_id: id,
+      after: {
+        doc_no: target?.doc_no,
+        reason: restore ? null : str(form, "cancel_reason"),
+        approve_status: target?.approve_status,
+      },
+    });
+  } catch (err) {
+    back(path, err instanceof Error ? err.message : `${verb}${label}ไม่สำเร็จ`, true);
+  }
+
+  revalidatePath(path);
+  revalidatePath(listPath);
+  revalidatePath("/procurement/search");
+  back(path, `${verb}${label}${target?.doc_no ? ` เลขที่ ${target.doc_no}` : ""} เรียบร้อยแล้ว`);
+}
+
+export async function cancelRepairForm(form: FormData): Promise<void> {
+  await cancelDocForm(form, "repair", false);
+}
+
+export async function restoreRepairForm(form: FormData): Promise<void> {
+  await cancelDocForm(form, "repair", true);
+}
+
+export async function cancelPurchaseForm(form: FormData): Promise<void> {
+  await cancelDocForm(form, "purchase", false);
+}
+
+export async function restorePurchaseForm(form: FormData): Promise<void> {
+  await cancelDocForm(form, "purchase", true);
 }

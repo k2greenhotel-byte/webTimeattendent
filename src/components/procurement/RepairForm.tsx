@@ -7,7 +7,6 @@ import {
   JOB_STATUS_LABEL,
   MAX_PHOTOS,
   PR_DOC_STATUS_LABEL,
-  PR_DOC_STATUS_ORDER,
   REPAIR_PAY_STATUS_LABEL,
   TECH_KIND_LABEL,
   TECH_KIND_ORDER,
@@ -311,18 +310,18 @@ export default function RepairForm({
           <label className="label" htmlFor="doc_status">
             สถานะเอกสาร
           </label>
-          <select
+          {/*
+            แสดงอย่างเดียว ไม่ส่งค่ากลับ — ยกเลิกเอกสารทำได้จากปุ่ม "ยกเลิกเอกสาร" ท้ายหน้าเท่านั้น
+            เพราะการยกเลิกต้องผ่านการตรวจสิทธิ์และต้องบันทึกเหตุผลไว้ด้วย
+          */}
+          <input
             id="doc_status"
-            name="doc_status"
-            defaultValue={repair?.doc_status ?? "active"}
-            className="input"
-          >
-            {PR_DOC_STATUS_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {PR_DOC_STATUS_LABEL[s]}
-              </option>
-            ))}
-          </select>
+            value={PR_DOC_STATUS_LABEL[repair?.doc_status ?? "active"]}
+            readOnly
+            disabled
+            className="input bg-slate-50 text-slate-600"
+          />
+          <p className="mt-1 text-xs text-slate-400">เปลี่ยนได้ที่ปุ่มยกเลิกเอกสารท้ายหน้า</p>
         </div>
       </div>
 

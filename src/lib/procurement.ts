@@ -297,6 +297,73 @@ export function validatePurchase(input: PurchaseInput): string | null {
   return null;
 }
 
+// ---------- ยกเลิกเอกสาร (ใบขอซ่อม 1.1 / ใบขอจัดซื้อ 2.1) ----------
+
+/** คนที่กำลังจะกดยกเลิก — ประกอบขึ้นจาก session + สิทธิ์เมนู ไม่ใช่ค่าที่ส่งมาจากฟอร์ม */
+export type CancelActor = {
+  userId: string;
+  /** สิทธิ์ PR_CANCEL — ตั้งเพิ่มเป็นรายคนได้ (ผู้จัดการ/หัวหน้างาน) */
+  canCancelOthers: boolean;
+  /** สิทธิ์ PR_APPROVE — ผู้มีอำนาจอนุมัติ */
+  isApprover: boolean;
+};
+
+type CancelTarget = Pick<
+  PrDocRow,
+  "created_by" | "doc_status" | "approve_status" | "actual_amount"
+>;
+
+/**
+ * ตรวจว่าคนนี้ยกเลิกเอกสารใบนี้ได้ไหม — คืนข้อความไทยที่บอกเหตุผล หรือ null ถ้าทำได้
+ *
+ * ลำดับการกันไล่จากเข้มไปหาอ่อน:
+ *   1. จ่ายเงินไปแล้ว ยกเลิกไม่ได้เลย ไม่ว่าใคร เพราะใบเบิกจ่ายยังอ้างเอกสารนี้อยู่
+ *      ถ้าปล่อยให้ยกเลิก ยอดในรายงานจะเพี้ยนทันที
+ *   2. ตัดสินผลอนุมัติไปแล้ว (อนุมัติ/ไม่อนุมัติ) ต้องเป็นผู้มีอำนาจอนุมัติเท่านั้น
+ *      เพราะเลขที่อนุมัติออกไปแล้ว เจ้าของใบถอนเองไม่ได้
+ *   3. ยังไม่ตัดสิน (รออนุมัติ/ให้หาราคาใหม่) เจ้าของใบยกเลิกเองได้
+ *      หรือคนที่ได้รับสิทธิ์ยกเลิกเอกสารของผู้อื่น
+ */
+export function validateCancel(target: CancelTarget | null, actor: CancelActor): string | null {
+  if (!target) return "ไม่พบเอกสารที่ต้องการยกเลิก อาจถูกลบไปแล้ว";
+  if (target.doc_status === "cancelled") return "เอกสารนี้ถูกยกเลิกไปแล้ว";
+
+  if (target.actual_amount > 0) {
+    return `เอกสารนี้จ่ายเงินไปแล้ว ${target.actual_amount.toLocaleString("th-TH")} บาท จึงยกเลิกไม่ได้ — ต้องไปลบหรือแก้ใบเบิกจ่ายที่อ้างเอกสารนี้ก่อน`;
+  }
+
+  const decided = target.approve_status === "approved" || target.approve_status === "rejected";
+  if (decided) {
+    return actor.isApprover
+      ? null
+      : `เอกสารนี้ผ่านการพิจารณาแล้ว (${APPROVE_STATUS_LABEL[target.approve_status]}) ยกเลิกได้เฉพาะผู้มีอำนาจอนุมัติ`;
+  }
+
+  if (actor.isApprover || actor.canCancelOthers) return null;
+  if (target.created_by && target.created_by === actor.userId) return null;
+
+  return "ยกเลิกได้เฉพาะเอกสารที่ตัวเองเป็นคนบันทึก — ถ้าต้องยกเลิกใบของคนอื่น ขอสิทธิ์เพิ่มจากผู้ดูแลระบบ";
+}
+
+/**
+ * ตรวจว่าดึงเอกสารที่ยกเลิกแล้วกลับมาใช้งานใหม่ได้ไหม
+ * ใช้เกณฑ์คนเดียวกับตอนยกเลิก — ใครยกเลิกได้ ก็กดคืนได้ เผื่อกดผิด
+ * จะได้ไม่ต้องเปิดใบใหม่ให้เลขที่เอกสารเดินโดยเปล่าประโยชน์
+ */
+export function validateRestore(target: CancelTarget | null, actor: CancelActor): string | null {
+  if (!target) return "ไม่พบเอกสารที่ต้องการดึงกลับ อาจถูกลบไปแล้ว";
+  if (target.doc_status !== "cancelled") return "เอกสารนี้ยังใช้งานอยู่ ไม่ต้องดึงกลับ";
+
+  const decided = target.approve_status === "approved" || target.approve_status === "rejected";
+  if (decided && !actor.isApprover) {
+    return "เอกสารนี้ผ่านการพิจารณาแล้ว ดึงกลับได้เฉพาะผู้มีอำนาจอนุมัติ";
+  }
+  if (actor.isApprover || actor.canCancelOthers) return null;
+  if (target.created_by && target.created_by === actor.userId) return null;
+
+  return "ดึงกลับได้เฉพาะเอกสารที่ตัวเองเป็นคนบันทึก หรือผู้ที่มีสิทธิ์ยกเลิกเอกสารของผู้อื่น";
+}
+
 /** ใบอนุมัติ (หน้าจอ 3.1) */
 export function validateApproval(
   input: ApprovalInput,

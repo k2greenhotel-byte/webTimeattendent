@@ -17,11 +17,13 @@ import {
   tagSlug,
   validateAccount,
   validateApproval,
+  validateCancel,
   validatePayment,
   validatePrType,
   validatePurchase,
   validateRepair,
   validateRepairUpdate,
+  validateRestore,
 } from "../src/lib/procurement";
 import type {
   ApprovalInput,
@@ -45,6 +47,9 @@ function repair(over: Partial<RepairInput> = {}): RepairInput {
     urgency: "d2_5",
     created_by: "e1",
     created_by_name: "สมชาย ใจดี",
+    cancelled_at: null,
+    cancelled_by: null,
+    cancel_reason: null,
     requested_amount: 3500,
     approved_amount: 0,
     actual_amount: 0,
@@ -81,6 +86,9 @@ function purchase(over: Partial<PurchaseInput> = {}): PurchaseInput {
     urgency: "d5_plus",
     created_by: "e1",
     created_by_name: "สมชาย ใจดี",
+    cancelled_at: null,
+    cancelled_by: null,
+    cancel_reason: null,
     requested_amount: 8000,
     approved_amount: 0,
     actual_amount: 0,
@@ -139,8 +147,12 @@ function doc(over: Partial<PrDocRow> = {}): PrDocRow {
     job_status: "wait_tech",
     expected_done_date: null,
     done_date: null,
+    cancelled_by_name: null,
     created_by: "e1",
     created_by_name: "สมชาย ใจดี",
+    cancelled_at: null,
+    cancelled_by: null,
+    cancel_reason: null,
     note: null,
     created_at: "2026-09-01T02:00:00.000Z",
     ...over,
@@ -671,5 +683,82 @@ describe("summarizeByTag", () => {
 
   it("ไม่มีข้อมูลก็ต้องได้ผลลัพธ์ว่างที่ใช้งานได้", () => {
     expect(summarizeByTag([])).toEqual({ lines: [], totalPayments: 0, totalAmount: 0 });
+  });
+});
+
+describe("validateCancel", () => {
+  const owner = { userId: "e1", canCancelOthers: false, isApprover: false };
+  const other = { userId: "e9", canCancelOthers: false, isApprover: false };
+  const manager = { userId: "e9", canCancelOthers: true, isApprover: false };
+  const approver = { userId: "e9", canCancelOthers: false, isApprover: true };
+
+  it("เจ้าของใบยกเลิกใบที่ยังรออนุมัติของตัวเองได้", () => {
+    expect(validateCancel(doc(), owner)).toBeNull();
+  });
+
+  it("ใบที่ให้หาราคาใหม่ เจ้าของก็ยังยกเลิกได้", () => {
+    expect(validateCancel(doc({ approve_status: "recheck" }), owner)).toBeNull();
+  });
+
+  it("คนอื่นที่ไม่มีสิทธิ์ ยกเลิกใบของคนอื่นไม่ได้", () => {
+    expect(validateCancel(doc(), other)).toContain("ตัวเองเป็นคนบันทึก");
+  });
+
+  it("ผู้ที่ได้รับสิทธิ์ยกเลิกเอกสารของผู้อื่น ยกเลิกใบของคนอื่นได้", () => {
+    expect(validateCancel(doc(), manager)).toBeNull();
+  });
+
+  it("ใบที่อนุมัติแล้ว เจ้าของยกเลิกเองไม่ได้", () => {
+    expect(validateCancel(doc({ approve_status: "approved" }), owner)).toContain("ผู้มีอำนาจอนุมัติ");
+  });
+
+  it("ใบที่อนุมัติแล้ว ผู้ที่มีสิทธิ์ยกเลิกใบคนอื่นก็ยังยกเลิกไม่ได้", () => {
+    expect(validateCancel(doc({ approve_status: "approved" }), manager)).toContain(
+      "ผู้มีอำนาจอนุมัติ",
+    );
+  });
+
+  it("ใบที่ไม่อนุมัติแล้ว ผู้มีอำนาจอนุมัติยกเลิกได้", () => {
+    expect(validateCancel(doc({ approve_status: "rejected" }), approver)).toBeNull();
+  });
+
+  it("ใบที่จ่ายเงินไปแล้ว ยกเลิกไม่ได้แม้แต่ผู้มีอำนาจอนุมัติ", () => {
+    const paid = doc({ approve_status: "approved", approved_amount: 3000, actual_amount: 3000 });
+    expect(validateCancel(paid, approver)).toContain("จ่ายเงินไปแล้ว");
+    expect(validateCancel(paid, owner)).toContain("จ่ายเงินไปแล้ว");
+  });
+
+  it("ใบที่ยกเลิกไปแล้ว ยกเลิกซ้ำไม่ได้", () => {
+    expect(validateCancel(doc({ doc_status: "cancelled" }), approver)).toContain("ยกเลิกไปแล้ว");
+  });
+
+  it("ไม่พบเอกสารก็บอกให้รู้", () => {
+    expect(validateCancel(null, approver)).toContain("ไม่พบเอกสาร");
+  });
+});
+
+describe("validateRestore", () => {
+  const owner = { userId: "e1", canCancelOthers: false, isApprover: false };
+  const other = { userId: "e9", canCancelOthers: false, isApprover: false };
+  const approver = { userId: "e9", canCancelOthers: false, isApprover: true };
+  const cancelled = (over: Partial<PrDocRow> = {}) => doc({ doc_status: "cancelled", ...over });
+
+  it("เจ้าของใบดึงใบที่ตัวเองยกเลิกกลับมาได้", () => {
+    expect(validateRestore(cancelled(), owner)).toBeNull();
+  });
+
+  it("คนอื่นที่ไม่มีสิทธิ์ ดึงกลับไม่ได้", () => {
+    expect(validateRestore(cancelled(), other)).toContain("ตัวเองเป็นคนบันทึก");
+  });
+
+  it("ใบที่ยังใช้งานอยู่ ไม่ต้องดึงกลับ", () => {
+    expect(validateRestore(doc(), owner)).toContain("ยังใช้งานอยู่");
+  });
+
+  it("ใบที่ผ่านการพิจารณาแล้ว ดึงกลับได้เฉพาะผู้มีอำนาจอนุมัติ", () => {
+    expect(validateRestore(cancelled({ approve_status: "approved" }), owner)).toContain(
+      "ผู้มีอำนาจอนุมัติ",
+    );
+    expect(validateRestore(cancelled({ approve_status: "approved" }), approver)).toBeNull();
   });
 });

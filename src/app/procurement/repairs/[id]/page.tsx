@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import CancelDocPanel from "@/components/procurement/CancelDocPanel";
 import PhotoGrid from "@/components/procurement/PhotoGrid";
 import RepairForm from "@/components/procurement/RepairForm";
 import RepairUpdateList from "@/components/procurement/RepairUpdateList";
@@ -7,7 +8,7 @@ import { PrDocStatusBadge } from "@/components/procurement/StatusBadges";
 import { listCompanies } from "@/lib/core-db";
 import { formatThaiDate } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
-import { formatBaht } from "@/lib/procurement";
+import { formatBaht, validateCancel, validateRestore } from "@/lib/procurement";
 import {
   getRepair,
   listPrTypes,
@@ -16,7 +17,13 @@ import {
   listUpdatePhotos,
 } from "@/lib/procurement-db";
 import { checkPermission, requirePermission } from "@/lib/session";
-import { deleteRepairForm, deleteRepairUpdateForm, updateRepairForm } from "../../actions";
+import {
+  cancelRepairForm,
+  deleteRepairForm,
+  deleteRepairUpdateForm,
+  restoreRepairForm,
+  updateRepairForm,
+} from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +42,7 @@ export default async function RepairDetailPage({
   const repair = await getRepair(id);
   if (!repair) notFound();
 
-  const [photos, updates, companies, branches, assetTypes, canEdit, canDelete, canAddUpdate, canDeleteUpdate] =
+  const [photos, updates, companies, branches, assetTypes, canEdit, canDelete, canAddUpdate, canDeleteUpdate, canCancelOthers, isApprover] =
     await Promise.all([
       listRepairPhotos(id),
       listRepairUpdates({ repair_id: id }),
@@ -46,9 +53,24 @@ export default async function RepairDetailPage({
       checkPermission("PR_REPAIR", "delete"),
       checkPermission("PR_REPAIR_UPD", "write"),
       checkPermission("PR_REPAIR_UPD", "delete"),
+      checkPermission("PR_CANCEL", "delete"),
+      checkPermission("PR_APPROVE", "write"),
     ]);
 
   const updatePhotos = await Promise.all(updates.map((u) => listUpdatePhotos(u.id)));
+
+  // ใช้กฎชุดเดียวกับ server action จะได้ไม่มีทางที่ปุ่มโผล่แต่กดแล้วไม่ผ่าน
+  const cancelActor = { userId: user.id, canCancelOthers, isApprover };
+  const cancelDoc = {
+    created_by: repair.created_by,
+    doc_status: repair.doc_status,
+    approve_status: repair.approve_status,
+    actual_amount: repair.actual_amount,
+  };
+  const cancelProblem =
+    repair.doc_status === "cancelled"
+      ? validateRestore(cancelDoc, cancelActor)
+      : validateCancel(cancelDoc, cancelActor);
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
@@ -124,6 +146,21 @@ export default async function RepairDetailPage({
           emptyText="ยังไม่มีการบันทึก update ของใบขอซ่อมนี้"
         />
       </section>
+
+      {/* ---------- ยกเลิก / ดึงกลับ ---------- */}
+      <CancelDocPanel
+        docId={repair.id}
+        docNo={repair.doc_no}
+        docStatus={repair.doc_status}
+        cancelledByName={repair.cancelled_by_name}
+        cancelledAt={repair.cancelled_at}
+        cancelReason={repair.cancel_reason}
+        allowed={cancelProblem === null}
+        blockedReason={cancelProblem}
+        cancelAction={cancelRepairForm}
+        restoreAction={restoreRepairForm}
+        label="ใบขอซ่อม"
+      />
 
       {/* ---------- ลบใบขอซ่อม ---------- */}
       {canDelete && (

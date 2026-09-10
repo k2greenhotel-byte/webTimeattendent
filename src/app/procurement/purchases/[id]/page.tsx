@@ -1,15 +1,21 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import CancelDocPanel from "@/components/procurement/CancelDocPanel";
 import PhotoGrid from "@/components/procurement/PhotoGrid";
 import PurchaseForm from "@/components/procurement/PurchaseForm";
 import { PrDocStatusBadge } from "@/components/procurement/StatusBadges";
 import { listCompanies } from "@/lib/core-db";
 import { formatThaiDate } from "@/lib/datetime";
 import { listBranches } from "@/lib/db";
-import { formatBaht } from "@/lib/procurement";
+import { formatBaht, validateCancel, validateRestore } from "@/lib/procurement";
 import { getPurchase, listPrTypes, listPurchasePhotos } from "@/lib/procurement-db";
 import { checkPermission, requirePermission } from "@/lib/session";
-import { deletePurchaseForm, updatePurchaseForm } from "../../actions";
+import {
+  cancelPurchaseForm,
+  deletePurchaseForm,
+  restorePurchaseForm,
+  updatePurchaseForm,
+} from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,14 +34,29 @@ export default async function PurchaseDetailPage({
   const purchase = await getPurchase(id);
   if (!purchase) notFound();
 
-  const [photos, companies, branches, materialTypes, canEdit, canDelete] = await Promise.all([
+  const [photos, companies, branches, materialTypes, canEdit, canDelete, canCancelOthers, isApprover] = await Promise.all([
     listPurchasePhotos(id),
     listCompanies(true),
     listBranches(true),
     listPrTypes("material"),
     checkPermission("PR_PURCHASE", "edit"),
     checkPermission("PR_PURCHASE", "delete"),
+    checkPermission("PR_CANCEL", "delete"),
+    checkPermission("PR_APPROVE", "write"),
   ]);
+
+  // ใช้กฎชุดเดียวกับ server action จะได้ไม่มีทางที่ปุ่มโผล่แต่กดแล้วไม่ผ่าน
+  const cancelActor = { userId: user.id, canCancelOthers, isApprover };
+  const cancelDoc = {
+    created_by: purchase.created_by,
+    doc_status: purchase.doc_status,
+    approve_status: purchase.approve_status,
+    actual_amount: purchase.actual_amount,
+  };
+  const cancelProblem =
+    purchase.doc_status === "cancelled"
+      ? validateRestore(cancelDoc, cancelActor)
+      : validateCancel(cancelDoc, cancelActor);
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
@@ -87,6 +108,21 @@ export default async function PurchaseDetailPage({
           <p className="text-xs text-slate-500">บัญชีนี้ไม่มีสิทธิ์แก้ไขใบขอจัดซื้อ (ดูอย่างเดียว)</p>
         </section>
       )}
+
+      {/* ---------- ยกเลิก / ดึงกลับ ---------- */}
+      <CancelDocPanel
+        docId={purchase.id}
+        docNo={purchase.doc_no}
+        docStatus={purchase.doc_status}
+        cancelledByName={purchase.cancelled_by_name}
+        cancelledAt={purchase.cancelled_at}
+        cancelReason={purchase.cancel_reason}
+        allowed={cancelProblem === null}
+        blockedReason={cancelProblem}
+        cancelAction={cancelPurchaseForm}
+        restoreAction={restorePurchaseForm}
+        label="ใบขอจัดซื้อ"
+      />
 
       {/* ---------- ลบใบขอจัดซื้อ ---------- */}
       {canDelete && (

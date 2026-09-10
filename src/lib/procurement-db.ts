@@ -4,6 +4,7 @@ import type {
   Approval,
   ApprovalInput,
   ApprovalRow,
+  DocKind,
   Payment,
   PaymentFile,
   PaymentInput,
@@ -195,6 +196,40 @@ export async function getDoc(id: string): Promise<PrDocRow | null> {
     .maybeSingle();
   if (error) throw new Error(`อ่านเอกสารไม่สำเร็จ: ${error.message}`);
   return data ? toDocRow(data as Record<string, unknown>) : null;
+}
+
+/**
+ * ยกเลิกเอกสาร หรือดึงกลับมาใช้งานใหม่
+ *
+ * เขียนช่อง doc_status กับร่องรอยการยกเลิกจากที่นี่ที่เดียว — ฟอร์มแก้ไขเอกสารไม่แตะสองช่องนี้แล้ว
+ * จะได้ไม่มีทางที่ใครยกเลิกใบผ่านการแก้ไขธรรมดาโดยข้ามการตรวจสิทธิ์
+ */
+export async function setDocCancelled(
+  kind: DocKind,
+  id: string,
+  input: { cancelled: boolean; by: string | null; reason: string | null },
+): Promise<void> {
+  const table = kind === "repair" ? "pr_repairs" : "pr_purchases";
+  const patch = input.cancelled
+    ? {
+        doc_status: "cancelled" as const,
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: input.by,
+        cancel_reason: input.reason,
+      }
+    : {
+        doc_status: "active" as const,
+        cancelled_at: null,
+        cancelled_by: null,
+        cancel_reason: null,
+      };
+
+  const { error } = await getSupabase().from(table).update(patch).eq("id", id);
+  if (error) {
+    throw new Error(
+      `${input.cancelled ? "ยกเลิก" : "ดึงกลับ"}เอกสารไม่สำเร็จ: ${error.message}`,
+    );
+  }
 }
 
 /** อ่านหลายใบพร้อมกันเป็น Map ตาม id — ใช้ตรวจสอบตอนบันทึกใบเบิกจ่าย */

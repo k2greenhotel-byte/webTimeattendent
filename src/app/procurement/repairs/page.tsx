@@ -90,6 +90,10 @@ export default async function RepairListPage({
             done_date: r.fixed_date,
             created_by: r.created_by,
             created_by_name: r.created_by_name,
+            cancelled_at: r.cancelled_at,
+            cancelled_by: r.cancelled_by,
+            cancelled_by_name: r.cancelled_by_name,
+            cancel_reason: r.cancel_reason,
             note: r.note,
             created_at: r.created_at,
           }))}

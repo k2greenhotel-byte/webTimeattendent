@@ -213,6 +213,10 @@ export type Repair = {
   approval_no: string | null;
   approved_date: string | null;
   approved_by: string | null;
+  /** ร่องรอยการยกเลิก (ระบบเขียนให้ตอนกดยกเลิก ไม่ได้มาจากฟอร์มแก้ไข) */
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
   tech_visit_date: string | null;
   expected_done_date: string | null;
   fixed_date: string | null;
@@ -227,6 +231,7 @@ export type RepairRow = Repair & {
   asset_type_code: string | null;
   asset_type_name: string | null;
   created_by_full_name: string | null;
+  cancelled_by_name: string | null;
   photo_count: number;
   update_count: number;
   paid_total: number;
@@ -289,6 +294,10 @@ export type Purchase = {
   approval_no: string | null;
   approved_date: string | null;
   approved_by: string | null;
+  /** ร่องรอยการยกเลิก (ระบบเขียนให้ตอนกดยกเลิก ไม่ได้มาจากฟอร์มแก้ไข) */
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
   received_date: string | null;
   note: string | null;
   created_at: string;
@@ -300,6 +309,7 @@ export type PurchaseRow = Purchase & {
   material_type_code: string | null;
   material_type_name: string | null;
   created_by_full_name: string | null;
+  cancelled_by_name: string | null;
   photo_count: number;
   paid_total: number;
 };
@@ -438,6 +448,11 @@ export type PrDocRow = {
   done_date: string | null;
   created_by: string | null;
   created_by_name: string | null;
+  /** ร่องรอยการยกเลิก (ระบบเขียนให้ตอนกดยกเลิก ไม่ได้มาจากฟอร์มแก้ไข) */
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
+  cancelled_by_name: string | null;
   note: string | null;
   created_at: string;
 };
