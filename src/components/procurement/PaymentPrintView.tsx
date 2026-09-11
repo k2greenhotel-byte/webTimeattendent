@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 import PrintButton from "@/components/procurement/PrintButton";
 import { formatThaiDate } from "@/lib/datetime";
 import { formatBaht } from "@/lib/procurement";
-import { getDocsByIds, getPayment, listPaymentFiles, listPaymentItems } from "@/lib/procurement-db";
-import { DOC_KIND_LABEL, URGENCY_LABEL } from "@/lib/procurement-types";
+import { getPayment, listPaymentFiles, listPaymentItemRows } from "@/lib/procurement-db";
+import { DOC_KIND_LABEL } from "@/lib/procurement-types";
 import { formatPhone } from "@/lib/phone";
 import { requirePermission } from "@/lib/session";
 import { PAY_SOURCES, type PaySource } from "@/lib/procurement-types";
@@ -111,11 +111,12 @@ export default async function PaymentPrintView({
   const payment = await getPayment(id);
   if (!payment) notFound();
 
-  const [items, files] = await Promise.all([listPaymentItems(id), listPaymentFiles(id)]);
-  const docIds = items.map((i) => i.repair_id ?? i.purchase_id ?? "").filter(Boolean);
-  const docs = await getDocsByIds(docIds);
+  const [items, files] = await Promise.all([listPaymentItemRows(id), listPaymentFiles(id)]);
 
-  const withApproval = items.length > 0;
+  // ใบเบิกหนึ่งใบมีได้หลายบรรทัด ปนกันทั้งที่ผูกใบอนุมัติและค่าใช้จ่ายทั่วไป
+  // คอลัมน์ฝั่งอนุมัติจะโผล่ก็ต่อเมื่อมีอย่างน้อยหนึ่งบรรทัดที่ผ่านการอนุมัติมา
+  const withApproval = items.some((i) => Boolean(i.approval_no));
+  const linkedCount = items.filter((i) => i.doc_no).length;
   const photos = files.filter((f) => f.kind === "photo");
   const documents = files.filter((f) => f.kind === "document");
 
@@ -152,19 +153,22 @@ export default async function PaymentPrintView({
             <Field label="เลขที่อนุมัติ" value={payment.ref_no} />
             <Field
               label="วันที่อนุมัติ"
-              value={[...docs.values()]
-                .map((d) => (d.approved_date ? formatThaiDate(d.approved_date) : null))
-                .filter(Boolean)
-                .join(", ")}
+              value={[
+                ...new Set(
+                  items
+                    .map((i) => (i.approved_date ? formatThaiDate(i.approved_date) : null))
+                    .filter(Boolean),
+                ),
+              ].join(", ")}
             />
             <Field
               label="ชื่อผู้อนุมัติ"
               value={
                 payment.approver_name ??
-                [...new Set([...docs.values()].map((d) => d.approved_by).filter(Boolean))].join(", ")
+                [...new Set(items.map((i) => i.approved_by).filter(Boolean))].join(", ")
               }
             />
-            <Field label="จำนวนเอกสารที่อ้างถึง" value={`${items.length} ใบ`} />
+            <Field label="จำนวนเอกสารที่อ้างถึง" value={`${linkedCount} ใบ`} />
           </div>
         </section>
       )}
@@ -197,51 +201,60 @@ export default async function PaymentPrintView({
         </div>
       </section>
 
-      {/* ---------- แบบที่ 2: ตารางเอกสารขอซื้อ/ขอซ่อมที่อ้างถึง ---------- */}
-      {withApproval && (
+      {/* ---------- ตารางรายการค่าใช้จ่าย (ใบเดียวจ่ายได้หลายรายการ) ---------- */}
+      {items.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-slate-800">
-            เอกสารขอซ่อม / ขอจัดซื้อ ที่ประกอบการเบิกจ่าย
+            รายการค่าใช้จ่าย ({items.length} รายการ)
           </h2>
           <div className="overflow-x-auto">
             <table className="table-report w-full">
               <thead>
                 <tr>
-                  <th>ชนิด</th>
-                  <th>เลขที่เอกสาร</th>
+                  <th>ลำดับ</th>
                   <th className="text-left">รายการ</th>
-                  <th>เลขที่อนุมัติ</th>
-                  <th>วันที่อนุมัติ</th>
-                  <th>ผู้อนุมัติ</th>
-                  <th>ยอดที่เบิก</th>
+                  <th className="text-left">ประเภทค่าใช้จ่าย</th>
+                  {withApproval && (
+                    <>
+                      <th>เลขที่เอกสาร</th>
+                      <th>เลขที่อนุมัติ</th>
+                      <th>วันที่อนุมัติ</th>
+                      <th>ผู้อนุมัติ</th>
+                    </>
+                  )}
+                  <th>จำนวนเงิน</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, i) => {
-                  const doc = docs.get(item.repair_id ?? item.purchase_id ?? "");
-                  return (
-                    <tr key={i}>
-                      <td className="text-xs">{doc ? DOC_KIND_LABEL[doc.kind] : "—"}</td>
-                      <td className="text-xs font-medium">{doc?.doc_no ?? "ไม่พบเอกสาร"}</td>
-                      <td className="whitespace-normal text-left text-xs">
-                        {doc?.item_name ?? "—"}
-                        {doc?.type_name && (
-                          <div className="text-[11px] text-slate-400">
-                            {doc.type_name} · {doc ? URGENCY_LABEL[doc.urgency] : ""}
-                          </div>
-                        )}
-                      </td>
-                      <td className="text-xs">{doc?.approval_no ?? "—"}</td>
-                      <td className="text-xs">
-                        {doc?.approved_date ? formatThaiDate(doc.approved_date) : "—"}
-                      </td>
-                      <td className="text-xs">{doc?.approved_by ?? "—"}</td>
-                      <td className="text-xs">{formatBaht(item.amount)}</td>
-                    </tr>
-                  );
-                })}
+                {items.map((item, i) => (
+                  <tr key={item.id}>
+                    <td className="text-xs">{i + 1}</td>
+                    <td className="whitespace-normal text-left text-xs">
+                      {item.detail ?? item.doc_item_name ?? "—"}
+                      {item.doc_kind && (
+                        <div className="text-[11px] text-slate-400">
+                          {DOC_KIND_LABEL[item.doc_kind]}
+                        </div>
+                      )}
+                    </td>
+                    <td className="whitespace-normal text-left text-xs">
+                      {item.account_code ? `${item.account_code} · ${item.account_name}` : "—"}
+                    </td>
+                    {withApproval && (
+                      <>
+                        <td className="text-xs font-medium">{item.doc_no ?? "—"}</td>
+                        <td className="text-xs">{item.approval_no ?? "—"}</td>
+                        <td className="text-xs">
+                          {item.approved_date ? formatThaiDate(item.approved_date) : "—"}
+                        </td>
+                        <td className="text-xs">{item.approved_by ?? "—"}</td>
+                      </>
+                    )}
+                    <td className="text-xs">{formatBaht(item.amount)}</td>
+                  </tr>
+                ))}
                 <tr>
-                  <td colSpan={6} className="text-right font-semibold">
+                  <td colSpan={withApproval ? 7 : 3} className="text-right font-semibold">
                     รวม
                   </td>
                   <td className="font-semibold">

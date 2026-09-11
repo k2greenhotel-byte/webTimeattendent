@@ -103,7 +103,7 @@ export function round2(value: number): number {
 }
 
 /** ยอดรวมของรายการที่ใบเบิกจ่ายใบนี้อ้างถึง (ข้อ 4.4) */
-export function sumItems(items: PaymentItem[]): number {
+export function sumItems(items: Pick<PaymentItem, "amount">[]): number {
   return round2(items.reduce((total, item) => total + (item.amount || 0), 0));
 }
 
@@ -428,16 +428,29 @@ export function validatePayment(
   if (problem) return problem;
   if (input.paid_amount <= 0) return "จำนวนเงินต้องมากกว่า 0";
 
-  // อ้างใบขอซ่อม/ใบขอซื้อหรือไม่ก็ได้ — รายการทั่วไปที่ไม่ต้องขออนุมัติก็จ่ายจากหน้านี้ได้
-  for (const item of items) {
+  /*
+   * ใบเบิกหนึ่งใบมีได้หลายบรรทัด และแต่ละบรรทัดเลือกได้ว่าจะผูกกับใบขอซ่อม/ใบขอซื้อที่อนุมัติแล้ว
+   * หรือเป็นค่าใช้จ่ายทั่วไปที่ไม่ต้องขออนุมัติ (พิมพ์รายการเอง)
+   * บรรทัดที่ไม่ผูกเอกสารจึงต้องมีรายการค่าใช้จ่ายกำกับเสมอ ไม่งั้นใบพิมพ์จะอ่านไม่รู้เรื่อง
+   */
+  for (const [index, item] of items.entries()) {
     const key = item.repair_id ?? item.purchase_id;
-    if (!key) return "รายการที่อ้างถึงต้องระบุใบขอซ่อมหรือใบขอซื้อ";
+    const where = `รายการที่ ${index + 1}`;
 
-    const target = targets.get(key);
-    if (!target) return "ไม่พบเอกสารที่อ้างถึง อาจถูกลบไปแล้ว";
+    if (key) {
+      const target = targets.get(key);
+      if (!target) return "ไม่พบเอกสารที่อ้างถึง อาจถูกลบไปแล้ว";
 
-    const amountProblem = checkAmount(`ยอดเบิกของ ${target.doc_no}`, item.amount);
-    if (amountProblem) return amountProblem;
+      const amountProblem = checkAmount(`ยอดเบิกของ ${target.doc_no}`, item.amount);
+      if (amountProblem) return amountProblem;
+    } else {
+      if (!item.detail?.trim()) return `${where}: กรุณากรอกรายการค่าใช้จ่าย`;
+
+      const amountProblem = checkAmount(`จำนวนเงินของ${where}`, item.amount);
+      if (amountProblem) return amountProblem;
+    }
+
+    if (item.amount <= 0) return `${where}: จำนวนเงินต้องมากกว่า 0`;
   }
 
   // ถ้าเลือกเอกสารมาอ้าง ยอดที่กระจายลงเอกสารต้องไม่เกินยอดที่จ่ายจริงทั้งใบ

@@ -402,7 +402,26 @@ export type PaymentItem = {
   repair_id: string | null;
   purchase_id: string | null;
   amount: number;
+  /** รายการค่าใช้จ่ายของบรรทัดนี้ — บรรทัดที่ไม่ได้ผูกกับใบอนุมัติก็ต้องมี */
+  detail: string | null;
+  /** ผังบัญชีรายบรรทัด ให้ใบเดียวลงได้หลายหมวด */
+  account_id: string | null;
   sort_order?: number;
+};
+
+/** รายการในใบเบิกพร้อมชื่อที่ join มาแล้ว (มาจาก view v_pr_payment_items) */
+export type PaymentItemRow = PaymentItem & {
+  id: string;
+  payment_id: string;
+  account_code: string | null;
+  account_name: string | null;
+  account_category: AccountCategory | null;
+  doc_no: string | null;
+  approval_no: string | null;
+  approved_date: string | null;
+  approved_by: string | null;
+  doc_item_name: string | null;
+  doc_kind: DocKind | null;
 };
 
 export type PaymentFile = {

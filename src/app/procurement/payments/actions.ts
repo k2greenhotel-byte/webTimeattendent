@@ -57,20 +57,33 @@ async function checkScope(
 }
 
 /**
- * รายการเอกสารที่ผู้ใช้ติ๊กเลือก — ฟอร์มส่งมาเป็น pick="repair:<id>" คู่กับ amount_<id>
- * (ยอดของแต่ละใบอยู่คนละช่อง เพื่อให้แก้ยอดรายใบได้โดยไม่ต้องแก้ทั้งก้อน)
+ * รายการค่าใช้จ่ายในใบเบิก — ใบเดียวมีได้หลายบรรทัด
+ *
+ * ฟอร์มส่งมาเป็นสี่ชุดคู่ขนาน (line_doc / line_detail / line_account / line_amount)
+ * แล้วจับคู่กันตามลำดับ เพราะ FormData เรียงค่าตามลำดับ DOM เสมอ
+ * บรรทัดที่ line_doc ว่าง = ค่าใช้จ่ายทั่วไปที่ไม่ได้ผูกกับใบขอซ่อม/ใบขอซื้อ
  */
 function readItems(form: FormData): PaymentItem[] {
+  const docs = form.getAll("line_doc").map((v) => String(v));
+  const details = form.getAll("line_detail").map((v) => String(v).trim());
+  const accounts = form.getAll("line_account").map((v) => String(v));
+  const amounts = form.getAll("line_amount").map((v) => String(v));
+
   const items: PaymentItem[] = [];
 
-  for (const raw of form.getAll("pick")) {
-    const [kind, id] = String(raw).split(":");
-    if (!id || (kind !== "repair" && kind !== "purchase")) continue;
+  for (let i = 0; i < details.length; i += 1) {
+    const [kind, id] = (docs[i] ?? "").split(":");
+    const linked = id && (kind === "repair" || kind === "purchase");
+
+    // บรรทัดที่ว่างทั้งรายการและยอด ถือว่าผู้ใช้กดเพิ่มแล้วไม่ได้กรอก ให้ข้ามไปเงียบ ๆ
+    if (!linked && !details[i] && !parseAmount(amounts[i] ?? "")) continue;
 
     items.push({
-      repair_id: kind === "repair" ? id : null,
-      purchase_id: kind === "purchase" ? id : null,
-      amount: parseAmount(str(form, `amount_${id}`)),
+      repair_id: linked && kind === "repair" ? id : null,
+      purchase_id: linked && kind === "purchase" ? id : null,
+      amount: parseAmount(amounts[i] ?? ""),
+      detail: details[i] || null,
+      account_id: accounts[i] || null,
     });
   }
   return items;

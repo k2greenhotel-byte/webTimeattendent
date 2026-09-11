@@ -420,7 +420,9 @@ describe("validateApproval", () => {
 describe("validatePayment (ใบเบิกเงินสดย่อย)", () => {
   const approved = doc({ approve_status: "approved", approved_amount: 3000, actual_amount: 0 });
   const targets = new Map([["r1", approved]]);
-  const items: PaymentItem[] = [{ repair_id: "r1", purchase_id: null, amount: 3000 }];
+  const items: PaymentItem[] = [
+    { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: null },
+  ];
 
   const base = {
     pay_date: "2026-09-10",
@@ -464,12 +466,61 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
   });
 
   it("ยอดที่กระจายลงเอกสารต้องไม่เกินจำนวนเงินที่จ่ายจริง", () => {
-    const over: PaymentItem[] = [{ repair_id: "r1", purchase_id: null, amount: 4000 }];
+    const over: PaymentItem[] = [
+      { repair_id: "r1", purchase_id: null, amount: 4000, detail: "ค่าซ่อมแอร์", account_id: null },
+    ];
     expect(validatePayment(base, over, targets)).toContain("มากกว่าจำนวนเงินที่จ่ายจริง");
   });
 
   it("จ่ายมากกว่ายอดที่กระจายลงเอกสารได้ (ส่วนต่างเป็นรายการทั่วไปในใบเดียวกัน)", () => {
     expect(validatePayment({ ...base, paid_amount: 3500 }, items, targets)).toBeNull();
+  });
+
+  // ---------- ใบเดียวจ่ายได้หลายรายการ ----------
+
+  it("ใบเดียวมีได้ทั้งบรรทัดที่ผูกใบอนุมัติและบรรทัดค่าใช้จ่ายทั่วไป", () => {
+    const mixed: PaymentItem[] = [
+      { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: "ac1" },
+      { repair_id: null, purchase_id: null, amount: 500, detail: "ค่าน้ำมันรถส่งของ", account_id: "ac2" },
+      { repair_id: null, purchase_id: null, amount: 300, detail: "ค่าเครื่องเขียน", account_id: "ac3" },
+    ];
+    expect(validatePayment({ ...base, paid_amount: 3800 }, mixed, targets)).toBeNull();
+  });
+
+  it("หลายบรรทัดอ้างใบอนุมัติคนละใบในใบเบิกเดียวกันได้", () => {
+    const twoDocs = new Map([
+      ["r1", doc({ approve_status: "approved", approved_amount: 3000 })],
+      ["p1", doc({ kind: "purchase", approve_status: "approved", approved_amount: 2000 })],
+    ]);
+    const items2: PaymentItem[] = [
+      { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: null },
+      { repair_id: null, purchase_id: "p1", amount: 2000, detail: "ค่าวัสดุ", account_id: null },
+    ];
+    expect(validatePayment({ ...base, paid_amount: 5000 }, items2, twoDocs)).toBeNull();
+  });
+
+  it("บรรทัดที่ไม่ได้ผูกใบอนุมัติ ต้องกรอกรายการค่าใช้จ่าย", () => {
+    const blank: PaymentItem[] = [
+      { repair_id: null, purchase_id: null, amount: 500, detail: "  ", account_id: null },
+    ];
+    expect(validatePayment({ ...base, paid_amount: 500 }, blank, new Map())).toContain(
+      "รายการค่าใช้จ่าย",
+    );
+  });
+
+  it("ทุกบรรทัดต้องมีจำนวนเงินมากกว่า 0", () => {
+    const zero: PaymentItem[] = [
+      { repair_id: null, purchase_id: null, amount: 0, detail: "ค่าน้ำมัน", account_id: null },
+    ];
+    expect(validatePayment({ ...base, paid_amount: 500 }, zero, new Map())).toContain("มากกว่า 0");
+  });
+
+  it("บอกด้วยว่าเป็นบรรทัดที่เท่าไหร่ จะได้หาเจอ", () => {
+    const bad: PaymentItem[] = [
+      { repair_id: null, purchase_id: null, amount: 500, detail: "ค่าน้ำมัน", account_id: null },
+      { repair_id: null, purchase_id: null, amount: 300, detail: "", account_id: null },
+    ];
+    expect(validatePayment({ ...base, paid_amount: 800 }, bad, new Map())).toContain("รายการที่ 2");
   });
 });
 
@@ -532,8 +583,8 @@ describe("ยอดคงเหลือและผลรวม", () => {
   it("รวมยอดรายการโดยไม่มีเศษทศนิยมเพี้ยน", () => {
     expect(
       sumItems([
-        { repair_id: "r1", purchase_id: null, amount: 0.1 },
-        { repair_id: null, purchase_id: "p1", amount: 0.2 },
+        { amount: 0.1 },
+        { amount: 0.2 },
       ]),
     ).toBe(0.3);
   });

@@ -9,6 +9,7 @@ import type {
   PaymentFile,
   PaymentInput,
   PaymentItem,
+  PaymentItemRow,
   PaymentQuery,
   PaymentTagRow,
   PaySource,
@@ -739,13 +740,28 @@ export async function getPayment(id: string): Promise<PaymentRow | null> {
 export async function listPaymentItems(paymentId: string): Promise<PaymentItem[]> {
   const { data, error } = await getSupabase()
     .from("pr_payment_items")
-    .select("id, repair_id, purchase_id, amount, sort_order")
+    .select("id, repair_id, purchase_id, amount, detail, account_id, sort_order")
     .eq("payment_id", paymentId)
     .order("sort_order");
   if (error) throw new Error(`อ่านรายการที่อ้างถึงไม่สำเร็จ: ${error.message}`);
 
   return (data ?? []).map((r) => ({
     ...(r as unknown as PaymentItem),
+    amount: num((r as Record<string, unknown>).amount),
+  }));
+}
+
+/** รายการในใบเบิกพร้อมชื่อผังบัญชีและเลขที่อนุมัติ — หน้ารายละเอียดและใบพิมพ์ใช้ตัวนี้ */
+export async function listPaymentItemRows(paymentId: string): Promise<PaymentItemRow[]> {
+  const { data, error } = await getSupabase()
+    .from("v_pr_payment_items")
+    .select("*")
+    .eq("payment_id", paymentId)
+    .order("sort_order");
+  if (error) throw new Error(`อ่านรายการในใบเบิกไม่สำเร็จ: ${error.message}`);
+
+  return (data ?? []).map((r) => ({
+    ...(r as unknown as PaymentItemRow),
     amount: num((r as Record<string, unknown>).amount),
   }));
 }
@@ -935,6 +951,8 @@ async function replacePaymentItems(paymentId: string, items: PaymentItem[]): Pro
       repair_id: item.repair_id,
       purchase_id: item.purchase_id,
       amount: item.amount,
+      detail: item.detail,
+      account_id: item.account_id,
       sort_order: i,
     })),
   );

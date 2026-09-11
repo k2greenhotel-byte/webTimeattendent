@@ -71,9 +71,14 @@ export default async function PaymentDetailView({
   const docs = [...docsById.values()].filter(
     (d) => d.approve_status === "approved" || pickedAmountOf.has(d.id),
   );
-  const picked: PickedItem[] = items
-    .map((i) => ({ docId: i.repair_id ?? i.purchase_id ?? "", amount: i.amount }))
-    .filter((p) => p.docId);
+  // ส่งทุกบรรทัดกลับเข้าฟอร์ม ทั้งที่ผูกกับใบอนุมัติและค่าใช้จ่ายทั่วไป
+  const picked: PickedItem[] = items.map((i) => ({
+    docId: i.repair_id ?? i.purchase_id ?? null,
+    docKind: i.repair_id ? ("repair" as const) : i.purchase_id ? ("purchase" as const) : null,
+    amount: i.amount,
+    detail: i.detail,
+    accountId: i.account_id,
+  }));
 
   const photos = files.filter((f) => f.kind === "photo").map((f) => f.path);
   const documents = files

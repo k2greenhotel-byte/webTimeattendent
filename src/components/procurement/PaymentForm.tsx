@@ -24,11 +24,33 @@ import {
   type PrVendorRow,
   type PaySource,
   type PrDocRow,
+  type DocKind,
 } from "@/lib/procurement-types";
 import type { Branch } from "@/lib/types";
 
-/** เอกสารต้นทางหนึ่งใบที่ใบเบิกนี้เลือกไว้แล้ว (ตอนแก้ไข) */
-export type PickedItem = { docId: string; amount: number };
+/** หนึ่งบรรทัดในใบเบิกที่บันทึกไว้แล้ว (ตอนแก้ไข) */
+export type PickedItem = {
+  /** null = ค่าใช้จ่ายทั่วไปที่ไม่ได้ผูกกับใบขอซ่อม/ใบขอซื้อ */
+  docId: string | null;
+  docKind: DocKind | null;
+  amount: number;
+  detail: string | null;
+  accountId: string | null;
+};
+
+/** บรรทัดค่าใช้จ่ายที่กำลังกรอกอยู่บนหน้าจอ */
+type Line = {
+  /** คีย์ของ React เท่านั้น ไม่ได้ส่งไป server */
+  key: string;
+  docId: string | null;
+  docKind: DocKind | null;
+  detail: string;
+  accountId: string;
+  amount: string;
+};
+
+let lineSeq = 0;
+const newKey = () => `line-${(lineSeq += 1)}`;
 
 /**
  * ฟอร์มใบเบิกเงินสดย่อย (หน้าจอ 4)
@@ -86,13 +108,22 @@ export default function PaymentForm({
   const pickedMap = useMemo(() => new Map(picked.map((p) => [p.docId, p.amount])), [picked]);
 
   const [companyId, setCompanyId] = useState(payment?.company_id ?? defaultCompanyId ?? "");
-  const [selected, setSelected] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(picked.map((p) => [p.docId, true])),
+  /*
+   * ใบเบิกหนึ่งใบมีได้หลายบรรทัด — ผูกกับใบอนุมัติก็ได้ หรือเป็นค่าใช้จ่ายทั่วไปก็ได้
+   * ปนกันในใบเดียวได้ และแต่ละบรรทัดลงผังบัญชีของตัวเอง รายงานแยกตามหมวดจึงตรง
+   */
+  const [lines, setLines] = useState<Line[]>(() =>
+    picked.length > 0
+      ? picked.map((p) => ({
+          key: newKey(),
+          docId: p.docId,
+          docKind: p.docKind,
+          detail: p.detail ?? "",
+          accountId: p.accountId ?? "",
+          amount: String(p.amount),
+        }))
+      : [],
   );
-  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(docs.map((d) => [d.id, String(pickedMap.get(d.id) ?? remainingToPay(d))])),
-  );
-  const [paidAmount, setPaidAmount] = useState(payment ? String(payment.paid_amount) : "");
   const [refNo, setRefNo] = useState(payment?.ref_no ?? "");
   const [expenseDetail, setExpenseDetail] = useState(payment?.expense_detail ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -104,10 +135,41 @@ export default function PaymentForm({
   });
   const [approverName, setApproverName] = useState(payment?.approver_name ?? "");
 
-  const pickedDocs = docs.filter((d) => selected[d.id]);
-  const itemTotal = round2(
-    pickedDocs.reduce((sum, d) => sum + (Number(amounts[d.id]) || 0), 0),
+  const docById = useMemo(() => new Map(docs.map((d) => [d.id, d])), [docs]);
+  const pickedIds = useMemo(
+    () => new Set(lines.map((l) => l.docId).filter((id): id is string => Boolean(id))),
+    [lines],
   );
+
+  /** ยอดรวมทั้งใบ = ผลรวมของทุกบรรทัด ไม่ต้องคีย์ซ้ำและไม่มีทางไม่ตรงกัน */
+  const total = round2(lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0));
+
+  /** ช่องหัวเอกสารที่สรุปมาจากบรรทัด — ยังพิมพ์แก้เองได้ ระบบแค่เติมให้ */
+  const summarize = (next: Line[]) => {
+    const uniq = (values: (string | null | undefined)[]) =>
+      [...new Set(values.map((v) => (v ?? "").trim()).filter(Boolean))].join(", ");
+
+    setExpenseDetail(uniq(next.map((l) => l.detail)));
+    setRefNo(uniq(next.map((l) => (l.docId ? docById.get(l.docId)?.approval_no : null))));
+    setApproverName(uniq(next.map((l) => (l.docId ? docById.get(l.docId)?.approved_by : null))));
+  };
+
+  const applyLines = (next: Line[]) => {
+    setLines(next);
+    summarize(next);
+  };
+
+  const patchLine = (key: string, patch: Partial<Line>) =>
+    applyLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+
+  const removeLine = (key: string) => applyLines(lines.filter((l) => l.key !== key));
+
+  /** บรรทัดค่าใช้จ่ายทั่วไป — ไม่ผูกใบอนุมัติ พิมพ์รายการเอง */
+  const addFreeLine = () =>
+    applyLines([
+      ...lines,
+      { key: newKey(), docId: null, docKind: null, detail: "", accountId: "", amount: "" },
+    ]);
 
   /**
    * เลือกเจ้าหนี้จากทะเบียน = เติมชื่อ ที่อยู่ เบอร์โทรให้ทันที
@@ -123,20 +185,29 @@ export default function PaymentForm({
   /** สาขาที่เลือกได้ต้องอยู่ในบริษัทที่เลือกไว้ (สาขาที่ยังไม่ระบุบริษัทให้เลือกได้เสมอ) */
   const branchOptions = branches.filter((b) => !companyId || !b.company_id || b.company_id === companyId);
 
-  /** ติ๊กเอกสาร = ดึงยอดและเลขที่อนุมัติของใบนั้นมาเติมให้อัตโนมัติ */
+  /**
+   * ติ๊กเอกสารจากหน้าต่างเลือกเลขที่อนุมัติ = เพิ่มบรรทัดของใบนั้นเข้ามาหนึ่งบรรทัด
+   * พร้อมเติมรายการและยอดที่ยังเบิกได้ให้ (แก้เองได้ทุกช่อง)
+   * ติ๊กออก = เอาบรรทัดของใบนั้นออก
+   */
   const toggle = (doc: PrDocRow, on: boolean) => {
-    const next = { ...selected, [doc.id]: on };
-    setSelected(next);
+    if (!on) {
+      applyLines(lines.filter((l) => l.docId !== doc.id));
+      return;
+    }
+    if (lines.some((l) => l.docId === doc.id)) return;
 
-    const chosen = docs.filter((d) => next[d.id]);
-    setPaidAmount(String(round2(chosen.reduce((s, d) => s + (Number(amounts[d.id]) || 0), 0))));
-
-    // ดึงข้อมูลจากใบที่เลือกมาเติมให้ — เลขที่อนุมัติ ชื่อผู้อนุมัติ และรายการค่าใช้จ่าย
-    // (ยังพิมพ์แก้เองได้ทุกช่อง ระบบแค่ช่วยไม่ให้ต้องคีย์ซ้ำ)
-    const uniq = (values: (string | null)[]) => [...new Set(values.filter(Boolean))].join(", ");
-    setRefNo(uniq(chosen.map((d) => d.approval_no)));
-    setApproverName(uniq(chosen.map((d) => d.approved_by)));
-    setExpenseDetail(uniq(chosen.map((d) => d.item_name)));
+    applyLines([
+      ...lines,
+      {
+        key: newKey(),
+        docId: doc.id,
+        docKind: doc.kind,
+        detail: doc.item_name,
+        accountId: "",
+        amount: String(pickedMap.get(doc.id) ?? remainingToPay(doc)),
+      },
+    ]);
   };
 
   return (
@@ -215,96 +286,140 @@ export default function PaymentForm({
         รายชื่อบริษัทและสาขาที่เลือกได้เป็นไปตามสิทธิ์ของบัญชีที่ล็อกอินอยู่
       </p>
 
-      {/* ---------- เอกสารที่อ้างถึง (ไม่บังคับ) ---------- */}
+      {/* ---------- รายการค่าใช้จ่ายในใบเบิก (หลายรายการต่อหนึ่งใบ) ---------- */}
       <section className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="mr-auto font-semibold text-slate-800">
-            ใบขอซ่อม / ใบขอจัดซื้อที่อ้างถึง{" "}
-            <span className="text-sm font-normal text-slate-400">(ไม่มีก็จ่ายได้)</span>
+            รายการค่าใช้จ่าย{" "}
+            <span className="text-sm font-normal text-slate-400">
+              (ใบเดียวจ่ายได้หลายรายการ)
+            </span>
           </h2>
+          <button type="button" onClick={addFreeLine} className="btn-secondary w-full sm:w-auto">
+            + เพิ่มรายการ
+          </button>
           <button
             type="button"
             onClick={() => setPickerOpen(true)}
             className="btn-secondary w-full sm:w-auto"
           >
-            🔍 เลือกเลขที่อนุมัติ
+            🔍 ดึงเลขที่อนุมัติ
           </button>
         </div>
 
-        {pickedDocs.length === 0 ? (
+        {lines.length === 0 ? (
           <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            ยังไม่ได้เลือกเอกสาร — กด “เลือกเลขที่อนุมัติ” เพื่อดึงใบที่อนุมัติแล้วมาอ้าง
-            หรือจ่ายเป็นรายการทั่วไปได้เลยโดยกรอกช่องด้านล่าง
+            ยังไม่มีรายการ — กด “เพิ่มรายการ” เพื่อพิมพ์ค่าใช้จ่ายทั่วไป
+            หรือกด “ดึงเลขที่อนุมัติ” เพื่อดึงใบขอซ่อม/ใบขอซื้อที่อนุมัติแล้วมาใส่ (เลือกได้หลายใบ)
           </p>
         ) : (
           <ul className="space-y-2">
-            {pickedDocs.map((doc) => (
-              <li key={doc.id} className="rounded-xl border border-brand-400 bg-brand-50/40 p-3">
-                <input type="hidden" name="pick" value={`${doc.kind}:${doc.id}`} />
+            {lines.map((line, index) => {
+              const doc = line.docId ? docById.get(line.docId) : null;
 
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-800">
-                      {doc.approval_no ?? doc.doc_no}
-                      <span className="ml-2 text-xs font-normal text-slate-500">
-                        {DOC_KIND_LABEL[doc.kind]} {doc.doc_no}
-                      </span>
-                    </p>
-                    <p className="truncate text-sm text-slate-600">{doc.item_name}</p>
-                    <p className="text-xs text-slate-500">
-                      {formatThaiDate(doc.doc_date)}
-                      {doc.branch_name ? ` · ${doc.branch_name}` : ""} · อนุมัติ{" "}
-                      {formatBaht(doc.approved_amount)} · เบิกได้อีก {formatBaht(remainingToPay(doc))}
-                    </p>
-                    {doc.approved_by && (
-                      <p className="text-xs text-slate-500">
-                        ผู้อนุมัติ {doc.approved_by}
-                        {doc.approved_date ? ` · ${formatThaiDate(doc.approved_date)}` : ""}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggle(doc, false)}
-                    className="rounded-lg px-2 py-1 text-sm text-rose-600 hover:bg-rose-50"
-                  >
-                    เอาออก
-                  </button>
-                </div>
-
-                <div className="mt-2 w-full sm:w-48">
-                  <label className="label" htmlFor={`amount_${doc.id}`}>
-                    ยอดที่เบิกใบนี้
-                  </label>
+              return (
+                <li
+                  key={line.key}
+                  className={`rounded-xl border p-3 ${
+                    doc ? "border-brand-400 bg-brand-50/40" : "border-slate-200"
+                  }`}
+                >
+                  {/* ส่งเป็นชุดคู่ขนาน ฝั่ง server อ่านด้วย getAll แล้วจับคู่ตามลำดับ */}
                   <input
-                    id={`amount_${doc.id}`}
-                    name={`amount_${doc.id}`}
-                    value={amounts[doc.id] ?? ""}
-                    onChange={(e) => {
-                      const next = { ...amounts, [doc.id]: e.target.value };
-                      setAmounts(next);
-                      setPaidAmount(
-                        String(
-                          round2(
-                            docs
-                              .filter((d) => selected[d.id])
-                              .reduce((sum, d) => sum + (Number(next[d.id]) || 0), 0),
-                          ),
-                        ),
-                      );
-                    }}
-                    className="input"
-                    inputMode="decimal"
+                    type="hidden"
+                    name="line_doc"
+                    value={doc ? `${line.docKind}:${line.docId}` : ""}
                   />
-                </div>
-              </li>
-            ))}
+
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700">
+                        รายการที่ {index + 1}
+                        {doc && (
+                          <span className="ml-2 font-normal text-brand-700">
+                            {doc.approval_no ?? doc.doc_no} · {DOC_KIND_LABEL[doc.kind]} {doc.doc_no}
+                          </span>
+                        )}
+                      </p>
+                      {doc && (
+                        <p className="text-xs text-slate-500">
+                          {formatThaiDate(doc.doc_date)}
+                          {doc.branch_name ? ` · ${doc.branch_name}` : ""} · อนุมัติ{" "}
+                          {formatBaht(doc.approved_amount)} · เบิกได้อีก{" "}
+                          {formatBaht(remainingToPay(doc))}
+                          {doc.approved_by ? ` · ผู้อนุมัติ ${doc.approved_by}` : ""}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeLine(line.key)}
+                      className="rounded-lg px-2 py-1 text-sm text-rose-600 hover:bg-rose-50"
+                    >
+                      เอาออก
+                    </button>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="sm:col-span-2">
+                      <label className="label" htmlFor={`line_detail_${line.key}`}>
+                        รายการค่าใช้จ่าย *
+                      </label>
+                      <input
+                        id={`line_detail_${line.key}`}
+                        name="line_detail"
+                        value={line.detail}
+                        onChange={(e) => patchLine(line.key, { detail: e.target.value })}
+                        className="input"
+                        placeholder="จ่ายค่าอะไร เช่น ค่าซ่อมแอร์ / ค่าน้ำมันรถส่งของ"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="label" htmlFor={`line_account_${line.key}`}>
+                        ประเภทค่าใช้จ่าย
+                      </label>
+                      <select
+                        id={`line_account_${line.key}`}
+                        name="line_account"
+                        value={line.accountId}
+                        onChange={(e) => patchLine(line.key, { accountId: e.target.value })}
+                        className="input"
+                      >
+                        <option value="">— ยังไม่ระบุ —</option>
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.code} · {a.name} ({ACCOUNT_CATEGORY_LABEL[a.category]})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label" htmlFor={`line_amount_${line.key}`}>
+                        จำนวนเงิน *
+                      </label>
+                      <input
+                        id={`line_amount_${line.key}`}
+                        name="line_amount"
+                        value={line.amount}
+                        onChange={(e) => patchLine(line.key, { amount: e.target.value })}
+                        className="input"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        required
+                      />
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
 
-        {pickedDocs.length > 0 && (
-          <p className="text-sm text-slate-600">
-            เลือกไว้ {pickedDocs.length} ใบ · ยอดรวมของเอกสาร {formatBaht(itemTotal)}
+        {lines.length > 0 && (
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            {lines.length} รายการ · ยอดรวมทั้งใบ{" "}
+            <span className="font-semibold">{formatBaht(total)}</span>
           </p>
         )}
       </section>
@@ -312,7 +427,7 @@ export default function PaymentForm({
       {pickerOpen && (
         <ApprovalPicker
           docs={docs}
-          selectedIds={new Set(pickedDocs.map((d) => d.id))}
+          selectedIds={pickedIds}
           onToggle={toggle}
           onClose={() => setPickerOpen(false)}
         />
@@ -415,23 +530,19 @@ export default function PaymentForm({
         </div>
         <div>
           <label className="label" htmlFor="paid_amount">
-            จำนวนเงิน *
+            จำนวนเงินรวมทั้งใบ
           </label>
           <input
             id="paid_amount"
             name="paid_amount"
-            value={paidAmount}
-            onChange={(e) => setPaidAmount(e.target.value)}
-            className="input font-medium"
-            inputMode="decimal"
+            value={total ? String(total) : ""}
+            readOnly
+            className="input bg-slate-50 font-medium text-slate-700"
             placeholder="0.00"
-            required
           />
-          {pickedDocs.length > 0 && itemTotal > (Number(paidAmount) || 0) && (
-            <p className="mt-1 text-xs text-rose-600">
-              น้อยกว่ายอดรวมของเอกสารที่เลือก ({formatBaht(itemTotal)})
-            </p>
-          )}
+          <p className="mt-1 text-xs text-slate-400">
+            บวกจากรายการค่าใช้จ่ายด้านบนให้อัตโนมัติ — แก้ที่รายการ
+          </p>
         </div>
         <div>
           <label className="label" htmlFor="account_id">
