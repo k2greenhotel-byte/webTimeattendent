@@ -13,9 +13,9 @@ import { ACCESS_LEVELS, type AccessLevel, type MenuRights } from "@/lib/core-typ
 import { logAudit } from "@/lib/db";
 import { requirePermission } from "@/lib/session";
 
-function back(message: string, isError = false, q = ""): never {
+function back(message: string, isError = false, keep: Record<string, string> = {}): never {
   const query = new URLSearchParams();
-  if (q) query.set("q", q);
+  for (const [k, v] of Object.entries(keep)) if (v) query.set(k, v);
   query.set(isError ? "err" : "msg", message);
   redirect(`/core/wall-rights?${query.toString()}`);
 }
@@ -29,9 +29,11 @@ function back(message: string, isError = false, q = ""): never {
  */
 export async function saveWallRightsForm(form: FormData): Promise<void> {
   const actor = await requirePermission("CORE_WALL", "edit");
-  const q = String(form.get("q") ?? "").trim();
+  const keep = Object.fromEntries(
+    ["q", "company", "branch", "position", "level", "only"].map((k) => [k, String(form.get(k) ?? "").trim()]),
+  );
   const userIds = form.getAll("user_ids").map(String).filter(Boolean);
-  if (userIds.length === 0) back("ไม่มีผู้ใช้ให้บันทึก", true, q);
+  if (userIds.length === 0) back("ไม่มีผู้ใช้ให้บันทึก", true, keep);
 
   const [walls, users] = await Promise.all([listWallMenus(), listCoreUsers()]);
   const wallIds = walls.map((w) => w.id);
@@ -79,7 +81,7 @@ export async function saveWallRightsForm(form: FormData): Promise<void> {
       after: { users: saved, overrides, programs_granted: granted },
     });
   } catch (err) {
-    back(err instanceof Error ? err.message : "บันทึกสิทธิ์จอ War Room ไม่สำเร็จ", true, q);
+    back(err instanceof Error ? err.message : "บันทึกสิทธิ์จอ War Room ไม่สำเร็จ", true, keep);
   }
 
   revalidatePath("/core/wall-rights");
@@ -89,6 +91,6 @@ export async function saveWallRightsForm(form: FormData): Promise<void> {
     `บันทึกสิทธิ์จอ War Room แล้ว ${saved} คน · กำหนดเฉพาะราย ${overrides} รายการ` +
       (granted > 0 ? ` · ให้สิทธิ์เข้าโปรแกรมเพิ่ม ${granted} รายการ` : ""),
     false,
-    q,
+    keep,
   );
 }

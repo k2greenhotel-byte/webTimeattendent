@@ -104,6 +104,8 @@ export type CoreUser = {
   all_companies: boolean;
   all_branches: boolean;
   branch_id: string | null;
+  /** ตำแหน่งงาน (ใช้กรองรายชื่อในหน้าตั้งค่าสิทธิ์) */
+  position_id: string | null;
   company_ids: string[];
   branch_ids: string[];
   program_ids: string[];

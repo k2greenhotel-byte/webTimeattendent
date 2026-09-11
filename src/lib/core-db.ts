@@ -12,7 +12,7 @@ import type {
 import type { Branch } from "./types";
 
 const USER_COLUMNS =
-  "id, username, emp_code, full_name, phone, access_level, is_active, all_companies, all_branches, branch_id";
+  "id, username, emp_code, full_name, phone, access_level, is_active, all_companies, all_branches, branch_id, position_id";
 
 function dup(error: { code?: string }, message: string, fallback: string): string {
   return error.code === "23505" ? message : fallback;

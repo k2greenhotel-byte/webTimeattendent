@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { getWallPermissions, listCoreUsers, listWallMenus } from "@/lib/core-db";
+import UserFilterBar from "@/components/core/UserFilterBar";
+import { getWallPermissions, listCompanies, listCoreUsers, listWallMenus } from "@/lib/core-db";
+import { listBranches, listPositions } from "@/lib/db";
+import { filterUsers, readUserFilter } from "@/lib/user-filter";
 import { ACCESS_LEVELS, ACCESS_LEVEL_LABEL, type AccessLevel } from "@/lib/core-types";
 import { checkPermission, requirePermission } from "@/lib/session";
 import { saveWallRightsForm } from "./actions";
@@ -14,13 +17,29 @@ export const dynamic = "force-dynamic";
 export default async function WallRightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; level?: string; only?: string; msg?: string; err?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    company?: string;
+    branch?: string;
+    position?: string;
+    level?: string;
+    only?: string;
+    msg?: string;
+    err?: string;
+  }>;
 }) {
   await requirePermission("CORE_WALL", "read");
   const params = await searchParams;
   const canEdit = await checkPermission("CORE_WALL", "edit");
 
-  const [walls, users, perms] = await Promise.all([listWallMenus(), listCoreUsers(), getWallPermissions()]);
+  const [walls, users, perms, companies, branches, positions] = await Promise.all([
+    listWallMenus(),
+    listCoreUsers(),
+    getWallPermissions(),
+    listCompanies(true),
+    listBranches(true),
+    listPositions(),
+  ]);
 
   // สิทธิ์ที่มีผลจริง: user_id → menu_id → { can_read, is_override }
   const readable = new Map<string, Map<string, { can_read: boolean; is_override: boolean }>>();
@@ -31,17 +50,13 @@ export default async function WallRightsPage({
   }
   const canSee = (userId: string, menuId: string) => readable.get(userId)?.get(menuId)?.can_read ?? false;
 
-  const q = (params.q ?? "").trim().toLowerCase();
+  const filter = readUserFilter(params);
   const level = (ACCESS_LEVELS as string[]).includes(params.level ?? "") ? (params.level as AccessLevel) : null;
   const onlyGranted = params.only === "granted";
 
-  const shown = users
-    .filter((u) => u.is_active)
+  const activeUsers = users.filter((u) => u.is_active);
+  const shown = filterUsers(activeUsers, filter, branches)
     .filter((u) => !level || u.access_level === level)
-    .filter(
-      (u) =>
-        !q || [u.full_name, u.username, u.emp_code, u.phone].some((v) => (v ?? "").toLowerCase().includes(q)),
-    )
     .filter((u) => !onlyGranted || walls.some((w) => canSee(u.id, w.id)))
     .sort((a, b) => a.emp_code.localeCompare(b.emp_code));
 
@@ -90,49 +105,42 @@ export default async function WallRightsPage({
       </div>
 
       {/* ---------- ค้นหา / กรอง ---------- */}
-      <form method="get" action="/core/wall-rights" className="card grid gap-2 sm:flex sm:flex-wrap sm:items-end">
-        <div className="sm:w-72">
-          <label className="label">ค้นหาผู้ใช้</label>
-          <input
-            type="search"
-            name="q"
-            defaultValue={params.q ?? ""}
-            placeholder="ชื่อ / User ID / รหัสพนักงาน / เบอร์"
-            className="input"
-            autoComplete="off"
-          />
-        </div>
-        <div className="sm:w-48">
-          <label className="label">ระดับการทำงาน</label>
-          <select name="level" defaultValue={level ?? ""} className="input">
-            <option value="">ทุกระดับ</option>
-            {ACCESS_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {ACCESS_LEVEL_LABEL[l]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
-          <input type="checkbox" name="only" value="granted" defaultChecked={onlyGranted} />
-          เฉพาะคนที่เห็นจออยู่แล้ว
-        </label>
-        <button type="submit" className="btn-secondary sm:py-2 sm:text-sm">
-          ค้นหา
-        </button>
-        {(q || level || onlyGranted) && (
-          <Link href="/core/wall-rights" className="pb-2 text-sm text-slate-500 hover:underline">
-            ล้างตัวกรอง
-          </Link>
-        )}
-        <span className="pb-2 text-sm text-slate-500">
-          แสดง {shown.length} จาก {users.filter((u) => u.is_active).length} คน
-        </span>
-      </form>
+      <div className="card">
+        <UserFilterBar
+          action="/core/wall-rights"
+          filter={filter}
+          companies={companies}
+          branches={branches}
+          positions={positions}
+          shown={shown.length}
+          total={activeUsers.length}
+        >
+          <div className="sm:w-44">
+            <label className="label">ระดับการทำงาน</label>
+            <select name="level" defaultValue={level ?? ""} className="input">
+              <option value="">ทุกระดับ</option>
+              {ACCESS_LEVELS.map((l) => (
+                <option key={l} value={l}>
+                  {ACCESS_LEVEL_LABEL[l]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
+            <input type="checkbox" name="only" value="granted" defaultChecked={onlyGranted} />
+            เฉพาะคนที่เห็นจออยู่แล้ว
+          </label>
+        </UserFilterBar>
+      </div>
 
       {/* ---------- ตารางติ๊ก ---------- */}
       <form action={saveWallRightsForm} className="card space-y-3">
         <input type="hidden" name="q" value={params.q ?? ""} />
+        <input type="hidden" name="company" value={params.company ?? ""} />
+        <input type="hidden" name="branch" value={params.branch ?? ""} />
+        <input type="hidden" name="position" value={params.position ?? ""} />
+        <input type="hidden" name="level" value={params.level ?? ""} />
+        <input type="hidden" name="only" value={params.only ?? ""} />
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-slate-500">
             ● = กำหนดเฉพาะราย (ต่างจากค่าเริ่มต้นของระดับ) · ระดับผู้ดูแลระบบเห็นทุกจอเสมอ แก้ไม่ได้
