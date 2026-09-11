@@ -16,7 +16,12 @@ export const dynamic = "force-dynamic";
 /**
  * หน้าใบตรวจหนึ่งใบ
  *   ฉบับร่าง → เปิดเป็นฟอร์มให้ตรวจต่อได้เลย
- *   ส่งผลแล้ว/ยกเลิก → แสดงผลอย่างเดียว กด "แก้ไข" เพื่อกลับเป็นฉบับร่างก่อน
+ *   ส่งผลแล้ว/ยกเลิก → แสดงผลอย่างเดียว กด "แก้ไขผลการตรวจ" เพื่อเปิดฟอร์ม
+ *
+ * สลับโหมดด้วย ?edit=1 (แก้ไข) และ ?edit=0 (ดูอย่างเดียว) — ต้องมี edit=0 ด้วย
+ * ไม่งั้นใบฉบับร่างจะเด้งเข้าโหมดแก้ไขตลอด จนกดดูผลรวมหรือกดลบไม่ได้เลย
+ *
+ * แถบปุ่มจัดการ (แก้ไข / ส่งผล / ยกเลิก / ลบ) แสดงทั้งสองโหมด จะได้ไม่มีทางตัน
  */
 export default async function InspectionDetailPage({
   params,
@@ -38,7 +43,9 @@ export default async function InspectionDetailPage({
     checkPermission("INSP_ENTRY", "delete"),
   ]);
 
-  const editing = canEdit && (inspection.status === "draft" || query.edit === "1");
+  // ?edit=0 บังคับดูอย่างเดียวเสมอ · ไม่ได้ระบุมา ใบฉบับร่างจะเปิดเป็นฟอร์มให้ตรวจต่อ
+  const editing =
+    canEdit && (query.edit === "1" || (query.edit !== "0" && inspection.status === "draft"));
 
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -67,6 +74,74 @@ export default async function InspectionDetailPage({
     </>
   );
 
+  /**
+   * แถบปุ่มจัดการใบตรวจ — ใช้ชุดเดียวกันทั้งโหมดแก้ไขและโหมดดูอย่างเดียว
+   *
+   * ต้องวางนอก <InspectionForm> เสมอ เพราะข้างในเป็น <form> อยู่แล้ว
+   * ซ้อน form ในform ไม่ได้ตามมาตรฐาน HTML (เบราว์เซอร์จะทิ้งตัวข้างในเงียบ ๆ)
+   */
+  const actionBar = (
+    <section className="card flex flex-wrap items-center gap-2">
+      {canEdit ? (
+        editing ? (
+          <Link href={`/inspection/inspections/${id}?edit=0`} className="btn-secondary">
+            ดูผลอย่างเดียว
+          </Link>
+        ) : (
+          <Link href={`/inspection/inspections/${id}?edit=1`} className="btn-primary">
+            แก้ไขผลการตรวจ
+          </Link>
+        )
+      ) : (
+        <span className="text-sm text-slate-500">บัญชีนี้เปิดดูใบตรวจได้อย่างเดียว</span>
+      )}
+
+      {/* ในโหมดแก้ไขไม่ต้องมีปุ่มส่งผลซ้ำ — ปุ่มในฟอร์มด้านล่างตรวจความครบถ้วนให้ก่อนส่ง */}
+      {canEdit && !editing && inspection.status !== "submitted" && (
+        <form action={setStatusForm}>
+          <input type="hidden" name="id" value={id} />
+          <input type="hidden" name="to" value="submitted" />
+          <button type="submit" className="btn-primary">
+            ส่งผลการตรวจ
+          </button>
+        </form>
+      )}
+
+      {canEdit && inspection.status !== "cancelled" && (
+        <form action={setStatusForm}>
+          <input type="hidden" name="id" value={id} />
+          <input type="hidden" name="to" value="cancelled" />
+          <button type="submit" className="btn-secondary">
+            ยกเลิกใบนี้
+          </button>
+        </form>
+      )}
+
+      {canEdit && inspection.status === "cancelled" && (
+        <form action={setStatusForm}>
+          <input type="hidden" name="id" value={id} />
+          <input type="hidden" name="to" value="draft" />
+          <button type="submit" className="btn-secondary">
+            นำกลับมาเป็นฉบับร่าง
+          </button>
+        </form>
+      )}
+
+      {canDelete && (
+        <form action={deleteInspectionForm} className="ml-auto flex flex-wrap items-center gap-2">
+          <input type="hidden" name="id" value={id} />
+          <label className="flex items-center gap-1 text-xs text-slate-500">
+            <input type="checkbox" name="confirm" className="h-4 w-4" />
+            ยืนยันลบใบนี้ถาวร พร้อมรูป {inspection.photo_count} รูป
+          </label>
+          <button type="submit" className="btn-danger">
+            ลบใบตรวจ
+          </button>
+        </form>
+      )}
+    </section>
+  );
+
   // ---------- โหมดแก้ไข ----------
   if (editing) {
     const form = inspection.template_id ? await getForm(inspection.template_id) : null;
@@ -78,10 +153,12 @@ export default async function InspectionDetailPage({
           {messages}
           <p className="card text-sm text-rose-700">
             แบบฟอร์มที่ใช้ตรวจใบนี้ถูกลบไปแล้ว จึงแก้ไขต่อไม่ได้ — ดูผลที่บันทึกไว้ได้ที่{" "}
-            <Link href={`/inspection/inspections/${id}`} className="underline">
+            <Link href={`/inspection/inspections/${id}?edit=0`} className="underline">
               โหมดดูอย่างเดียว
-            </Link>
+            </Link>{" "}
+            หรือลบใบนี้ทิ้งด้วยปุ่มด้านล่าง
           </p>
+          {actionBar}
         </main>
       );
     }
@@ -101,6 +178,7 @@ export default async function InspectionDetailPage({
       <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
         {header}
         {messages}
+        {actionBar}
 
         <InspectionForm
           form={form}
@@ -166,49 +244,9 @@ export default async function InspectionDetailPage({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-          {canEdit && (
-            <>
-              <Link href={`/inspection/inspections/${id}?edit=1`} className="btn-secondary">
-                แก้ไขผลการตรวจ
-              </Link>
-
-              {inspection.status !== "submitted" && (
-                <form action={setStatusForm}>
-                  <input type="hidden" name="id" value={id} />
-                  <input type="hidden" name="to" value="submitted" />
-                  <button type="submit" className="btn-primary">
-                    ส่งผลการตรวจ
-                  </button>
-                </form>
-              )}
-
-              {inspection.status !== "cancelled" && (
-                <form action={setStatusForm}>
-                  <input type="hidden" name="id" value={id} />
-                  <input type="hidden" name="to" value="cancelled" />
-                  <button type="submit" className="btn-secondary">
-                    ยกเลิกใบนี้
-                  </button>
-                </form>
-              )}
-            </>
-          )}
-
-          {canDelete && (
-            <form action={deleteInspectionForm} className="ml-auto flex items-center gap-2">
-              <input type="hidden" name="id" value={id} />
-              <label className="flex items-center gap-1 text-xs text-slate-500">
-                <input type="checkbox" name="confirm" className="h-4 w-4" />
-                ยืนยันลบใบนี้พร้อมรูป {inspection.photo_count} รูป
-              </label>
-              <button type="submit" className="btn-danger">
-                ลบ
-              </button>
-            </form>
-          )}
-        </div>
       </section>
+
+      {actionBar}
 
       {sections.map((section) => (
         <section key={section.name} className="card space-y-2">
