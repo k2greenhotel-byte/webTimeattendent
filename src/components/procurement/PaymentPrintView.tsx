@@ -213,6 +213,7 @@ export default async function PaymentPrintView({
                 <tr>
                   <th>ลำดับ</th>
                   <th className="text-left">รายการ</th>
+                  <th className="text-left">ผู้รับเงิน</th>
                   <th className="text-left">ประเภทค่าใช้จ่าย</th>
                   {withApproval && (
                     <>
@@ -238,12 +239,21 @@ export default async function PaymentPrintView({
                       )}
                     </td>
                     <td className="whitespace-normal text-left text-xs">
+                      {item.payee_name ?? "—"}
+                      {item.payee_phone && (
+                        <div className="text-[11px] text-slate-400">{formatPhone(item.payee_phone)}</div>
+                      )}
+                      {item.ref_no && !withApproval && (
+                        <div className="text-[11px] text-slate-400">อ้างอิง {item.ref_no}</div>
+                      )}
+                    </td>
+                    <td className="whitespace-normal text-left text-xs">
                       {item.account_code ? `${item.account_code} · ${item.account_name}` : "—"}
                     </td>
                     {withApproval && (
                       <>
                         <td className="text-xs font-medium">{item.doc_no ?? "—"}</td>
-                        <td className="text-xs">{item.approval_no ?? "—"}</td>
+                        <td className="text-xs">{item.ref_no ?? item.approval_no ?? "—"}</td>
                         <td className="text-xs">
                           {item.approved_date ? formatThaiDate(item.approved_date) : "—"}
                         </td>
@@ -254,7 +264,7 @@ export default async function PaymentPrintView({
                   </tr>
                 ))}
                 <tr>
-                  <td colSpan={withApproval ? 7 : 3} className="text-right font-semibold">
+                  <td colSpan={withApproval ? 8 : 4} className="text-right font-semibold">
                     รวม
                   </td>
                   <td className="font-semibold">

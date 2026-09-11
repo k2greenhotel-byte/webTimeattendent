@@ -660,13 +660,27 @@ const UNTAGGED = "— ยังไม่ติดป้าย —";
  * ตัวเลขรวมทั้งหมด (totalAmount) จึงนับจากใบที่ไม่ซ้ำแทน
  */
 export function summarizeByTag(
-  rows: Pick<PaymentTagRow, "payment_id" | "paid_amount" | "tag_id" | "tag_name">[],
+  rows: (Pick<PaymentTagRow, "payment_id" | "paid_amount" | "tag_id" | "tag_name"> & {
+    /** id ของรายการจ่าย — ใบเก่าที่ยังไม่มีรายการจะไม่มีค่านี้ */
+    item_id?: string | null;
+  })[],
 ): TagSummary {
-  const byTag = new Map<string, TagSummaryLine & { payments: Set<string> }>();
-  const allPayments = new Map<string, number>();
+  const byTag = new Map<
+    string,
+    TagSummaryLine & { payments: Set<string>; items: Set<string> }
+  >();
+  const allItems = new Map<string, number>();
+  const allPayments = new Set<string>();
 
   for (const row of rows) {
-    allPayments.set(row.payment_id, row.paid_amount);
+    /*
+     * หนึ่งแถวคือหนึ่งรายการจ่าย (ไม่ใช่ทั้งใบ) เพราะป้ายกำกับติดได้รายรายการแล้ว
+     * ยอดจึงต้องรวมแบบไม่ซ้ำรายการ ส่วนจำนวนยังนับเป็น "ใบ" ตามที่หน้าจอแสดง
+     * ใบเก่าที่ไม่มีรายการ ใช้ id ของใบแทนเพื่อให้ยังนับได้เหมือนเดิม
+     */
+    const unit = row.item_id ?? row.payment_id;
+    allItems.set(unit, row.paid_amount);
+    allPayments.add(row.payment_id);
 
     const key = row.tag_id ?? "";
     let line = byTag.get(key);
@@ -677,19 +691,25 @@ export function summarizeByTag(
         count: 0,
         amount: 0,
         payments: new Set<string>(),
+        items: new Set<string>(),
       };
       byTag.set(key, line);
     }
 
-    // ใบเดิมที่มาซ้ำในป้ายเดียวกันไม่ควรนับสองรอบ
-    if (line.payments.has(row.payment_id)) continue;
-    line.payments.add(row.payment_id);
-    line.count += 1;
+    // รายการเดิมที่มาซ้ำในป้ายเดียวกันไม่ควรนับยอดสองรอบ
+    if (line.items.has(unit)) continue;
+    line.items.add(unit);
     line.amount = round2(line.amount + row.paid_amount);
+
+    // จำนวนนับเป็นใบ ใบเดียวที่มีหลายรายการในป้ายเดียวกันจึงนับครั้งเดียว
+    if (!line.payments.has(row.payment_id)) {
+      line.payments.add(row.payment_id);
+      line.count += 1;
+    }
   }
 
   const lines = [...byTag.values()]
-    .map(({ payments: _payments, ...line }) => line)
+    .map(({ payments: _payments, items: _items, ...line }) => line)
     // ยอดมากขึ้นก่อน ป้ายที่ยังไม่ติดไว้ท้ายสุดเสมอ
     .sort((a, b) => {
       if (!a.tag_id) return 1;
@@ -700,7 +720,7 @@ export function summarizeByTag(
   return {
     lines,
     totalPayments: allPayments.size,
-    totalAmount: round2([...allPayments.values()].reduce((sum, v) => sum + v, 0)),
+    totalAmount: round2([...allItems.values()].reduce((sum, v) => sum + v, 0)),
   };
 }
 

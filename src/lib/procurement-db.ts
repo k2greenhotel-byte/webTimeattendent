@@ -1,5 +1,12 @@
 import "server-only";
-import { applyApproval, applyRepairUpdate, round2, sumItems } from "./procurement";
+import {
+  applyApproval,
+  applyRepairUpdate,
+  round2,
+  sumItems,
+  tagDisplayName,
+  tagSlug,
+} from "./procurement";
 import type {
   Approval,
   ApprovalInput,
@@ -760,10 +767,43 @@ export async function listPaymentItemRows(paymentId: string): Promise<PaymentIte
     .order("sort_order");
   if (error) throw new Error(`อ่านรายการในใบเบิกไม่สำเร็จ: ${error.message}`);
 
-  return (data ?? []).map((r) => ({
+  const rows = (data ?? []).map((r) => ({
     ...(r as unknown as PaymentItemRow),
     amount: num((r as Record<string, unknown>).amount),
+    tags: [] as string[],
+    files: [] as PaymentFile[],
   }));
+  if (rows.length === 0) return rows;
+
+  // ป้ายกำกับและไฟล์แนบเป็นของรายการ ไม่ใช่ของทั้งใบ จึงดึงมาแปะให้ตรงรายการ
+  const ids = rows.map((r) => r.id);
+  const supabase = getSupabase();
+
+  const [tagRes, fileRes] = await Promise.all([
+    supabase.from("pr_payment_tags").select("item_id, pr_tags (name)").in("item_id", ids),
+    supabase
+      .from("pr_payment_files")
+      .select("id, item_id, kind, path, filename, mime, size_bytes, sort_order")
+      .in("item_id", ids)
+      .order("kind")
+      .order("sort_order"),
+  ]);
+  if (tagRes.error) throw new Error(`อ่านป้ายกำกับของรายการไม่สำเร็จ: ${tagRes.error.message}`);
+  if (fileRes.error) throw new Error(`อ่านไฟล์แนบของรายการไม่สำเร็จ: ${fileRes.error.message}`);
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  for (const raw of tagRes.data ?? []) {
+    const row = raw as { item_id: string; pr_tags: { name: string } | { name: string }[] | null };
+    const joined = Array.isArray(row.pr_tags) ? row.pr_tags : row.pr_tags ? [row.pr_tags] : [];
+    for (const tag of joined) byId.get(row.item_id)?.tags.push(tag.name);
+  }
+  for (const raw of fileRes.data ?? []) {
+    const row = raw as PaymentFile & { item_id: string };
+    byId.get(row.item_id)?.files.push(row);
+  }
+
+  return rows;
 }
 
 export async function listPaymentFiles(paymentId: string): Promise<PaymentFile[]> {
@@ -876,7 +916,6 @@ async function paymentScope(companyId: string | null, branchId: string | null): 
 export async function createPayment(
   input: PaymentInput,
   items: PaymentItem[],
-  files: PaymentFile[],
 ): Promise<PaymentRow> {
   const supabase = getSupabase();
 
@@ -899,7 +938,6 @@ export async function createPayment(
 
   const id = (data as Pick<Payment, "id">).id;
   await replacePaymentItems(id, items);
-  await replacePaymentFiles(id, files);
   await syncTargets(items);
 
   return (await getPayment(id)) as PaymentRow;
@@ -909,7 +947,6 @@ export async function updatePayment(
   id: string,
   input: Partial<PaymentInput>,
   items: PaymentItem[],
-  files: PaymentFile[],
 ): Promise<void> {
   // เอกสารที่ถูกเอาออกจากใบนี้ก็ต้องคำนวณยอดเบิกจริงใหม่ด้วย ไม่งั้นจะค้างยอดเก่า
   const before = await listPaymentItems(id);
@@ -918,7 +955,6 @@ export async function updatePayment(
   if (error) throw new Error(`บันทึกใบเบิกเงินสดย่อยไม่สำเร็จ: ${error.message}`);
 
   await replacePaymentItems(id, items);
-  await replacePaymentFiles(id, files);
   await syncTargets([...before, ...items]);
 }
 
@@ -934,60 +970,102 @@ export async function deletePayment(id: string): Promise<{ filesDeleted: number 
   return { filesDeleted: files.length };
 }
 
+/**
+ * ตั้งชุดรายการใหม่ทั้งชุด พร้อมป้ายกำกับและไฟล์แนบของแต่ละรายการ
+ *
+ * ป้ายกับไฟล์ผูกกับ pr_payment_items ด้วย on delete cascade การลบรายการเก่าทิ้ง
+ * จึงพาแถวลูกไปด้วยเอง เหลือแค่ต้องลบไฟล์จริงออกจากถังให้ไม่ค้าง
+ */
 async function replacePaymentItems(paymentId: string, items: PaymentItem[]): Promise<void> {
   const supabase = getSupabase();
+
+  // ไฟล์ที่หลุดออกจากฟอร์มแล้วต้องลบออกจากถังด้วย ไม่งั้นค้างกินที่ไปเรื่อย ๆ
+  const before = await listPaymentFiles(paymentId);
+  const keep = new Set(items.flatMap((i) => (i.files ?? []).map((f) => f.path)));
+  const removed = before.filter((f) => !keep.has(f.path)).map((f) => f.path);
+  if (removed.length > 0) await removeProcurementFiles(removed);
 
   const { error: delError } = await supabase
     .from("pr_payment_items")
     .delete()
     .eq("payment_id", paymentId);
-  if (delError) throw new Error(`อัปเดตรายการที่อ้างถึงไม่สำเร็จ: ${delError.message}`);
+  if (delError) throw new Error(`อัปเดตรายการจ่ายไม่สำเร็จ: ${delError.message}`);
 
   if (items.length === 0) return;
 
-  const { error } = await supabase.from("pr_payment_items").insert(
-    items.map((item, i) => ({
-      payment_id: paymentId,
-      repair_id: item.repair_id,
-      purchase_id: item.purchase_id,
-      amount: item.amount,
-      detail: item.detail,
-      account_id: item.account_id,
-      sort_order: i,
-    })),
+  const { data, error } = await supabase
+    .from("pr_payment_items")
+    .insert(
+      items.map((item, i) => ({
+        payment_id: paymentId,
+        repair_id: item.repair_id,
+        purchase_id: item.purchase_id,
+        amount: item.amount,
+        detail: item.detail,
+        account_id: item.account_id,
+        ref_no: item.ref_no,
+        vendor_id: item.vendor_id,
+        payee_name: item.payee_name,
+        payee_phone: item.payee_phone,
+        payee_address: item.payee_address,
+        sort_order: i,
+      })),
+    )
+    .select("id, sort_order");
+  if (error) throw new Error(`บันทึกรายการจ่ายไม่สำเร็จ: ${error.message}`);
+
+  // จับคู่ id ที่เพิ่งได้กลับมากับรายการเดิมด้วย sort_order (ลำดับที่ insert กลับมาไม่รับประกัน)
+  const idOf = new Map(
+    (data ?? []).map((r) => [(r as { sort_order: number }).sort_order, (r as { id: string }).id]),
   );
-  if (error) throw new Error(`บันทึกรายการที่อ้างถึงไม่สำเร็จ: ${error.message}`);
-}
 
-/** ตั้งชุดไฟล์แนบใหม่ทั้งชุด — ไฟล์ที่ถูกเอาออกจากฟอร์มจะถูกลบออกจากถังด้วย */
-async function replacePaymentFiles(paymentId: string, files: PaymentFile[]): Promise<void> {
-  const supabase = getSupabase();
-
-  const current = await listPaymentFiles(paymentId);
-  const keep = new Set(files.map((f) => f.path));
-  const removed = current.filter((f) => !keep.has(f.path)).map((f) => f.path);
-  if (removed.length > 0) await removeProcurementFiles(removed);
-
-  const { error: delError } = await supabase
-    .from("pr_payment_files")
-    .delete()
-    .eq("payment_id", paymentId);
-  if (delError) throw new Error(`อัปเดตไฟล์แนบไม่สำเร็จ: ${delError.message}`);
-
-  if (files.length === 0) return;
-
-  const { error } = await supabase.from("pr_payment_files").insert(
-    files.map((f, i) => ({
+  const fileRows = items.flatMap((item, i) =>
+    (item.files ?? []).map((f, order) => ({
       payment_id: paymentId,
+      item_id: idOf.get(i),
       kind: f.kind,
       path: f.path,
       filename: f.filename,
       mime: f.mime,
       size_bytes: f.size_bytes,
-      sort_order: i,
+      sort_order: order,
     })),
   );
-  if (error) throw new Error(`บันทึกไฟล์แนบไม่สำเร็จ: ${error.message}`);
+  if (fileRows.length > 0) {
+    const { error: fileError } = await supabase.from("pr_payment_files").insert(fileRows);
+    if (fileError) throw new Error(`บันทึกไฟล์แนบของรายการไม่สำเร็จ: ${fileError.message}`);
+  }
+
+  // ป้ายกำกับ: สร้าง pr_tags ที่ยังไม่มีให้ครบทีเดียว แล้วค่อยผูกเข้ารายการ
+  const allTags = items.flatMap((item) => item.tags ?? []);
+  if (allTags.length === 0) return;
+
+  const specs = [...new Set(allTags.map((name) => name.trim()).filter(Boolean))].map((name) => ({
+    name: tagDisplayName(name),
+    slug: tagSlug(name),
+  }));
+  const tagIds = await ensureTags(specs);
+  const idBySlug = new Map(specs.map((spec, i) => [spec.slug, tagIds[i]]));
+
+  const tagRows: { payment_id: string; item_id: string; tag_id: string }[] = [];
+  items.forEach((item, i) => {
+    const itemId = idOf.get(i);
+    if (!itemId) return;
+
+    // กันป้ายซ้ำในรายการเดียว เพราะคีย์หลักคือ (item_id, tag_id)
+    const seen = new Set<string>();
+    for (const name of item.tags ?? []) {
+      const tagId = idBySlug.get(tagSlug(name));
+      if (!tagId || seen.has(tagId)) continue;
+      seen.add(tagId);
+      tagRows.push({ payment_id: paymentId, item_id: itemId, tag_id: tagId });
+    }
+  });
+
+  if (tagRows.length > 0) {
+    const { error: tagError } = await supabase.from("pr_payment_tags").insert(tagRows);
+    if (tagError) throw new Error(`บันทึกป้ายกำกับของรายการไม่สำเร็จ: ${tagError.message}`);
+  }
 }
 
 // ---------- รูปภาพและไฟล์แนบ ----------
@@ -1192,45 +1270,6 @@ async function ensureTags(tags: { name: string; slug: string }[]): Promise<strin
 }
 
 /** ป้ายที่ติดอยู่บนใบเบิกใบนี้ */
-export async function listPaymentTags(paymentId: string): Promise<PrTag[]> {
-  const { data, error } = await getSupabase()
-    .from("pr_payment_tags")
-    .select("tag_id, pr_tags (id, name, slug, is_active)")
-    .eq("payment_id", paymentId);
-  if (error) throw new Error(`อ่านป้ายของใบเบิกไม่สำเร็จ: ${error.message}`);
-
-  // supabase คืนตารางที่ join มาเป็น array เสมอ แม้ความสัมพันธ์จะเป็นหนึ่งต่อหนึ่ง
-  return (data ?? [])
-    .flatMap((r) => {
-      const joined = (r as unknown as { pr_tags: PrTag | PrTag[] | null }).pr_tags;
-      if (!joined) return [];
-      return Array.isArray(joined) ? joined : [joined];
-    })
-    .filter((t): t is PrTag => Boolean(t?.id));
-}
-
-/** ตั้งชุดป้ายของใบเบิกใหม่ทั้งชุด (สร้างป้ายที่ยังไม่มีให้อัตโนมัติ) */
-export async function setPaymentTags(
-  paymentId: string,
-  tags: { name: string; slug: string }[],
-): Promise<void> {
-  const supabase = getSupabase();
-  const tagIds = await ensureTags(tags);
-
-  const { error: delError } = await supabase
-    .from("pr_payment_tags")
-    .delete()
-    .eq("payment_id", paymentId);
-  if (delError) throw new Error(`อัปเดตป้ายกำกับไม่สำเร็จ: ${delError.message}`);
-
-  if (tagIds.length === 0) return;
-
-  const { error } = await supabase
-    .from("pr_payment_tags")
-    .insert(tagIds.map((tag_id) => ({ payment_id: paymentId, tag_id })));
-  if (error) throw new Error(`บันทึกป้ายกำกับไม่สำเร็จ: ${error.message}`);
-}
-
 /** แถวคู่ (ใบเบิก × ป้าย) สำหรับรายงานสรุป — ใบที่ยังไม่ติดป้ายมาด้วย tag_id เป็น null */
 export async function listPaymentTagRows(query: TagReportQuery = {}): Promise<PaymentTagRow[]> {
   let q = getSupabase().from("v_pr_payment_tag_rows").select("*");

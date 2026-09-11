@@ -5,14 +5,13 @@ import { redirect } from "next/navigation";
 import { getSelectableContext } from "@/lib/core-db";
 import { logAudit } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
-import { parseAmount, parseTags, validatePayment } from "@/lib/procurement";
+import { parseAmount, parseTags, round2, validatePayment } from "@/lib/procurement";
 import {
   createPayment,
   deletePayment,
   getDocsByIds,
   getPayment,
   listPaymentItems,
-  setPaymentTags,
   updatePayment,
 } from "@/lib/procurement-db";
 import {
@@ -64,10 +63,18 @@ async function checkScope(
  * บรรทัดที่ line_doc ว่าง = ค่าใช้จ่ายทั่วไปที่ไม่ได้ผูกกับใบขอซ่อม/ใบขอซื้อ
  */
 function readItems(form: FormData): PaymentItem[] {
-  const docs = form.getAll("line_doc").map((v) => String(v));
-  const details = form.getAll("line_detail").map((v) => String(v).trim());
-  const accounts = form.getAll("line_account").map((v) => String(v));
-  const amounts = form.getAll("line_amount").map((v) => String(v));
+  const col = (name: string) => form.getAll(name).map((v) => String(v));
+
+  const docs = col("line_doc");
+  const details = col("line_detail").map((v) => v.trim());
+  const accounts = col("line_account");
+  const amounts = col("line_amount");
+  const refs = col("line_ref").map((v) => v.trim());
+  const vendors = col("line_vendor");
+  const payees = col("line_payee").map((v) => v.trim());
+  const phones = col("line_phone").map((v) => v.trim());
+  const addresses = col("line_address").map((v) => v.trim());
+  const tagTexts = col("line_tags");
 
   const items: PaymentItem[] = [];
 
@@ -84,15 +91,23 @@ function readItems(form: FormData): PaymentItem[] {
       amount: parseAmount(amounts[i] ?? ""),
       detail: details[i] || null,
       account_id: accounts[i] || null,
+      ref_no: refs[i] || null,
+      vendor_id: vendors[i] || null,
+      payee_name: payees[i] || null,
+      payee_phone: normalizePhone(phones[i] ?? "") || phones[i] || null,
+      payee_address: addresses[i] || null,
+      tags: parseTags(tagTexts[i] ?? "", MAX_TAGS_PER_PAYMENT).map((t) => t.name),
+      // รูปกับไฟล์ของแต่ละบรรทัดมีได้หลายชิ้น จึงส่งมาเป็นช่องที่มีเลขบรรทัดกำกับ
+      files: [...readPhotoFiles(form, `line_photo_${i}`), ...readDocumentFiles(form, `line_file_${i}`)],
     });
   }
   return items;
 }
 
 /** รูปภาพประกอบ (ข้อ 4.5) */
-function readPhotoFiles(form: FormData): PaymentFile[] {
+function readPhotoFiles(form: FormData, field = "photo"): PaymentFile[] {
   return form
-    .getAll("photo")
+    .getAll(field)
     .map((v) => String(v).trim())
     .filter(Boolean)
     .slice(0, MAX_PHOTOS)
@@ -106,10 +121,10 @@ function readPhotoFiles(form: FormData): PaymentFile[] {
 }
 
 /** ไฟล์เอกสารแนบ ใบเสร็จ/ใบรับสินค้า (ข้อ 4.6) — FileUploader ส่งมาเป็น JSON บรรทัดละไฟล์ */
-function readDocumentFiles(form: FormData): PaymentFile[] {
+function readDocumentFiles(form: FormData, field = "file_document"): PaymentFile[] {
   const files: PaymentFile[] = [];
 
-  for (const raw of form.getAll("file_document")) {
+  for (const raw of form.getAll(field)) {
     const text = String(raw).trim();
     if (!text) continue;
     try {
@@ -134,10 +149,6 @@ function readDocumentFiles(form: FormData): PaymentFile[] {
   return files.slice(0, MAX_PAYMENT_DOCS);
 }
 
-function readFiles(form: FormData): PaymentFile[] {
-  return [...readPhotoFiles(form), ...readDocumentFiles(form)];
-}
-
 /**
  * แหล่งจ่ายที่ฟอร์มส่งมา — ตัดสินว่าใช้ชุดเลขที่ เมนู และชื่อเอกสารของแบบไหน
  * ค่าที่ไม่รู้จักถือเป็นเงินสดย่อย (ค่าเริ่มต้นของระบบ)
@@ -147,18 +158,27 @@ function readSource(form: FormData): PaySourceSpec {
   return PAY_SOURCES[value === "central" ? "central" : "petty"];
 }
 
-/** ช่องของใบเบิกที่ไม่เกี่ยวกับเอกสารที่อ้างถึง */
-function readPaymentFields(form: FormData) {
+/**
+ * ช่องของหัวเอกสาร
+ *
+ * ผู้รับเงิน เลขที่อ้างอิง รายการค่าใช้จ่าย และผังบัญชี เป็นของรายการจ่ายแต่ละรายการแล้ว
+ * ช่องบนหัวเอกสารจึงเป็นแค่ค่าสรุป ซึ่งคิดจากรายการฝั่ง server ไม่ได้อ่านจากฟอร์ม
+ * จะได้ไม่มีทางที่ค่าสรุปกับรายการจริงไม่ตรงกัน
+ */
+function readPaymentFields(form: FormData, items: PaymentItem[]) {
+  const uniq = (values: (string | null | undefined)[]) =>
+    [...new Set(values.map((v) => (v ?? "").trim()).filter(Boolean))].join(", ") || null;
+
   return {
     pay_date: str(form, "pay_date"),
-    paid_amount: parseAmount(str(form, "paid_amount")),
-    ref_no: str(form, "ref_no") || null,
-    payee_name: str(form, "payee_name") || null,
-    payee_address: str(form, "payee_address") || null,
-    payee_phone: normalizePhone(str(form, "payee_phone")) || str(form, "payee_phone") || null,
-    expense_detail: str(form, "expense_detail") || null,
-    vendor_id: str(form, "vendor_id") || null,
-    account_id: str(form, "account_id") || null,
+    paid_amount: round2(items.reduce((sum, i) => sum + i.amount, 0)),
+    ref_no: uniq(items.map((i) => i.ref_no)),
+    payee_name: uniq(items.map((i) => i.payee_name)),
+    payee_address: uniq(items.map((i) => i.payee_address)),
+    payee_phone: uniq(items.map((i) => i.payee_phone)),
+    expense_detail: uniq(items.map((i) => i.detail)),
+    vendor_id: items.find((i) => i.vendor_id)?.vendor_id ?? null,
+    account_id: items.find((i) => i.account_id)?.account_id ?? null,
     payer_name: str(form, "payer_name") || null,
     approver_name: str(form, "approver_name") || null,
     payee_signature: str(form, "payee_signature") || null,
@@ -199,7 +219,7 @@ export async function createPaymentForm(form: FormData): Promise<void> {
   const path = `${spec.basePath}/new`;
 
   const items = readItems(form);
-  const input = { ...readPaymentFields(form), pay_source: spec.source };
+  const input = { ...readPaymentFields(form, items), pay_source: spec.source };
 
   const scopeProblem = await checkScope(user.id, input.company_id, input.branch_id);
   if (scopeProblem) back(path, scopeProblem, true);
@@ -216,10 +236,9 @@ export async function createPaymentForm(form: FormData): Promise<void> {
   let id = "";
   let docNo = "";
   try {
-    const created = await createPayment(row, items, readFiles(form));
+    const created = await createPayment(row, items);
     id = created.id;
     docNo = created.doc_no;
-    await setPaymentTags(id, parseTags(str(form, "tags"), MAX_TAGS_PER_PAYMENT));
     await logAudit({
       actor_id: user.id,
       action: "create_payment",
@@ -254,7 +273,7 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
   }
 
   const items = readItems(form);
-  const input = readPaymentFields(form);
+  const input = readPaymentFields(form, items);
 
   const scopeProblem = await checkScope(user.id, input.company_id, input.branch_id);
   if (scopeProblem) back(path, scopeProblem, true);
@@ -263,13 +282,7 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
   if (problem) back(path, problem, true);
 
   try {
-    await updatePayment(
-      id,
-      { ...input, created_by_name: str(form, "created_by_name") || null },
-      items,
-      readFiles(form),
-    );
-    await setPaymentTags(id, parseTags(str(form, "tags"), MAX_TAGS_PER_PAYMENT));
+    await updatePayment(id, { ...input, created_by_name: str(form, "created_by_name") || null }, items);
     await logAudit({
       actor_id: user.id,
       action: "update_payment",

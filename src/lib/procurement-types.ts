@@ -406,6 +406,17 @@ export type PaymentItem = {
   detail: string | null;
   /** ผังบัญชีรายบรรทัด ให้ใบเดียวลงได้หลายหมวด */
   account_id: string | null;
+  /** เลขที่อ้างอิง/เลขที่อนุมัติของรายการนี้ */
+  ref_no: string | null;
+  /** ผู้รับเงินของรายการนี้ — ใบเดียวจ่ายคนละร้านได้ */
+  vendor_id: string | null;
+  payee_name: string | null;
+  payee_phone: string | null;
+  payee_address: string | null;
+  /** ป้ายกำกับของรายการนี้ (ชื่อป้าย ระบบจับคู่/สร้าง pr_tags ให้เอง) */
+  tags?: string[];
+  /** รูปถ่ายและเอกสารแนบของรายการนี้ */
+  files?: PaymentFile[];
   sort_order?: number;
 };
 
@@ -416,6 +427,8 @@ export type PaymentItemRow = PaymentItem & {
   account_code: string | null;
   account_name: string | null;
   account_category: AccountCategory | null;
+  vendor_code: string | null;
+  vendor_name: string | null;
   doc_no: string | null;
   approval_no: string | null;
   approved_date: string | null;
@@ -654,6 +667,8 @@ export type PaymentTagRow = {
   account_id: string | null;
   account_code: string | null;
   account_name: string | null;
+  /** รายการจ่ายที่ป้ายนี้ติดอยู่ — ใบเก่าที่ยังไม่มีรายการเป็น null */
+  item_id: string | null;
   tag_id: string | null;
   tag_name: string | null;
   tag_slug: string | null;

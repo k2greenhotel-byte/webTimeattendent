@@ -36,6 +36,14 @@ export type PickedItem = {
   amount: number;
   detail: string | null;
   accountId: string | null;
+  refNo: string | null;
+  vendorId: string | null;
+  payeeName: string | null;
+  payeePhone: string | null;
+  payeeAddress: string | null;
+  tags: PrTag[];
+  photos: string[];
+  documents: UploadedFile[];
 };
 
 /** บรรทัดค่าใช้จ่ายที่กำลังกรอกอยู่บนหน้าจอ */
@@ -47,6 +55,15 @@ type Line = {
   detail: string;
   accountId: string;
   amount: string;
+  refNo: string;
+  vendorId: string;
+  payeeName: string;
+  payeePhone: string;
+  payeeAddress: string;
+  /** ค่าเริ่มต้นของช่องที่จัดการตัวเอง (TagInput / uploader) ไม่ได้คุมเป็น state */
+  tags: PrTag[];
+  photos: string[];
+  documents: UploadedFile[];
 };
 
 let lineSeq = 0;
@@ -68,13 +85,10 @@ export default function PaymentForm({
   docs,
   accounts,
   vendors = [],
-  tags = [],
   tagSuggestions = [],
   companies,
   branches,
   picked = [],
-  photos = [],
-  documents = [],
   defaultCompanyId,
   defaultBranchId,
   defaultRecorderName,
@@ -89,15 +103,11 @@ export default function PaymentForm({
   accounts: PrAccountRow[];
   /** ทะเบียนเจ้าหนี้/ผู้ขายที่จ่ายเป็นประจำ */
   vendors?: PrVendorRow[];
-  /** ป้ายที่ติดอยู่บนใบนี้ (ตอนแก้ไข) */
-  tags?: PrTag[];
   /** ป้ายที่เคยใช้ในระบบ ไว้ให้กดเลือก */
   tagSuggestions?: PrTagRow[];
   companies: Company[];
   branches: Branch[];
   picked?: PickedItem[];
-  photos?: string[];
-  documents?: UploadedFile[];
   defaultCompanyId?: string | null;
   defaultBranchId?: string | null;
   defaultRecorderName?: string;
@@ -121,18 +131,18 @@ export default function PaymentForm({
           detail: p.detail ?? "",
           accountId: p.accountId ?? "",
           amount: String(p.amount),
+          refNo: p.refNo ?? "",
+          vendorId: p.vendorId ?? "",
+          payeeName: p.payeeName ?? "",
+          payeePhone: p.payeePhone ?? "",
+          payeeAddress: p.payeeAddress ?? "",
+          tags: p.tags,
+          photos: p.photos,
+          documents: p.documents,
         }))
       : [],
   );
-  const [refNo, setRefNo] = useState(payment?.ref_no ?? "");
-  const [expenseDetail, setExpenseDetail] = useState(payment?.expense_detail ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [vendorId, setVendorId] = useState(payment?.vendor_id ?? "");
-  const [payee, setPayee] = useState({
-    name: payment?.payee_name ?? "",
-    phone: payment?.payee_phone ?? "",
-    address: payment?.payee_address ?? "",
-  });
   const [approverName, setApproverName] = useState(payment?.approver_name ?? "");
 
   const docById = useMemo(() => new Map(docs.map((d) => [d.id, d])), [docs]);
@@ -144,19 +154,22 @@ export default function PaymentForm({
   /** ยอดรวมทั้งใบ = ผลรวมของทุกบรรทัด ไม่ต้องคีย์ซ้ำและไม่มีทางไม่ตรงกัน */
   const total = round2(lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0));
 
-  /** ช่องหัวเอกสารที่สรุปมาจากบรรทัด — ยังพิมพ์แก้เองได้ ระบบแค่เติมให้ */
-  const summarize = (next: Line[]) => {
-    const uniq = (values: (string | null | undefined)[]) =>
-      [...new Set(values.map((v) => (v ?? "").trim()).filter(Boolean))].join(", ");
-
-    setExpenseDetail(uniq(next.map((l) => l.detail)));
-    setRefNo(uniq(next.map((l) => (l.docId ? docById.get(l.docId)?.approval_no : null))));
-    setApproverName(uniq(next.map((l) => (l.docId ? docById.get(l.docId)?.approved_by : null))));
-  };
-
+  /**
+   * ชื่อผู้อนุมัติยังเป็นของทั้งใบ จึงสรุปจากใบอนุมัติที่ทุกบรรทัดอ้างถึง
+   * ช่องสรุปอื่น (รายการ เลขที่อ้างอิง ผู้รับเงิน) เป็นของรายการแล้ว ฝั่ง server คิดให้เอง
+   */
   const applyLines = (next: Line[]) => {
     setLines(next);
-    summarize(next);
+    setApproverName(
+      [
+        ...new Set(
+          next
+            .map((l) => (l.docId ? docById.get(l.docId)?.approved_by : null))
+            .map((v) => (v ?? "").trim())
+            .filter(Boolean),
+        ),
+      ].join(", "),
+    );
   };
 
   const patchLine = (key: string, patch: Partial<Line>) =>
@@ -168,7 +181,22 @@ export default function PaymentForm({
   const addFreeLine = () =>
     applyLines([
       ...lines,
-      { key: newKey(), docId: null, docKind: null, detail: "", accountId: "", amount: "" },
+      {
+        key: newKey(),
+        docId: null,
+        docKind: null,
+        detail: "",
+        accountId: "",
+        amount: "",
+        refNo: "",
+        vendorId: "",
+        payeeName: "",
+        payeePhone: "",
+        payeeAddress: "",
+        tags: [],
+        photos: [],
+        documents: [],
+      },
     ]);
 
   /**
@@ -176,10 +204,12 @@ export default function PaymentForm({
    * เลือก "ผู้ขายไม่ประจำ" = ล้างการอ้างทะเบียน แล้วพิมพ์เองได้
    * (ค่าที่เติมยังแก้เองได้ เพราะบางครั้งจ่ายให้สาขาย่อยของเจ้าหนี้รายเดียวกัน)
    */
-  const chooseVendor = (id: string) => {
-    setVendorId(id);
+  const chooseVendor = (key: string, id: string) => {
     const v = vendors.find((x) => x.id === id);
-    if (v) setPayee({ name: v.name, phone: v.phone ?? "", address: v.address ?? "" });
+    patchLine(key, {
+      vendorId: id,
+      ...(v ? { payeeName: v.name, payeePhone: v.phone ?? "", payeeAddress: v.address ?? "" } : {}),
+    });
   };
 
   /** สาขาที่เลือกได้ต้องอยู่ในบริษัทที่เลือกไว้ (สาขาที่ยังไม่ระบุบริษัทให้เลือกได้เสมอ) */
@@ -206,6 +236,15 @@ export default function PaymentForm({
         detail: doc.item_name,
         accountId: "",
         amount: String(pickedMap.get(doc.id) ?? remainingToPay(doc)),
+        // ดึงเลขที่อนุมัติของใบนั้นมาเป็นเลขที่อ้างอิงของรายการนี้เลย
+        refNo: doc.approval_no ?? "",
+        vendorId: "",
+        payeeName: "",
+        payeePhone: "",
+        payeeAddress: "",
+        tags: [],
+        photos: [],
+        documents: [],
       },
     ]);
   };
@@ -410,6 +449,120 @@ export default function PaymentForm({
                       />
                     </div>
                   </div>
+
+                  {/* ---------- ผู้รับเงินของรายการนี้ ---------- */}
+                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <label className="label" htmlFor={`line_ref_${line.key}`}>
+                        เลขที่อ้างอิง (เลขที่อนุมัติ)
+                      </label>
+                      <input
+                        id={`line_ref_${line.key}`}
+                        name="line_ref"
+                        value={line.refNo}
+                        onChange={(e) => patchLine(line.key, { refNo: e.target.value })}
+                        className="input"
+                        placeholder="เว้นว่างได้ถ้าไม่ผ่านอนุมัติ"
+                      />
+                    </div>
+                    <div>
+                      <label className="label" htmlFor={`line_vendor_${line.key}`}>
+                        เจ้าหนี้ / ผู้ขายประจำ
+                      </label>
+                      <select
+                        id={`line_vendor_${line.key}`}
+                        name="line_vendor"
+                        value={line.vendorId}
+                        onChange={(e) => chooseVendor(line.key, e.target.value)}
+                        className="input"
+                      >
+                        <option value="">— ผู้ขายไม่ประจำ (พิมพ์เอง) —</option>
+                        {vendors.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.code} · {v.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label" htmlFor={`line_payee_${line.key}`}>
+                        ชื่อผู้ขายหรือผู้รับเงิน *
+                      </label>
+                      <input
+                        id={`line_payee_${line.key}`}
+                        name="line_payee"
+                        value={line.payeeName}
+                        onChange={(e) => patchLine(line.key, { payeeName: e.target.value })}
+                        className="input"
+                        placeholder="ชื่อร้าน ช่าง หรือพนักงานที่รับเงินไป"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="label" htmlFor={`line_phone_${line.key}`}>
+                        เบอร์โทร
+                      </label>
+                      <input
+                        id={`line_phone_${line.key}`}
+                        name="line_phone"
+                        value={line.payeePhone}
+                        onChange={(e) => patchLine(line.key, { payeePhone: e.target.value })}
+                        className="input"
+                        inputMode="tel"
+                        placeholder="0812345678"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-4">
+                      <label className="label" htmlFor={`line_address_${line.key}`}>
+                        ที่อยู่ผู้รับเงิน
+                      </label>
+                      <textarea
+                        id={`line_address_${line.key}`}
+                        name="line_address"
+                        value={line.payeeAddress}
+                        onChange={(e) => patchLine(line.key, { payeeAddress: e.target.value })}
+                        className="input min-h-16"
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+
+                  {/* ---------- ป้ายกำกับของรายการนี้ ---------- */}
+                  <div className="mt-2">
+                    <TagInput
+                      name="line_tags"
+                      label="ป้ายกำกับ (แฮชแท็ก)"
+                      hint="ใช้จัดกลุ่มค่าใช้จ่ายเพื่อดูรายงานสรุปตามป้าย · ติดแยกได้รายรายการ"
+                      initialTags={line.tags}
+                      suggestions={tagSuggestions}
+                    />
+                  </div>
+
+                  {/* ---------- ใบเสร็จของรายการนี้ ---------- */}
+                  <div className="mt-2 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <PhotoUploader
+                        name={`line_photo_${index}`}
+                        label="รูปถ่ายแนบประกอบ"
+                        hint={`แนบได้สูงสุด ${MAX_PHOTOS} รูป`}
+                        max={MAX_PHOTOS}
+                        initialPaths={line.photos}
+                        prefix="payment"
+                        endpoint="/api/procurement/photo"
+                      />
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-3">
+                      <FileUploader
+                        name={`line_file_${index}`}
+                        label="เอกสารแนบ (ใบเสร็จ / ใบรับสินค้า)"
+                        hint={`แนบได้สูงสุด ${MAX_PAYMENT_DOCS} ไฟล์ · รองรับรูปและ PDF`}
+                        max={MAX_PAYMENT_DOCS}
+                        endpoint="/api/procurement/file"
+                        accept={PR_FILE_ACCEPT}
+                        initialFiles={line.documents}
+                      />
+                    </div>
+                  </div>
                 </li>
               );
             })}
@@ -433,101 +586,13 @@ export default function PaymentForm({
         />
       )}
 
-      {/* ---------- ผู้รับเงินและจำนวนเงิน ---------- */}
+      {/* ---------- ยอดรวมทั้งใบ ---------- */}
+      {/*
+        ผู้รับเงิน เลขที่อ้างอิง ผังบัญชี ป้ายกำกับ และไฟล์แนบ ย้ายไปอยู่ที่รายการจ่ายแต่ละรายการแล้ว
+        หัวเอกสารเหลือเฉพาะสิ่งที่เป็นของทั้งใบจริง ๆ ส่วนช่องสรุปบน pr_payments
+        ฝั่ง server คิดจากรายการให้เอง จะได้ไม่มีทางที่ค่าสรุปกับรายการไม่ตรงกัน
+      */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <label className="label" htmlFor="ref_no">
-            เลขที่อ้างอิง (เลขที่อนุมัติ)
-          </label>
-          <input
-            id="ref_no"
-            name="ref_no"
-            value={refNo}
-            onChange={(e) => setRefNo(e.target.value)}
-            className="input"
-            placeholder="เว้นว่างได้ถ้าไม่ผ่านอนุมัติ"
-          />
-        </div>
-        <div className="sm:col-span-2 lg:col-span-3">
-          <label className="label" htmlFor="expense_detail">
-            รายการค่าใช้จ่าย *
-          </label>
-          <input
-            id="expense_detail"
-            name="expense_detail"
-            value={expenseDetail}
-            onChange={(e) => setExpenseDetail(e.target.value)}
-            className="input"
-            placeholder="จ่ายค่าอะไร เช่น ค่าซ่อมแอร์ห้องประชุม / ค่าน้ำมันรถส่งของ"
-            required
-          />
-        </div>
-
-        <div className="sm:col-span-2">
-          <label className="label" htmlFor="vendor_id">
-            เจ้าหนี้ / ผู้ขายประจำ
-          </label>
-          <select
-            id="vendor_id"
-            name="vendor_id"
-            value={vendorId}
-            onChange={(e) => chooseVendor(e.target.value)}
-            className="input"
-          >
-            <option value="">— ผู้ขายไม่ประจำ (พิมพ์เอง) —</option>
-            {vendors.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.code} · {v.name}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-slate-400">
-            เลือกแล้วระบบเติมชื่อ ที่อยู่ เบอร์โทรให้ · แก้เองได้ถ้าจ่ายให้สาขาย่อย
-          </p>
-        </div>
-
-        <div className="sm:col-span-2">
-          <label className="label" htmlFor="payee_name">
-            ชื่อผู้ขายหรือผู้รับเงิน *
-          </label>
-          <input
-            id="payee_name"
-            name="payee_name"
-            value={payee.name}
-            onChange={(e) => setPayee((prev) => ({ ...prev, name: e.target.value }))}
-            className="input"
-            placeholder="ชื่อร้าน ช่าง หรือพนักงานที่รับเงินไป"
-            required
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="payee_phone">
-            เบอร์โทร
-          </label>
-          <input
-            id="payee_phone"
-            name="payee_phone"
-            value={payee.phone}
-            onChange={(e) => setPayee((prev) => ({ ...prev, phone: e.target.value }))}
-            className="input"
-            inputMode="tel"
-            placeholder="0812345678"
-          />
-        </div>
-
-        <div className="sm:col-span-2 lg:col-span-2">
-          <label className="label" htmlFor="payee_address">
-            ที่อยู่ผู้รับเงิน
-          </label>
-          <textarea
-            id="payee_address"
-            name="payee_address"
-            value={payee.address}
-            onChange={(e) => setPayee((prev) => ({ ...prev, address: e.target.value }))}
-            className="input min-h-20"
-            rows={2}
-          />
-        </div>
         <div>
           <label className="label" htmlFor="paid_amount">
             จำนวนเงินรวมทั้งใบ
@@ -541,61 +606,8 @@ export default function PaymentForm({
             placeholder="0.00"
           />
           <p className="mt-1 text-xs text-slate-400">
-            บวกจากรายการค่าใช้จ่ายด้านบนให้อัตโนมัติ — แก้ที่รายการ
+            บวกจากทุกรายการจ่ายด้านบนให้อัตโนมัติ — แก้ที่รายการ
           </p>
-        </div>
-        <div>
-          <label className="label" htmlFor="account_id">
-            ประเภทค่าใช้จ่าย (ผังบัญชี)
-          </label>
-          <select
-            id="account_id"
-            name="account_id"
-            defaultValue={payment?.account_id ?? ""}
-            className="input"
-          >
-            <option value="">— ไม่ระบุ —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} · {a.name} ({ACCOUNT_CATEGORY_LABEL[a.category]})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* ---------- ป้ายกำกับ ---------- */}
-      <TagInput
-        name="tags"
-        label="ป้ายกำกับ (แฮชแท็ก)"
-        hint="ใช้จัดกลุ่มค่าใช้จ่ายเพื่อดูรายงานสรุปตามป้าย · ติดได้หลายป้ายต่อหนึ่งใบ"
-        initialTags={tags}
-        suggestions={tagSuggestions}
-      />
-
-      {/* ---------- รูปและเอกสารแนบ ---------- */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 p-3">
-          <PhotoUploader
-            name="photo"
-            label="รูปถ่ายแนบประกอบ"
-            hint={`แนบได้สูงสุด ${MAX_PHOTOS} รูป`}
-            max={MAX_PHOTOS}
-            initialPaths={photos}
-            prefix="payment"
-            endpoint="/api/procurement/photo"
-          />
-        </div>
-        <div className="rounded-xl border border-slate-200 p-3">
-          <FileUploader
-            name="file_document"
-            label="เอกสารแนบประกอบ (ใบเสร็จ / ใบรับสินค้า)"
-            hint={`แนบได้สูงสุด ${MAX_PAYMENT_DOCS} ไฟล์ · รองรับรูปและ PDF`}
-            max={MAX_PAYMENT_DOCS}
-            endpoint="/api/procurement/file"
-            accept={PR_FILE_ACCEPT}
-            initialFiles={documents}
-          />
         </div>
       </div>
 

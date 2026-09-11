@@ -421,7 +421,7 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
   const approved = doc({ approve_status: "approved", approved_amount: 3000, actual_amount: 0 });
   const targets = new Map([["r1", approved]]);
   const items: PaymentItem[] = [
-    { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: null },
+    { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
   ];
 
   const base = {
@@ -467,7 +467,7 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
 
   it("ยอดที่กระจายลงเอกสารต้องไม่เกินจำนวนเงินที่จ่ายจริง", () => {
     const over: PaymentItem[] = [
-      { repair_id: "r1", purchase_id: null, amount: 4000, detail: "ค่าซ่อมแอร์", account_id: null },
+      { repair_id: "r1", purchase_id: null, amount: 4000, detail: "ค่าซ่อมแอร์", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
     ];
     expect(validatePayment(base, over, targets)).toContain("มากกว่าจำนวนเงินที่จ่ายจริง");
   });
@@ -480,9 +480,9 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
 
   it("ใบเดียวมีได้ทั้งบรรทัดที่ผูกใบอนุมัติและบรรทัดค่าใช้จ่ายทั่วไป", () => {
     const mixed: PaymentItem[] = [
-      { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: "ac1" },
-      { repair_id: null, purchase_id: null, amount: 500, detail: "ค่าน้ำมันรถส่งของ", account_id: "ac2" },
-      { repair_id: null, purchase_id: null, amount: 300, detail: "ค่าเครื่องเขียน", account_id: "ac3" },
+      { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: "ac1", ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
+      { repair_id: null, purchase_id: null, amount: 500, detail: "ค่าน้ำมันรถส่งของ", account_id: "ac2", ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
+      { repair_id: null, purchase_id: null, amount: 300, detail: "ค่าเครื่องเขียน", account_id: "ac3", ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
     ];
     expect(validatePayment({ ...base, paid_amount: 3800 }, mixed, targets)).toBeNull();
   });
@@ -493,15 +493,15 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
       ["p1", doc({ kind: "purchase", approve_status: "approved", approved_amount: 2000 })],
     ]);
     const items2: PaymentItem[] = [
-      { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: null },
-      { repair_id: null, purchase_id: "p1", amount: 2000, detail: "ค่าวัสดุ", account_id: null },
+      { repair_id: "r1", purchase_id: null, amount: 3000, detail: "ค่าซ่อมแอร์", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
+      { repair_id: null, purchase_id: "p1", amount: 2000, detail: "ค่าวัสดุ", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
     ];
     expect(validatePayment({ ...base, paid_amount: 5000 }, items2, twoDocs)).toBeNull();
   });
 
   it("บรรทัดที่ไม่ได้ผูกใบอนุมัติ ต้องกรอกรายการค่าใช้จ่าย", () => {
     const blank: PaymentItem[] = [
-      { repair_id: null, purchase_id: null, amount: 500, detail: "  ", account_id: null },
+      { repair_id: null, purchase_id: null, amount: 500, detail: "  ", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
     ];
     expect(validatePayment({ ...base, paid_amount: 500 }, blank, new Map())).toContain(
       "รายการค่าใช้จ่าย",
@@ -510,15 +510,15 @@ describe("validatePayment (ใบเบิกเงินสดย่อย)", (
 
   it("ทุกบรรทัดต้องมีจำนวนเงินมากกว่า 0", () => {
     const zero: PaymentItem[] = [
-      { repair_id: null, purchase_id: null, amount: 0, detail: "ค่าน้ำมัน", account_id: null },
+      { repair_id: null, purchase_id: null, amount: 0, detail: "ค่าน้ำมัน", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
     ];
     expect(validatePayment({ ...base, paid_amount: 500 }, zero, new Map())).toContain("มากกว่า 0");
   });
 
   it("บอกด้วยว่าเป็นบรรทัดที่เท่าไหร่ จะได้หาเจอ", () => {
     const bad: PaymentItem[] = [
-      { repair_id: null, purchase_id: null, amount: 500, detail: "ค่าน้ำมัน", account_id: null },
-      { repair_id: null, purchase_id: null, amount: 300, detail: "", account_id: null },
+      { repair_id: null, purchase_id: null, amount: 500, detail: "ค่าน้ำมัน", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
+      { repair_id: null, purchase_id: null, amount: 300, detail: "", account_id: null, ref_no: null, vendor_id: null, payee_name: "ร้านทดสอบ", payee_phone: null, payee_address: null },
     ];
     expect(validatePayment({ ...base, paid_amount: 800 }, bad, new Map())).toContain("รายการที่ 2");
   });
@@ -706,6 +706,27 @@ describe("summarizeByTag", () => {
     expect(s.lines[1]).toEqual({ tag_id: "t2", tag_name: "ซ่อมด่วน", count: 1, amount: 50 });
     expect(s.totalPayments).toBe(3);
     expect(s.totalAmount).toBe(350);
+  });
+
+  it("ใบเดียวหลายรายการ แต่ละรายการติดคนละป้าย นับยอดแยกรายการ", () => {
+    // ใบ p1 จ่าย 2 รายการ 500 + 320.50 ติดคนละป้าย ยอดรวมต้องเป็น 820.50 ไม่ใช่ 500 หรือ 1,641
+    const s = summarizeByTag([
+      { payment_id: "p1", item_id: "i1", paid_amount: 500, tag_id: "t1", tag_name: "ค่าน้ำมัน" },
+      { payment_id: "p1", item_id: "i2", paid_amount: 320.5, tag_id: "t2", tag_name: "เครื่องเขียน" },
+    ]);
+    expect(s.lines.find((l) => l.tag_id === "t1")?.amount).toBe(500);
+    expect(s.lines.find((l) => l.tag_id === "t2")?.amount).toBe(320.5);
+    expect(s.totalAmount).toBe(820.5);
+    expect(s.totalPayments).toBe(1);
+  });
+
+  it("ใบเดียวหลายรายการที่ติดป้ายเดียวกัน รวมยอดแต่ยังนับเป็นใบเดียว", () => {
+    const s = summarizeByTag([
+      { payment_id: "p1", item_id: "i1", paid_amount: 500, tag_id: "t1", tag_name: "ค่าน้ำมัน" },
+      { payment_id: "p1", item_id: "i2", paid_amount: 300, tag_id: "t1", tag_name: "ค่าน้ำมัน" },
+    ]);
+    expect(s.lines[0]).toEqual({ tag_id: "t1", tag_name: "ค่าน้ำมัน", count: 1, amount: 800 });
+    expect(s.totalAmount).toBe(800);
   });
 
   it("ใบที่ติดหลายป้าย นับเข้าทุกป้าย แต่ยอดรวมทั้งหมดนับใบละครั้ง", () => {

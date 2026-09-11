@@ -2,15 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import PaymentForm, { type PickedItem } from "@/components/procurement/PaymentForm";
 import { getSelectableContext } from "@/lib/core-db";
-import { remainingToPay } from "@/lib/procurement";
+import { remainingToPay, tagSlug } from "@/lib/procurement";
 import {
   getDocsByIds,
   getPayment,
   listAccounts,
   listDocs,
-  listPaymentFiles,
-  listPaymentItems,
-  listPaymentTags,
+  listPaymentItemRows,
   listTags,
   listVendors,
 } from "@/lib/procurement-db";
@@ -36,12 +34,11 @@ export default async function PaymentDetailView({
   const payment = await getPayment(id);
   if (!payment) notFound();
 
-  const [items, files, approved, accounts, tags, tagSuggestions, vendors, context, canEdit, canDelete] = await Promise.all([
-    listPaymentItems(id),
-    listPaymentFiles(id),
+  // อ่านรายการพร้อมป้ายกำกับและไฟล์แนบของแต่ละรายการมาในชุดเดียว
+  const [items, approved, accounts, tagSuggestions, vendors, context, canEdit, canDelete] = await Promise.all([
+    listPaymentItemRows(id),
     listDocs({ doc_status: "active" }),
     listAccounts(),
-    listPaymentTags(id),
     listTags(),
     listVendors(),
     getSelectableContext(user.id),
@@ -78,12 +75,18 @@ export default async function PaymentDetailView({
     amount: i.amount,
     detail: i.detail,
     accountId: i.account_id,
+    refNo: i.ref_no,
+    vendorId: i.vendor_id,
+    payeeName: i.payee_name,
+    payeePhone: i.payee_phone,
+    payeeAddress: i.payee_address,
+    // TagInput รับชนิด PrTag — ที่เก็บไว้เป็นชื่อป้าย จึงประกอบกลับให้ตรงรูปแบบ
+    tags: (i.tags ?? []).map((name) => ({ id: name, name, slug: tagSlug(name), is_active: true })),
+    photos: (i.files ?? []).filter((f) => f.kind === "photo").map((f) => f.path),
+    documents: (i.files ?? [])
+      .filter((f) => f.kind === "document")
+      .map((f) => ({ path: f.path, filename: f.filename, mime: f.mime, size: f.size_bytes })),
   }));
-
-  const photos = files.filter((f) => f.kind === "photo").map((f) => f.path);
-  const documents = files
-    .filter((f) => f.kind === "document")
-    .map((f) => ({ path: f.path, filename: f.filename, mime: f.mime, size: f.size_bytes }));
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
@@ -117,14 +120,11 @@ export default async function PaymentDetailView({
           payment={payment}
           docs={docs}
           accounts={accounts}
-          tags={tags}
           tagSuggestions={tagSuggestions}
           vendors={vendors}
           companies={context.companies}
           branches={context.branches}
           picked={picked}
-          photos={photos}
-          documents={documents}
           defaultRecorderName={user.full_name}
           action={updatePaymentForm}
           submitLabel="บันทึกการแก้ไข"
