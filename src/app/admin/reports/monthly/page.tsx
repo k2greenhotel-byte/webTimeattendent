@@ -143,6 +143,7 @@ export default async function MonthlyReportPage({
                   {Number(d.slice(8, 10))}
                 </th>
               ))}
+              <th>มาทำงาน<br />(วัน)</th>
               <th>ชม.รวม</th>
               <th>สาย<br />(วัน)</th>
               <th>ขาด<br />(วัน)</th>
@@ -157,7 +158,7 @@ export default async function MonthlyReportPage({
                 {group && (
                   <tr className="bg-slate-100">
                     <td
-                      colSpan={dates.length + 7}
+                      colSpan={dates.length + 8}
                       className="sticky left-0 text-left font-semibold text-slate-700"
                     >
                       {group}
@@ -184,6 +185,7 @@ export default async function MonthlyReportPage({
                     </td>
                   );
                 })}
+                <td className="font-medium">{row.totals.workedDays || "-"}</td>
                 <td className="font-medium">{formatDuration(row.totals.workMinutes)}</td>
                 <td>{row.totals.lateDays || "-"}</td>
                 <td>{row.totals.absentDays || "-"}</td>
