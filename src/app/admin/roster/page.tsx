@@ -23,7 +23,13 @@ import {
   listSites,
 } from "@/lib/db";
 import type { LeaveDay, ShiftAssignment, WorkSchedule } from "@/lib/types";
-import { assignShiftsForm, clearRangeForm, copyPreviousForm, saveCellForm } from "./actions";
+import {
+  assignShiftsForm,
+  clearRangeForm,
+  copyPreviousForm,
+  saveCellForm,
+  setDefaultScheduleForm,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -346,6 +352,63 @@ export default async function RosterPage({
       </details>
       )}
 
+      {/* ---------- ตั้งกะประจำ (ใช้ทุกเดือนอัตโนมัติ) ---------- */}
+      {canWrite && (
+      <details className="card">
+        <summary className="cursor-pointer font-semibold text-slate-800">
+          ตั้งกะประจำ (ใช้ทุกเดือนอัตโนมัติ ไม่ต้องจัดตารางเวรซ้ำ)
+        </summary>
+        <p className="mt-1 text-xs text-slate-500">
+          สำหรับตำแหน่งที่ทำงานกะเวลาเดิมตลอด เช่น แม่บ้าน, ครัว, สต็อก, บัญชี, คาเฟ่ — ตั้งครั้งเดียว
+          มีผลทุกวันทุกเดือนโดยอัตโนมัติจนกว่าจะมาแก้ใหม่ ไม่ต้องจัดตารางเวรซ้ำทุกเดือน ส่วนวันไหนต้องการ
+          เปลี่ยนกะหรือหยุดเป็นกรณีพิเศษ ยังใช้ "จัดเวรเป็นชุด" หรือ "แก้ทีละช่อง" ด้านบน/ล่างได้ตามปกติ
+          (มีผลเหนือกว่ากะประจำเสมอ)
+        </p>
+        <form action={setDefaultScheduleForm} className="mt-3 grid gap-3 md:grid-cols-[minmax(14rem,1fr)_auto]">
+          {viewHidden}
+          <div>
+            <label className="label" htmlFor="default_employee_ids">
+              พนักงาน (กด Ctrl/⌘ เพื่อเลือกหลายคน)
+            </label>
+            <select
+              id="default_employee_ids"
+              name="employee_ids"
+              multiple
+              size={Math.min(10, Math.max(4, employees.length))}
+              className="input h-auto"
+              required
+            >
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.emp_code} · {e.full_name}
+                  {e.default_schedule_name ? ` (ตอนนี้: ${e.default_schedule_name})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col justify-end gap-3">
+            <div className="min-w-52">
+              <label className="label" htmlFor="default_schedule_id">
+                กะประจำ
+              </label>
+              <select id="default_schedule_id" name="default_schedule_id" className="input">
+                {schedules.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.work_start}–{s.work_end})
+                  </option>
+                ))}
+                <option value="">ล้าง (กลับไปใช้กะของสาขา)</option>
+              </select>
+            </div>
+            <button type="submit" className="btn-primary" disabled={employees.length === 0}>
+              บันทึกกะประจำ
+            </button>
+          </div>
+        </form>
+      </details>
+      )}
+
       {/* ---------- แก้ทีละช่อง ---------- */}
       {canEdit && editing && (
         <form action={saveCellForm} className="card space-y-3 border-brand-500 ring-2 ring-brand-100">
@@ -468,6 +531,8 @@ export default async function RosterPage({
                       const isEditing = editing?.employee.id === e.id && editing.date === d;
                       let label = "";
                       let cls = "text-slate-300";
+                      // ไม่มีตารางเวรรายวัน แต่คนนี้มีกะประจำ (ตั้งครั้งเดียวใช้ทุกเดือน) → ใช้กะประจำแสดง
+                      const usingDefault = !a && !!e.default_schedule_id;
                       if (a?.is_day_off) {
                         label = "OFF";
                         cls = "bg-slate-200 text-slate-700";
@@ -477,6 +542,10 @@ export default async function RosterPage({
                         cls = colorOf.get(a.schedule_id) ?? "bg-slate-100 text-slate-700";
                       } else if (a?.site_id) {
                         cls = "bg-violet-100 text-violet-800";
+                      } else if (usingDefault) {
+                        const s = scheduleById.get(e.default_schedule_id!);
+                        label = shortName(s?.name ?? e.default_schedule_name ?? "?");
+                        cls = `${colorOf.get(e.default_schedule_id!) ?? "bg-slate-100 text-slate-700"} opacity-60 ring-1 ring-inset ring-slate-300`;
                       }
                       if (a?.site_id && !a.is_day_off) label = `📍${label}`;
                       // ใบลาที่อนุมัติแล้ว (จากโปรแกรม HR) แสดงทับกะที่จัดไว้ — ไม่ได้ลบกะเดิม
@@ -490,6 +559,7 @@ export default async function RosterPage({
                         a?.site_name ? `ประจำที่ ${a.site_name}` : "",
                         a?.note ?? "",
                         leave ? `ใบลาอนุมัติแล้ว: ${leave.typeName}${scheduledLabel ? ` (เดิมจัดกะ ${scheduledLabel})` : ""}` : "",
+                        usingDefault ? "กะประจำของคนนี้ (ตั้งไว้ใช้ทุกเดือน) — ยังไม่ได้จัดตารางเวรเฉพาะวันนี้" : "",
                       ]
                         .filter(Boolean)
                         .join(" · ");
@@ -525,6 +595,9 @@ export default async function RosterPage({
             </span>
             <span className="badge bg-violet-100 text-violet-800">📍 = ไปประจำนอกสถานที่ (GPS ตรวจที่นั่น)</span>
             <span className="badge bg-slate-50 text-slate-500">– = ใช้กะสาขา</span>
+            <span className="badge bg-slate-100 text-slate-600 opacity-60 ring-1 ring-inset ring-slate-300">
+              (จาง) = กะประจำของคนนี้ ยังไม่ได้จัดตารางเวรเฉพาะวันนั้น
+            </span>
           </div>
         )}
       </section>

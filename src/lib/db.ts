@@ -28,7 +28,7 @@ import type {
 } from "./types";
 
 const EMPLOYEE_COLUMNS =
-  "id, emp_code, full_name, nickname, phone, email, role, is_active, hire_date, branch_id, department_id, position_id, payroll_code";
+  "id, emp_code, full_name, nickname, phone, email, role, is_active, hire_date, branch_id, department_id, position_id, payroll_code, default_schedule_id";
 
 const DEFAULT_ORG: OrgSettings = {
   company_id: null,
@@ -221,9 +221,10 @@ export async function getResolvedDay(
   employeeId?: string | null,
   workDate?: string | null,
 ): Promise<{ settings: WorkSettings; isDayOff: boolean; assignment: ShiftAssignment | null }> {
-  const [branch, assignment] = await Promise.all([
+  const [branch, assignment, employee] = await Promise.all([
     getBranchById(branchId ?? null),
     employeeId && workDate ? getAssignment(employeeId, workDate) : Promise.resolve(null),
+    employeeId ? getEmployeeById(employeeId) : Promise.resolve(null),
   ]);
   const companyId = branch?.company_id ?? null;
 
@@ -235,8 +236,10 @@ export async function getResolvedDay(
   ]);
 
   const byId = new Map(schedules.map((s) => [s.id, s]));
+  // ลำดับ: ตารางเวรรายวัน > กะประจำของคนนี้ (ตั้งครั้งเดียวใช้ทุกเดือน) > กะของสาขา > กะเริ่มต้นบริษัท
   const schedule =
     (assignment?.schedule_id ? byId.get(assignment.schedule_id) : undefined) ??
+    (employee?.default_schedule_id ? byId.get(employee.default_schedule_id) : undefined) ??
     (branch?.schedule_id ? byId.get(branch.schedule_id) : undefined) ??
     pickDefaultSchedule(schedules, org, companyId);
 
@@ -261,8 +264,10 @@ export async function resolveWorkDateForPunch(
   const yesterday = addDays(today, -1);
 
   const assignment = await getAssignment(employeeId, yesterday);
-  if (!assignment || assignment.is_day_off || !assignment.schedule_id) return today;
+  if (assignment?.is_day_off) return today;
 
+  // ใช้ getResolvedDay เพื่อให้กะประจำ (default_schedule_id) และกะของสาขามีผลด้วย
+  // ไม่ใช่แค่ตารางเวรรายวัน — คนกะดึกที่ไม่มีตารางเวรรายวันก็ต้องตรวจกะข้ามเที่ยงคืนได้
   const { settings } = await getResolvedDay(branchId, employeeId, yesterday);
   if (!settings.crosses_midnight) return today;
 
@@ -310,12 +315,13 @@ export async function getSettingsResolver(
   /** ชื่อสถานที่นอกสาขาที่ไปประจำวันนั้น (null = สาขาตัวเอง) */
   siteNameOf: (employeeId: string, workDate: string) => string | null;
 }> {
-  const [orgList, schedules, branchList, assignments, sites] = await Promise.all([
+  const [orgList, schedules, branchList, assignments, sites, employees] = await Promise.all([
     listOrgSettings(),
     listSchedules(),
     listBranches(false, companyId),
     range ? listAssignments({ from: range.from, to: range.to }) : Promise.resolve([]),
     range ? listSites() : Promise.resolve([]),
+    listEmployees({ companyId: companyId ?? undefined }),
   ]);
 
   const orgByCompany = new Map(orgList.map((o) => [o.company_id ?? "", o]));
@@ -324,6 +330,7 @@ export async function getSettingsResolver(
   const siteById = new Map(sites.map((s) => [s.id, s]));
   // preload ตารางเวรทั้งช่วงครั้งเดียว รายงานรายเดือนจะได้ไม่ยิงฐานข้อมูลทีละวัน
   const assignmentByKey = new Map(assignments.map((a) => [`${a.employee_id}|${a.work_date}`, a]));
+  const defaultScheduleByEmployee = new Map(employees.map((e) => [e.id, e.default_schedule_id]));
 
   const orgFor = (cid: string | null) =>
     orgByCompany.get(cid ?? "") ?? orgByCompany.get("") ?? { ...DEFAULT_ORG, company_id: cid };
@@ -337,8 +344,11 @@ export async function getSettingsResolver(
       const org = orgFor(cid);
       const assignment =
         employeeId && workDate ? assignmentByKey.get(`${employeeId}|${workDate}`) : undefined;
+      const employeeDefaultId = employeeId ? defaultScheduleByEmployee.get(employeeId) : undefined;
+      // ลำดับ: ตารางเวรรายวัน > กะประจำของคนนี้ (ตั้งครั้งเดียวใช้ทุกเดือน) > กะของสาขา > กะเริ่มต้นบริษัท
       const schedule =
         (assignment?.schedule_id ? scheduleById.get(assignment.schedule_id) : undefined) ??
+        (employeeDefaultId ? scheduleById.get(employeeDefaultId) : undefined) ??
         (branch?.schedule_id ? scheduleById.get(branch.schedule_id) : undefined) ??
         pickDefaultSchedule(schedules, org, cid);
       const site = assignment?.site_id ? (siteById.get(assignment.site_id) ?? null) : null;
@@ -524,20 +534,25 @@ export async function listEmployees(
   const { data, error } = await query;
   if (error) throw new Error(`อ่านรายชื่อพนักงานไม่สำเร็จ: ${error.message}`);
 
-  const [branches, departments, positions] = await Promise.all([
+  const [branches, departments, positions, schedules] = await Promise.all([
     listBranches(),
     listDepartments(),
     listPositions(),
+    listSchedules(),
   ]);
   const branchName = new Map(branches.map((b) => [b.id, b.name]));
   const deptName = new Map(departments.map((d) => [d.id, d.name]));
   const posName = new Map(positions.map((p) => [p.id, p.name]));
+  const scheduleName = new Map(schedules.map((s) => [s.id, s.name]));
 
   return (data ?? []).map((e) => ({
     ...(e as Employee),
     branch_name: e.branch_id ? (branchName.get(e.branch_id) ?? null) : null,
     department_name: e.department_id ? (deptName.get(e.department_id) ?? null) : null,
     position_name: e.position_id ? (posName.get(e.position_id) ?? null) : null,
+    default_schedule_name: e.default_schedule_id
+      ? (scheduleName.get(e.default_schedule_id) ?? null)
+      : null,
   }));
 }
 
@@ -549,6 +564,24 @@ export async function getEmployeeById(id: string): Promise<Employee | null> {
     .maybeSingle();
   if (error) throw new Error(`อ่านข้อมูลพนักงานไม่สำเร็จ: ${error.message}`);
   return (data as Employee) ?? null;
+}
+
+/**
+ * ตั้งกะประจำให้หลายคนพร้อมกัน — ตั้งครั้งเดียวใช้ได้ทุกเดือน ไม่ต้องจัดตารางเวรซ้ำ
+ * (คนที่ทำงานกะเวลาเดิมตลอด เช่น แม่บ้าน, ครัว, สต็อก, บัญชี, คาเฟ่)
+ * scheduleId = null คือล้างกะประจำ กลับไปใช้กะของสาขาแทน
+ */
+export async function setEmployeesDefaultSchedule(
+  employeeIds: string[],
+  scheduleId: string | null,
+): Promise<number> {
+  if (employeeIds.length === 0) return 0;
+  const { error } = await getSupabase()
+    .from("employees")
+    .update({ default_schedule_id: scheduleId, updated_at: new Date().toISOString() })
+    .in("id", employeeIds);
+  if (error) throw new Error(`ตั้งกะประจำไม่สำเร็จ: ${error.message}`);
+  return employeeIds.length;
 }
 
 /** ลบพนักงาน พร้อมลบรูปการลงเวลาทั้งหมดของคนนั้นออกจาก storage ด้วย */

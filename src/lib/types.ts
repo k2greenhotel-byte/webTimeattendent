@@ -92,10 +92,13 @@ export type Employee = {
   position_id: string | null;
   /** รหัสพนักงานจากระบบเงินเดือน (payroll) — คนละชุดกับ emp_code ของระบบลงเวลา */
   payroll_code: string | null;
+  /** กะประจำของคนนี้ — ใช้ทุกวันที่ไม่มีตารางเวรรายวันกำหนดไว้เฉพาะ (null = ใช้กะของสาขา) */
+  default_schedule_id: string | null;
   /** ชื่อที่ resolve มาจากตารางอ้างอิง (ไม่ได้เก็บซ้ำในฐานข้อมูล) */
   branch_name?: string | null;
   department_name?: string | null;
   position_name?: string | null;
+  default_schedule_name?: string | null;
   failed_attempts?: number;
   locked_until?: string | null;
 };

@@ -7,6 +7,7 @@ import {
   copyAssignments,
   deleteAssignments,
   logAudit,
+  setEmployeesDefaultSchedule,
   upsertAssignments,
   type AssignmentInput,
 } from "@/lib/db";
@@ -109,6 +110,41 @@ export async function assignShiftsForm(form: FormData): Promise<void> {
     shift === "clear"
       ? `ล้างตารางเวร ${count} ช่องแล้ว`
       : `จัดเวรให้ ${employeeIds.length} คน รวม ${count} ช่องเรียบร้อยแล้ว`,
+  );
+}
+
+/**
+ * ตั้งกะประจำให้หลายคนพร้อมกัน — ใช้กับตำแหน่งที่ทำงานกะเวลาเดิมตลอด ไม่มีการหมุนเวียนกะ
+ * ตั้งครั้งเดียวมีผลทุกวันทุกเดือนโดยอัตโนมัติ (ไม่ต้องจัดตารางเวรซ้ำ) จนกว่าจะมาแก้ใหม่
+ * ตารางเวรรายวันที่จัดไว้เฉพาะ (จัดเวรเป็นชุด/แก้ทีละช่อง) ยังคงมีผลเหนือกว่าเสมอ
+ */
+export async function setDefaultScheduleForm(form: FormData): Promise<void> {
+  const access = await requireMenuAccess("ATT_ROSTER", "write");
+  const actorId = access.user?.id ?? null;
+
+  const employeeIds = ids(form, "employee_ids");
+  const scheduleId = str(form, "default_schedule_id") || null;
+
+  if (employeeIds.length === 0) back(form, "กรุณาเลือกพนักงานอย่างน้อย 1 คน", true);
+
+  try {
+    await setEmployeesDefaultSchedule(employeeIds, scheduleId);
+    await logAudit({
+      actor_id: actorId,
+      action: "set_default_schedule",
+      target_table: "employees",
+      after: { employees: employeeIds.length, default_schedule_id: scheduleId },
+    });
+  } catch (err) {
+    back(form, err instanceof Error ? err.message : "ตั้งกะประจำไม่สำเร็จ", true);
+  }
+
+  revalidatePath("/admin/roster");
+  back(
+    form,
+    scheduleId
+      ? `ตั้งกะประจำให้ ${employeeIds.length} คนเรียบร้อยแล้ว — มีผลทุกวันทุกเดือนจนกว่าจะเปลี่ยน`
+      : `ล้างกะประจำของ ${employeeIds.length} คนแล้ว (กลับไปใช้กะของสาขา)`,
   );
 }
 
