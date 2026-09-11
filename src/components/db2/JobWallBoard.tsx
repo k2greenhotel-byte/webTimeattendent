@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { OPEN_BUCKET, OPEN_BUCKET_ORDER, SW_STATUS_LABEL, type Db2OpenBucket } from "@/lib/db2-jobs";
+import { OPEN_BUCKET, OPEN_BUCKET_ORDER, OPEN_STATUS, SW_STATUS_LABEL, type Db2OpenBucket } from "@/lib/db2-jobs";
 
 /**
  * จอ War Room งานซ่อม — เปิดค้างบนจอมอนิเตอร์/ทีวี พื้นมืด ตัวเลขใหญ่ รีเฟรชเองทุก 60 วินาที
@@ -194,6 +194,7 @@ export default function JobWallBoard() {
 
   const pctChange = (cur: number, base: number) => (base > 0 ? ((cur - base) / base) * 100 : null);
   const age = data?.open.totals.age;
+  const waitingTotal = data ? data.open.byBranch.reduce((s, b) => s + (b.waiting ?? 0), 0) : 0;
 
   return (
     <div className="min-h-screen bg-slate-950 p-4 text-slate-100 lg:p-6">
@@ -329,15 +330,16 @@ export default function JobWallBoard() {
                 <div className="flex items-baseline gap-3">
                   <span className="text-5xl font-bold tabular-nums text-amber-400">{int(data.open.totals.jobs)}</span>
                   <span className="text-sm text-slate-400">
-                    ค้างซ่อม (W){" "}
-                    <span className="text-lg font-semibold text-rose-400">
-                      {int(data.open.byBranch.reduce((s, b) => s + (b.waiting ?? 0), 0))}
+                    {/* ทุกใบที่ยังไม่ปิดเป็น W หรือ R อย่างใดอย่างหนึ่ง → R = ยอดรวม − W */}
+                    <span style={{ color: OPEN_STATUS.W.color }}>
+                      ค้างซ่อม (W){" "}
+                      <span className="text-lg font-semibold">{int(waitingTotal)}</span> ใบ
                     </span>{" "}
-                    ใบ · ไม่ใช่เคลม{" "}
-                    <span className="text-lg font-semibold text-orange-300">
-                      {int(data.open.byBranch.reduce((s, b) => s + (b.nonClaim ?? 0), 0))}
-                    </span>{" "}
-                    ใบ
+                    ·{" "}
+                    <span style={{ color: OPEN_STATUS.R.color }}>
+                      เปิดงานค้าง (R){" "}
+                      <span className="text-lg font-semibold">{int(data.open.totals.jobs - waitingTotal)}</span> ใบ
+                    </span>
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-400">
@@ -384,9 +386,13 @@ export default function JobWallBoard() {
                       <span className="shrink-0 tabular-nums">
                         <span className="text-lg font-semibold text-amber-400">{int(b.jobs)}</span>
                         {(b.waiting ?? 0) > 0 && (
-                          <span className="ml-2 text-xs font-semibold text-rose-400">ค้างซ่อม {int(b.waiting)}</span>
+                          <span className="ml-2 text-xs font-semibold" style={{ color: OPEN_STATUS.W.color }}>
+                            W {int(b.waiting)}
+                          </span>
                         )}
-                        <span className="ml-2 text-xs text-orange-300">ไม่ใช่เคลม {int(b.nonClaim ?? 0)}</span>
+                        <span className="ml-2 text-xs" style={{ color: OPEN_STATUS.R.color }}>
+                          R {int(b.jobs - (b.waiting ?? 0))}
+                        </span>
                         <span className="ml-2 text-xs text-rose-400">เกิน 1 ปี {int(b.overYear)}</span>
                         <span className="ml-2 text-xs text-slate-500">เก่าสุด {thDate(b.oldest)}</span>
                       </span>

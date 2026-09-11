@@ -59,9 +59,36 @@ export const OPEN_BUCKET_ORDER: Db2OpenBucket[] = ["waiting", "money", "unfinish
 /**
  * ป้ายสถานะงานซ่อมในโปรแกรมเดิม (คอลัมน์ SWSTATUS) — ผู้ใช้ยืนยัน 2026-09-11 ว่า **W = ค้างซ่อม**
  * ใบเก่าก่อนปี 2561 ยังไม่มีฟิลด์นี้ (ว่าง) จึงไม่เดาความหมายให้
+ *
+ * R เลี่ยงคำว่า "กำลังซ่อม" เพราะข้อมูลจริงไม่ตรง — ใบสถานะ R ส่วนใหญ่ลงวันซ่อมเสร็จและ
+ * ออกใบกำกับไปแล้ว แต่ไม่มีใครกดปิด job สถานะจึงค้างอยู่ที่ R ตลอด (ส่วนใหญ่เป็นงานเคลม)
  */
 export const SW_STATUS_LABEL: Record<string, string> = {
   W: "ค้างซ่อม",
-  R: "กำลังซ่อม",
+  R: "เปิดงานค้าง",
   F: "ปิดงานแล้ว",
 };
+
+/** สองสถานะที่ทำให้ใบงานถูกนับว่า "ยังไม่ปิด job" — ทุกใบในชุดนี้เป็นอย่างใดอย่างหนึ่งเสมอ */
+export type Db2OpenStatus = "W" | "R";
+
+export const OPEN_STATUS: Record<Db2OpenStatus, { label: string; hint: string; color: string }> = {
+  W: {
+    label: "ค้างซ่อม (W)",
+    hint: "รถยังค้างซ่อมอยู่ตามสถานะในโปรแกรมเดิม",
+    color: "#e11d48",
+  },
+  R: {
+    label: "เปิดงานค้าง (R)",
+    hint: "โปรแกรมตั้งสถานะนี้ตอนเปิดใบงาน แล้วไม่เคยถูกเปลี่ยนเป็นปิดงาน",
+    color: "#38bdf8",
+  },
+};
+
+/**
+ * สถานะที่ใช้จัดกลุ่ม — ใบที่ SWSTATUS ว่างแต่ STATUS เป็น W ก็ถือเป็นค้างซ่อม
+ * (มีจริง 31 ใบ เป็นใบเก่าก่อนที่โปรแกรมจะมีฟิลด์ SWSTATUS)
+ */
+export function openStatusOf(j: { swstatus: string; status: string }): Db2OpenStatus {
+  return j.swstatus === "W" || j.status === "W" ? "W" : "R";
+}

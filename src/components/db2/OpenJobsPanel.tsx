@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from "react";
 import type { Db2Jobs, Db2OpenJob } from "@/lib/db2-api";
-import { OPEN_BUCKET, OPEN_BUCKET_ORDER, SW_STATUS_LABEL, type Db2OpenBucket } from "@/lib/db2-jobs";
+import {
+  OPEN_BUCKET,
+  OPEN_BUCKET_ORDER,
+  OPEN_STATUS,
+  SW_STATUS_LABEL,
+  openStatusOf,
+  type Db2OpenBucket,
+  type Db2OpenStatus,
+} from "@/lib/db2-jobs";
 
 /**
  * กล่อง "งานซ่อมที่ค้างปิด job" — ให้หัวหน้าสาขาไล่เคลียร์ได้จริง
@@ -43,6 +51,7 @@ export default function OpenJobsPanel({
   branchLabel?: string | null;
 }) {
   const [bucket, setBucket] = useState<Db2OpenBucket | "">("");
+  const [status, setStatus] = useState<Db2OpenStatus | "">("");
   const [q, setQ] = useState("");
   const [olderThan, setOlderThan] = useState(0);
 
@@ -52,10 +61,26 @@ export default function OpenJobsPanel({
   const legacy = !open.byBucket;
   const bucketOf = useMemo(() => new Map(byBucket.map((b) => [b.key, b])), [byBucket]);
 
+  /**
+   * แยกตามสถานะในโปรแกรมเดิม — ทุกใบที่ยังไม่ปิดเป็น W หรือ R อย่างใดอย่างหนึ่งเสมอ
+   * นับจากรายการที่ส่งมา ถ้ารายการถูกตัด (แอปเวอร์ชันเก่า) ให้ถอยไปใช้ยอดรวมลบจำนวน W รายสาขา
+   */
+  const byStatus = useMemo(() => {
+    const full = open.list.length >= open.totals.jobs;
+    if (full) {
+      let w = 0;
+      for (const j of open.list) if (openStatusOf(j) === "W") w += 1;
+      return { W: w, R: open.list.length - w, exact: true };
+    }
+    const w = open.byBranch.reduce((s, b) => s + (b.waiting ?? 0), 0);
+    return { W: w, R: open.totals.jobs - w, exact: true };
+  }, [open.list, open.byBranch, open.totals.jobs]);
+
   const allRows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return open.list.filter((j) => {
       if (bucket && (j.bucket ?? "idle") !== bucket) return false;
+      if (status && openStatusOf(j) !== status) return false;
       if (olderThan && j.ageDays <= olderThan) return false;
       if (!needle) return true;
       return [j.jobno, j.branch ?? j.locat, j.customer, j.regno, j.repName ?? j.repcod, j.modelName ?? j.model]
@@ -99,7 +124,10 @@ export default function OpenJobsPanel({
     const csv = "﻿" + lines.map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\r\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    a.download = `งานค้างปิดjob-${branchFilter || "ทุกสาขา"}${bucket ? `-${OPEN_BUCKET[bucket].label}` : ""}.csv`;
+    const suffix = [bucket ? OPEN_BUCKET[bucket].label : "", status ? OPEN_STATUS[status].label : ""]
+      .filter(Boolean)
+      .join("-");
+    a.download = `งานค้างปิดjob-${branchFilter || "ทุกสาขา"}${suffix ? `-${suffix}` : ""}.csv`;
     a.click();
   }
 
@@ -123,6 +151,31 @@ export default function OpenJobsPanel({
           ยอดรวมและรายการด้านล่างยังถูกต้อง
         </p>
       )}
+
+      {/* แยกตามสถานะในโปรแกรมเดิม — คำถามแรกคือ "รถยังค้างซ่อมอยู่กี่ใบ" */}
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {(["W", "R"] as Db2OpenStatus[]).map((k) => {
+          const meta = OPEN_STATUS[k];
+          const active = status === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setStatus(active ? "" : k)}
+              className={`rounded-xl border bg-white p-3 text-left transition ${active ? "ring-2 ring-brand-500" : "hover:bg-slate-50"}`}
+              style={{ borderColor: meta.color }}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-semibold text-slate-700">{meta.label}</span>
+                <span className="text-3xl font-bold tabular-nums" style={{ color: meta.color }}>
+                  {int(byStatus[k])}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-snug text-slate-500">{meta.hint}</p>
+            </button>
+          );
+        })}
+      </div>
 
       {/* แยกตามสิ่งที่ต้องลงมือทำ — กดเพื่อกรอง */}
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -172,6 +225,7 @@ export default function OpenJobsPanel({
               <th className="py-1">สาขา</th>
               <th className="py-1 text-right">ใบค้างทั้งหมด</th>
               <th className="py-1 text-right">ค้างซ่อม (W)</th>
+              <th className="py-1 text-right">เปิดงานค้าง (R)</th>
               <th className="py-1 text-right">ไม่ใช่งานเคลม</th>
               <th className="py-1 text-right">มีเงินค้างเก็บ</th>
               <th className="py-1 text-right">ยอดต้องเก็บ</th>
@@ -189,6 +243,7 @@ export default function OpenJobsPanel({
                 <td className={`py-1 text-right font-bold tabular-nums ${(b.waiting ?? 0) > 0 ? "text-rose-700" : "text-slate-400"}`}>
                   {int(b.waiting ?? 0)}
                 </td>
+                <td className="py-1 text-right tabular-nums text-sky-700">{int(b.jobs - (b.waiting ?? 0))}</td>
                 <td className="py-1 text-right font-semibold tabular-nums">{int(b.nonClaim ?? 0)}</td>
                 <td className={`py-1 text-right tabular-nums ${(b.withMoney ?? 0) > 0 ? "text-rose-700" : "text-slate-400"}`}>
                   {int(b.withMoney ?? 0)}
@@ -200,7 +255,7 @@ export default function OpenJobsPanel({
             ))}
             {open.byBranch.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-3 text-center text-slate-500">
+                <td colSpan={9} className="py-3 text-center text-slate-500">
                   ไม่มีงานค้างปิด
                 </td>
               </tr>
@@ -213,7 +268,12 @@ export default function OpenJobsPanel({
       <div className="mt-4 mb-2 flex flex-wrap items-end gap-2">
         <h3 className="mr-auto text-sm font-semibold text-slate-700">
           รายการงานค้าง {int(allRows.length)} ใบ
-          {bucket && <span className="font-normal text-slate-500"> (กรอง: {OPEN_BUCKET[bucket].label})</span>}
+          {(bucket || status) && (
+            <span className="font-normal text-slate-500">
+              {" "}
+              (กรอง: {[bucket && OPEN_BUCKET[bucket].label, status && OPEN_STATUS[status].label].filter(Boolean).join(" + ")})
+            </span>
+          )}
           {!bucket && truncated && (
             <span className="font-normal text-slate-500"> จากทั้งหมด {int(open.totals.jobs)} ใบ</span>
           )}
@@ -230,6 +290,18 @@ export default function OpenJobsPanel({
           <option value={90}>ค้างเกิน 90 วัน</option>
           <option value={365}>ค้างเกิน 1 ปี</option>
         </select>
+        {(bucket || status) && (
+          <button
+            type="button"
+            onClick={() => {
+              setBucket("");
+              setStatus("");
+            }}
+            className="btn-secondary text-sm"
+          >
+            ล้างตัวกรอง
+          </button>
+        )}
         <button type="button" onClick={downloadCsv} className="btn-secondary text-sm" disabled={rows.length === 0}>
           โหลดเป็นไฟล์ Excel (CSV)
         </button>
