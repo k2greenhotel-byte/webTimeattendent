@@ -22,6 +22,8 @@ import type {
   Position,
   PunchType,
   ShiftAssignment,
+  ShiftSwapRequest,
+  ShiftSwapStatus,
   WorkSchedule,
   WorkSettings,
   WorkSite,
@@ -220,7 +222,13 @@ export async function getResolvedDay(
   branchId?: string | null,
   employeeId?: string | null,
   workDate?: string | null,
-): Promise<{ settings: WorkSettings; isDayOff: boolean; assignment: ShiftAssignment | null }> {
+): Promise<{
+  settings: WorkSettings;
+  isDayOff: boolean;
+  assignment: ShiftAssignment | null;
+  /** กะที่ถูกเลือกจริง (หลังไล่ ตารางเวร > กะประจำ > กะสาขา > กะเริ่มต้น) — ใช้ตอนต้องบันทึกกะนี้ซ้ำ เช่น สลับกะ */
+  scheduleId: string | null;
+}> {
   const [branch, assignment, employee] = await Promise.all([
     getBranchById(branchId ?? null),
     employeeId && workDate ? getAssignment(employeeId, workDate) : Promise.resolve(null),
@@ -247,6 +255,7 @@ export async function getResolvedDay(
     settings: resolveSettings(org, schedule, branch, site),
     isDayOff: assignment?.is_day_off ?? false,
     assignment,
+    scheduleId: assignment?.is_day_off ? null : (schedule?.id ?? null),
   };
 }
 
@@ -509,6 +518,174 @@ export async function copyAssignments(params: {
     };
   });
   return upsertAssignments(rows);
+}
+
+// ---------- ขอสลับกะ/สลับวันหยุด (พนักงานยืนยันกันเอง 2 คน) ----------
+
+const SWAP_COLUMNS =
+  "id, requester_id, requester_date, partner_id, partner_date, status, note, decided_at, created_at";
+
+function toSwapRequest(row: Record<string, unknown>): ShiftSwapRequest {
+  return {
+    id: String(row.id),
+    requester_id: String(row.requester_id),
+    requester_date: String(row.requester_date),
+    partner_id: String(row.partner_id),
+    partner_date: String(row.partner_date),
+    status: row.status as ShiftSwapStatus,
+    note: (row.note as string | null) ?? null,
+    decided_at: (row.decided_at as string | null) ?? null,
+    created_at: String(row.created_at),
+  };
+}
+
+/** เติมชื่อ/รหัสพนักงานทั้งสองฝั่งให้แสดงผลได้ (ไม่ได้เก็บซ้ำในตาราง) */
+async function withSwapNames(rows: ShiftSwapRequest[]): Promise<ShiftSwapRequest[]> {
+  const ids = [...new Set(rows.flatMap((r) => [r.requester_id, r.partner_id]))];
+  if (ids.length === 0) return rows;
+  const { data, error } = await getSupabase().from("employees").select("id, emp_code, full_name").in("id", ids);
+  if (error) throw new Error(`อ่านชื่อพนักงานไม่สำเร็จ: ${error.message}`);
+  const byId = new Map((data ?? []).map((e) => [e.id as string, e as { emp_code: string; full_name: string }]));
+  return rows.map((r) => ({
+    ...r,
+    requester_name: byId.get(r.requester_id)?.full_name ?? null,
+    requester_emp_code: byId.get(r.requester_id)?.emp_code ?? null,
+    partner_name: byId.get(r.partner_id)?.full_name ?? null,
+    partner_emp_code: byId.get(r.partner_id)?.emp_code ?? null,
+  }));
+}
+
+/** คำขอสลับกะที่เกี่ยวกับคนนี้ทั้งหมด (ที่ตัวเองขอ + ที่รอตัวเองยืนยัน) เรียงใหม่สุดก่อน */
+export async function listMySwapRequests(employeeId: string): Promise<ShiftSwapRequest[]> {
+  const { data, error } = await getSupabase()
+    .from("shift_swap_requests")
+    .select(SWAP_COLUMNS)
+    .or(`requester_id.eq.${employeeId},partner_id.eq.${employeeId}`)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`อ่านคำขอสลับกะไม่สำเร็จ: ${error.message}`);
+  return withSwapNames((data ?? []).map((r) => toSwapRequest(r as Record<string, unknown>)));
+}
+
+export async function getSwapRequestById(id: string): Promise<ShiftSwapRequest | null> {
+  const { data, error } = await getSupabase()
+    .from("shift_swap_requests")
+    .select(SWAP_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`อ่านคำขอสลับกะไม่สำเร็จ: ${error.message}`);
+  return data ? toSwapRequest(data as Record<string, unknown>) : null;
+}
+
+/**
+ * มีคำขอสลับกะที่ค้างอยู่ (pending) ทับวันเดียวกันของคนใดคนหนึ่งอยู่แล้วหรือไม่
+ * กันไม่ให้ตั้งคำขอซ้อนกันจนสับสนว่าสุดท้ายวันนั้นจะเป็นกะอะไร
+ */
+export async function hasPendingSwapOnDate(employeeId: string, workDate: string): Promise<boolean> {
+  const { count, error } = await getSupabase()
+    .from("shift_swap_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending")
+    .or(
+      `and(requester_id.eq.${employeeId},requester_date.eq.${workDate}),and(partner_id.eq.${employeeId},partner_date.eq.${workDate})`,
+    );
+  if (error) throw new Error(`ตรวจคำขอสลับกะไม่สำเร็จ: ${error.message}`);
+  return (count ?? 0) > 0;
+}
+
+/** สร้างคำขอสลับกะ — ฝั่งผู้ขอถือว่ายืนยันไปในตัว ยังไม่มีผลกับตารางเวรจนกว่าอีกฝ่ายจะยืนยัน */
+export async function createSwapRequest(input: {
+  requesterId: string;
+  requesterDate: string;
+  partnerId: string;
+  partnerDate: string;
+  note: string | null;
+}): Promise<ShiftSwapRequest> {
+  const { data, error } = await getSupabase()
+    .from("shift_swap_requests")
+    .insert({
+      requester_id: input.requesterId,
+      requester_date: input.requesterDate,
+      partner_id: input.partnerId,
+      partner_date: input.partnerDate,
+      note: input.note,
+    })
+    .select(SWAP_COLUMNS)
+    .single();
+  if (error) throw new Error(`สร้างคำขอสลับกะไม่สำเร็จ: ${error.message}`);
+  return toSwapRequest(data as Record<string, unknown>);
+}
+
+/**
+ * อีกฝ่ายกดยืนยัน → สลับเนื้อหาตารางเวรจริงของทั้งสองคนทันที (คำนวณจากค่าปัจจุบัน ณ ตอนยืนยัน
+ * ไม่ใช่ค่าตอนสร้างคำขอ กันกรณีแอดมินแก้ตารางเวรระหว่างที่คำขอค้างอยู่)
+ */
+export async function confirmSwapRequest(id: string, actorId: string): Promise<ShiftSwapRequest> {
+  const req = await getSwapRequestById(id);
+  if (!req) throw new Error("ไม่พบคำขอสลับกะนี้");
+  if (req.status !== "pending") throw new Error("คำขอนี้ถูกจัดการไปแล้ว");
+  if (req.partner_id !== actorId) throw new Error("คำขอนี้ไม่ได้รอการยืนยันจากคุณ");
+
+  const [reqEmp, partnerEmp] = await Promise.all([
+    getEmployeeById(req.requester_id),
+    getEmployeeById(req.partner_id),
+  ]);
+  const [reqDay, partnerDay] = await Promise.all([
+    getResolvedDay(reqEmp?.branch_id ?? null, req.requester_id, req.requester_date),
+    getResolvedDay(partnerEmp?.branch_id ?? null, req.partner_id, req.partner_date),
+  ]);
+
+  const rows: AssignmentInput[] = [
+    {
+      employee_id: req.requester_id,
+      work_date: req.requester_date,
+      schedule_id: partnerDay.scheduleId,
+      is_day_off: partnerDay.isDayOff,
+      site_id: partnerDay.assignment?.site_id ?? null,
+      note: `สลับกะกับ ${partnerEmp?.emp_code ?? "-"} ${partnerEmp?.full_name ?? ""}`.trim(),
+    },
+    {
+      employee_id: req.partner_id,
+      work_date: req.partner_date,
+      schedule_id: reqDay.scheduleId,
+      is_day_off: reqDay.isDayOff,
+      site_id: reqDay.assignment?.site_id ?? null,
+      note: `สลับกะกับ ${reqEmp?.emp_code ?? "-"} ${reqEmp?.full_name ?? ""}`.trim(),
+    },
+  ];
+  await upsertAssignments(rows);
+
+  const { data, error } = await getSupabase()
+    .from("shift_swap_requests")
+    .update({ status: "confirmed", decided_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "pending") // กันกดยืนยันซ้ำพร้อมกันสองครั้ง
+    .select(SWAP_COLUMNS)
+    .single();
+  if (error || !data) throw new Error("บันทึกการยืนยันไม่สำเร็จ (อาจถูกจัดการไปแล้วพอดี)");
+  return toSwapRequest(data as Record<string, unknown>);
+}
+
+/** ปฏิเสธคำขอ (อีกฝ่ายเท่านั้น) หรือยกเลิกคำขอของตัวเอง (ผู้ขอเท่านั้น) — ทำได้เฉพาะตอนยังค้างอยู่ */
+export async function decideSwapRequest(
+  id: string,
+  actorId: string,
+  decision: "rejected" | "cancelled",
+): Promise<ShiftSwapRequest> {
+  const req = await getSwapRequestById(id);
+  if (!req) throw new Error("ไม่พบคำขอสลับกะนี้");
+  if (req.status !== "pending") throw new Error("คำขอนี้ถูกจัดการไปแล้ว");
+  if (decision === "rejected" && req.partner_id !== actorId) throw new Error("ปฏิเสธได้เฉพาะฝ่ายที่ถูกขอ");
+  if (decision === "cancelled" && req.requester_id !== actorId) throw new Error("ยกเลิกได้เฉพาะผู้ที่ขอเอง");
+
+  const { data, error } = await getSupabase()
+    .from("shift_swap_requests")
+    .update({ status: decision, decided_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "pending")
+    .select(SWAP_COLUMNS)
+    .single();
+  if (error || !data) throw new Error("บันทึกไม่สำเร็จ (อาจถูกจัดการไปแล้วพอดี)");
+  return toSwapRequest(data as Record<string, unknown>);
 }
 
 // ---------- พนักงาน ----------

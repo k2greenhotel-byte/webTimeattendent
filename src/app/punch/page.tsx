@@ -3,6 +3,7 @@ import AppHeader from "@/components/AppHeader";
 import Clock from "@/components/Clock";
 import ErrandCard from "@/components/ErrandCard";
 import FieldTaskCard from "@/components/FieldTaskCard";
+import ShiftSwapCard from "@/components/ShiftSwapCard";
 import { canErrand, computeDaySummary, nextPunchType, sumErrandMinutes } from "@/lib/attendance";
 import { formatDuration, formatThaiDate, formatTime, workDateOf } from "@/lib/datetime";
 import {
@@ -12,6 +13,7 @@ import {
   getResolvedDay,
   listErrandRounds,
   listMyFieldTasks,
+  listMySwapRequests,
   resolveWorkDateForPunch,
 } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -34,13 +36,19 @@ export default async function PunchPage({
   const workDate = await resolveWorkDateForPunch(user.id, branch?.id ?? null);
   const isYesterdayShift = workDate !== calendarDate;
 
-  const [punches, { settings, isDayOff, assignment }, fieldTasks, errandRounds] = await Promise.all([
-    getPunchesOfDay(user.id, workDate),
-    getResolvedDay(branch?.id ?? null, user.id, workDate),
-    listMyFieldTasks(user.id, calendarDate),
-    listErrandRounds(user.id, workDate),
-  ]);
+  const [punches, { settings, isDayOff, assignment }, fieldTasks, errandRounds, swapRequests] =
+    await Promise.all([
+      getPunchesOfDay(user.id, workDate),
+      getResolvedDay(branch?.id ?? null, user.id, workDate),
+      listMyFieldTasks(user.id, calendarDate),
+      listErrandRounds(user.id, workDate),
+      listMySwapRequests(user.id),
+    ]);
   const siteToday = assignment?.site_id ? (assignment.site_name ?? settings.site_name) : null;
+  const pendingSwapForMe = swapRequests.filter((r) => r.status === "pending" && r.partner_id === user.id);
+  const pendingSwapSentByMe = swapRequests.filter(
+    (r) => r.status === "pending" && r.requester_id === user.id,
+  );
 
   const byType = new Map(punches.map((p) => [p.punch_type, p]));
   const done = punches.map((p) => p.punch_type);
@@ -123,6 +131,8 @@ export default async function PunchPage({
         )}
 
         <FieldTaskCard tasks={fieldTasks} employeeId={user.id} />
+
+        <ShiftSwapCard pendingForMe={pendingSwapForMe} pendingSentByMe={pendingSwapSentByMe} />
 
         {params.ok && (
           <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">

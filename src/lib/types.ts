@@ -328,6 +328,31 @@ export type ShiftAssignment = {
   site_name?: string | null;
 };
 
+export type ShiftSwapStatus = "pending" | "confirmed" | "rejected" | "cancelled";
+
+/**
+ * คำขอสลับกะ/สลับวันหยุดระหว่างพนักงาน 2 คน
+ * ผู้ขอ (requester) ถือว่ายืนยันฝั่งตัวเองไปในตัวตอนสร้างคำขอ ต้องรออีกฝ่าย (partner) ยืนยันอีกครั้ง
+ * จึงจะมีผลจริงกับตารางเวร — สลับเนื้อหาที่ resolve ได้จริงของ (requester, requester_date)
+ * กับ (partner, partner_date) ให้กัน
+ */
+export type ShiftSwapRequest = {
+  id: string;
+  requester_id: string;
+  requester_date: string;
+  partner_id: string;
+  partner_date: string;
+  status: ShiftSwapStatus;
+  note: string | null;
+  decided_at: string | null;
+  created_at: string;
+  /** ชื่อ/รหัสที่ resolve มาให้แสดงผล (ไม่ได้เก็บซ้ำในตาราง) */
+  requester_name?: string | null;
+  requester_emp_code?: string | null;
+  partner_name?: string | null;
+  partner_emp_code?: string | null;
+};
+
 export type DaySummary = {
   workDate: string;
   status: DayStatus;
