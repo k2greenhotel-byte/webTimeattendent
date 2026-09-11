@@ -47,6 +47,9 @@ export async function createEmployeeAction(
 
   const row = {
     emp_code,
+    // User ID ตามแบบแผนเดิมของระบบส่วนกลาง = รหัสพนักงานตัวพิมพ์เล็ก (E056 → e056)
+    // หน้านี้ไม่มีช่องกรอก ถ้าไม่ตั้งให้ พนักงานที่เพิ่มจากหน้านี้จะไม่มี User ID
+    username: emp_code.toLowerCase(),
     full_name,
     nickname: str(form, "nickname") || null,
     phone,
