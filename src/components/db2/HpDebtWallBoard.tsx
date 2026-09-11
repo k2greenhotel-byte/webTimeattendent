@@ -231,6 +231,33 @@ export default function HpDebtWallBoard() {
     return list.slice(0, 20);
   }, [data, sort]);
 
+  /**
+   * กลุ่มที่ต้องตามด่วน = ค้างชำระอยู่ **และ** ไม่มีใครตาม (ไม่เคยตามเลย หรือทิ้งช่วงเกิน 90 วัน)
+   *
+   * ที่ต้องแยกแบบนี้เพราะ "ไม่เคยมีบันทึกติดตาม" อย่างเดียวหลอก — ลูกค้าที่จ่ายตรงทุกงวด
+   * ก็ไม่มีบันทึกติดตามเป็นเรื่องปกติ ไม่ใช่งานที่หลุด
+   */
+  const chase = useMemo(() => {
+    const all = data?.contracts ?? [];
+    const overdue = all.filter((c) => c.overdueCount > 0);
+    const need = overdue
+      .filter((c) => c.noteCount === 0 || (c.lastNoteDays ?? 9999) > 90)
+      .sort((a, b) => b.overdueAmt - a.overdueAmt);
+    const managed = overdue.filter((c) => c.noteCount > 0 && (c.lastNoteDays ?? 9999) <= 90);
+    const neverButOk = all.filter((c) => c.noteCount === 0 && c.overdueCount === 0);
+    const sum = (xs: Contract[], f: (c: Contract) => number) => xs.reduce((s, c) => s + f(c), 0);
+    return {
+      need,
+      needAmt: sum(need, (c) => c.overdueAmt),
+      neverNeed: need.filter((c) => c.noteCount === 0).length,
+      managed: managed.length,
+      managedAmt: sum(managed, (c) => c.overdueAmt),
+      neverButOk: neverButOk.length,
+      neverButOkAmt: sum(neverButOk, (c) => c.balance),
+      noPhone: need.filter((c) => !c.mobile && !c.tel).length,
+    };
+  }, [data]);
+
   const maxMonthly = Math.max(1, ...(data?.monthly ?? []).map((m) => m.amount));
 
   return (
@@ -287,10 +314,10 @@ export default function HpDebtWallBoard() {
               tone="bad"
             />
             <Big
-              label="ไม่เคยมีบันทึกติดตาม"
-              value={`${int(data.totals.noNoteContracts)} สัญญา`}
-              sub="ยังไม่มีใครลงบันทึกตามหนี้เลย"
-              tone={data.totals.noNoteContracts > 0 ? "bad" : undefined}
+              label="ค้างชำระแต่ไม่มีใครตาม"
+              value={compact(chase.needAmt)}
+              sub={`${int(chase.need.length)} สัญญา · ไม่เคยตามเลย ${int(chase.neverNeed)} · มีคนตามอยู่ ${int(chase.managed)} สัญญา`}
+              tone={chase.need.length > 0 ? "bad" : undefined}
             />
             <Big label="เฉลี่ยต่อสัญญา" value={baht(data.totals.avgBalance)} sub="ยอดคงเหลือ" />
             <Big
@@ -311,6 +338,74 @@ export default function HpDebtWallBoard() {
               />
             ))}
           </div>
+
+          {/* รายการที่ต้องตามด่วน — จุดตั้งต้นของงานประจำวัน วางไว้บนสุดรองจาก KPI */}
+          {chase.need.length > 0 && (
+            <div className="mb-4 rounded-2xl border border-rose-700/60 bg-slate-900 p-4">
+              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="font-semibold text-rose-300">
+                  ต้องตามด่วน — ค้างชำระอยู่และไม่มีใครตาม {int(chase.need.length)} สัญญา{" "}
+                  <span className="text-rose-400">{compact(chase.needAmt)} บาท</span>
+                </h2>
+                <span className="text-xs text-slate-400">
+                  ไม่เคยตามเลย {int(chase.neverNeed)} · ทิ้งช่วงเกิน 90 วัน {int(chase.need.length - chase.neverNeed)}
+                  {chase.noPhone > 0 && ` · ไม่มีเบอร์ติดต่อ ${int(chase.noPhone)}`}
+                </span>
+              </div>
+              <p className="mb-3 text-xs text-slate-500">
+                อีก {int(chase.managed)} สัญญาที่ค้างชำระมีคนตามอยู่แล้วใน 90 วัน ({compact(chase.managedAmt)} บาท) ·
+                และ {int(chase.neverButOk)} สัญญาที่ไม่มีบันทึกติดตามแต่จ่ายตรงทุกงวด ({compact(chase.neverButOkAmt)} บาท)
+                ไม่นับเป็นงานค้าง
+              </p>
+              <div className="max-h-[20rem] overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-900 text-left text-xs text-slate-500">
+                    <tr>
+                      <th className="py-1 text-right">ยอดค้าง</th>
+                      <th className="py-1 pl-3">สัญญา / ลูกค้า</th>
+                      <th className="py-1">สาขา</th>
+                      <th className="py-1 text-right">ค้าง</th>
+                      <th className="py-1">โทร</th>
+                      <th className="py-1">สถานะการตาม</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chase.need.map((c) => (
+                      <tr key={`${c.locat}-${c.contno}`} className="border-t border-slate-800">
+                        <td className="py-1 text-right font-semibold tabular-nums text-rose-300">{baht(c.overdueAmt)}</td>
+                        <td className="py-1 pl-3">
+                          <span className="font-mono text-xs text-slate-500">{c.contno}</span>
+                          <span className="ml-2 text-slate-100">{c.customer || "—"}</span>
+                          {c.productGroupName && (
+                            <span className="ml-2 text-xs text-slate-500">{c.productGroupName}</span>
+                          )}
+                        </td>
+                        <td className="py-1 text-xs text-slate-400">{c.locat}</td>
+                        <td className="py-1 text-right tabular-nums text-slate-300">{int(c.overdueCount)} งวด</td>
+                        <td className="py-1 whitespace-nowrap text-xs">
+                          {c.mobile || c.tel ? (
+                            <span className="text-sky-300">{c.mobile || c.tel}</span>
+                          ) : (
+                            <span className="text-rose-400">ไม่มีเบอร์</span>
+                          )}
+                        </td>
+                        <td className="py-1 text-xs">
+                          {c.noteCount === 0 ? (
+                            <span className="font-semibold text-rose-400">ไม่เคยตามเลย</span>
+                          ) : (
+                            <span className="text-amber-400">ตามล่าสุด {int(c.lastNoteDays ?? 0)} วันก่อน</span>
+                          )}
+                          {c.lastPayDate && (
+                            <span className="ml-2 text-slate-500">ชำระล่าสุด {thDate(c.lastPayDate)}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* ตารางไขว้ — "แยกตามกลุ่มสินค้า แยกสาขา" ในตารางเดียว เลือกแกนได้ทั้งสองด้าน */}
           <div className="mb-4">
