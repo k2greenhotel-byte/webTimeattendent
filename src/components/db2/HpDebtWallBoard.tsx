@@ -23,7 +23,18 @@ type Item = {
   overdueAmt: number;
   overdueContracts: number;
 };
-type Dim = "branch" | "group" | "overdue" | "collector" | "salesman" | "contstat" | "follow";
+type Dim =
+  | "branch"
+  | "productGroup"
+  | "group"
+  | "overdue"
+  | "collector"
+  | "salesman"
+  | "contstat"
+  | "follow"
+  | "brand"
+  | "model"
+  | "condition";
 type Note = {
   date: string | null;
   followDate: string | null;
@@ -47,6 +58,12 @@ type Contract = {
   lastPayAmt: number;
   group: string;
   groupName: string | null;
+  productGroup: string;
+  productGroupName: string | null;
+  brand: string;
+  model: string;
+  modelName: string | null;
+  carStat: string;
   salesman: string | null;
   collector: string | null;
   contstat: string;
@@ -79,14 +96,60 @@ type Metric = "balance" | "overdueAmt" | "contracts";
 type Sort = "balance" | "overdue" | "stale";
 
 const DIM_LIST: { key: Dim; label: string }[] = [
+  { key: "productGroup", label: "กลุ่มสินค้า" },
   { key: "branch", label: "สาขา" },
   { key: "overdue", label: "ช่วงค้างงวด" },
   { key: "follow", label: "ความสดของการติดตาม" },
   { key: "group", label: "ประเภทกลุ่มลูกค้า" },
   { key: "collector", label: "พนักงานเก็บเงิน" },
   { key: "salesman", label: "พนักงานขาย" },
+  { key: "brand", label: "ยี่ห้อ" },
+  { key: "model", label: "รุ่น" },
+  { key: "condition", label: "สภาพ (ใหม่/เก่า)" },
   { key: "contstat", label: "สถานะสัญญา (รหัสดิบ)" },
 ];
+
+/** ค่าที่ใช้จัดกลุ่มของสัญญาหนึ่งใบ — ใช้ทั้งกระดานอันดับและตารางไขว้ */
+const dimValue = (c: Contract, d: Dim): { key: string; label: string | null } => {
+  switch (d) {
+    case "branch":
+      return { key: c.locat, label: null };
+    case "productGroup":
+      return { key: c.productGroup || "(ไม่ระบุ)", label: c.productGroupName };
+    case "group":
+      return { key: c.group || "(ไม่ระบุกลุ่ม)", label: c.groupName };
+    case "collector":
+      return { key: c.collector ?? "(ไม่ระบุ)", label: null };
+    case "salesman":
+      return { key: c.salesman ?? "(ไม่ระบุ)", label: null };
+    case "brand":
+      return { key: c.brand || "(ไม่ระบุ)", label: null };
+    case "model":
+      return { key: c.model || "(ไม่ระบุ)", label: c.modelName };
+    case "condition":
+      return { key: c.carStat || "(ไม่ระบุ)", label: c.carStat === "N" ? "ใหม่" : c.carStat === "O" ? "เก่า" : null };
+    case "contstat":
+      return { key: c.contstat || "(ว่าง)", label: null };
+    case "overdue":
+      return c.overdueCount === 0
+        ? { key: "none", label: "ยังไม่ค้างงวด" }
+        : c.overdueCount <= 1
+          ? { key: "d1", label: "ค้าง 1 งวด" }
+          : c.overdueCount <= 3
+            ? { key: "d3", label: "ค้าง 2-3 งวด" }
+            : c.overdueCount <= 6
+              ? { key: "d6", label: "ค้าง 4-6 งวด" }
+              : { key: "over", label: "ค้างเกิน 6 งวด" };
+    case "follow":
+      return c.noteCount === 0 || c.lastNoteDays === null
+        ? { key: "never", label: "ไม่เคยมีบันทึกติดตาม" }
+        : c.lastNoteDays <= 30
+          ? { key: "d30", label: "ติดตามใน 30 วัน" }
+          : c.lastNoteDays <= 90
+            ? { key: "d90", label: "ติดตาม 31-90 วัน" }
+            : { key: "old", label: "ไม่ได้ติดตามเกิน 90 วัน" };
+  }
+};
 const METRICS: { key: Metric; label: string }[] = [
   { key: "balance", label: "ยอดคงเหลือ" },
   { key: "overdueAmt", label: "ยอดเกินกำหนด" },
@@ -116,7 +179,9 @@ export default function HpDebtWallBoard() {
   const [locat, setLocat] = useState("");
   const [metric, setMetric] = useState<Metric>("balance");
   const [sort, setSort] = useState<Sort>("balance");
-  const [panels, setPanels] = useState<Dim[]>(["branch", "overdue", "follow"]);
+  const [panels, setPanels] = useState<Dim[]>(["productGroup", "branch", "follow"]);
+  const [pivotRow, setPivotRow] = useState<Dim>("productGroup");
+  const [pivotCol, setPivotCol] = useState<Dim>("branch");
   const [data, setData] = useState<Debt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
@@ -247,6 +312,11 @@ export default function HpDebtWallBoard() {
             ))}
           </div>
 
+          {/* ตารางไขว้ — "แยกตามกลุ่มสินค้า แยกสาขา" ในตารางเดียว เลือกแกนได้ทั้งสองด้าน */}
+          <div className="mb-4">
+            <Pivot data={data} row={pivotRow} col={pivotCol} metric={metric} onRow={setPivotRow} onCol={setPivotCol} />
+          </div>
+
           <div className="mb-4 grid gap-4 lg:grid-cols-5">
             {/* รายสัญญา — เรียงได้ตามสิ่งที่อยากไล่ */}
             <div className="rounded-2xl bg-slate-900 p-4 lg:col-span-3">
@@ -374,11 +444,141 @@ export default function HpDebtWallBoard() {
             ยอดคงเหลือ = ค่างวดทั้งหมดตามสัญญา − ที่ชำระแล้ว (ไม่ได้ใช้ช่องยอดคงเหลือในตาราง ซึ่งเก็บราคาเต็มไว้) ·
             เกินกำหนด = งวดที่ถึงกำหนดแล้วยังชำระไม่ครบ · ผลการติดตามมาจากบันทึกการติดตามของโปรแกรมเดิม ·
             &ldquo;สถานะสัญญา&rdquo; แสดงเป็นรหัสดิบเพราะยังไม่ได้ยืนยันความหมายกับผู้ใช้ ·
-            ประเภทกลุ่มลูกค้าว่างในหลายสัญญา (ทะเบียนลูกค้าไม่ได้กรอกไว้)
+            ประเภทกลุ่มลูกค้าว่างในหลายสัญญา (ทะเบียนลูกค้าไม่ได้กรอกไว้) ·
+            กลุ่มสินค้า/ยี่ห้อ/รุ่น มาจากทะเบียนสินค้าที่ผูกกับเลขตัวถังในสัญญา (ตรง 82 จาก 84 สัญญา)
             {data.truncated && " · รายการเกินขีดจำกัด แสดงเฉพาะส่วนแรก"}
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * ตารางไขว้สองมิติ — คำนวณจากรายสัญญาที่ API ส่งมาแล้ว (ไม่กี่สิบแถว จึงทำฝั่งนี้ได้)
+ * ค่าในช่องเปลี่ยนตามหน่วยที่เลือกด้านบน (ยอดคงเหลือ / ยอดเกินกำหนด / จำนวนสัญญา)
+ */
+function Pivot({
+  data,
+  row,
+  col,
+  metric,
+  onRow,
+  onCol,
+}: {
+  data: Debt;
+  row: Dim;
+  col: Dim;
+  metric: Metric;
+  onRow: (d: Dim) => void;
+  onCol: (d: Dim) => void;
+}) {
+  const valueOf = (c: Contract) =>
+    metric === "contracts" ? 1 : metric === "balance" ? c.balance : c.overdueAmt;
+
+  const cell = new Map<string, number>();
+  const rowTotal = new Map<string, number>();
+  const colTotal = new Map<string, number>();
+  const rowLabel = new Map<string, string>();
+  const colLabel = new Map<string, string>();
+  let grand = 0;
+  for (const c of data.contracts) {
+    const r = dimValue(c, row);
+    const k = dimValue(c, col);
+    const v = valueOf(c);
+    rowLabel.set(r.key, r.label ?? r.key);
+    colLabel.set(k.key, k.label ?? k.key);
+    cell.set(`${r.key}|${k.key}`, (cell.get(`${r.key}|${k.key}`) ?? 0) + v);
+    rowTotal.set(r.key, (rowTotal.get(r.key) ?? 0) + v);
+    colTotal.set(k.key, (colTotal.get(k.key) ?? 0) + v);
+    grand += v;
+  }
+  const rowKeys = [...rowTotal.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const colKeys = [...colTotal.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const max = Math.max(1, ...[...cell.values()]);
+
+  return (
+    <div className="rounded-2xl bg-slate-900 p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="mr-auto font-semibold text-slate-200">ตารางไขว้</h2>
+        <span className="text-xs text-slate-500">แถว</span>
+        <select
+          value={row}
+          onChange={(e) => onRow(e.target.value as Dim)}
+          className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
+        >
+          {DIM_LIST.map((d) => (
+            <option key={d.key} value={d.key}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-slate-500">คอลัมน์</span>
+        <select
+          value={col}
+          onChange={(e) => onCol(e.target.value as Dim)}
+          className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100"
+        >
+          {DIM_LIST.map((d) => (
+            <option key={d.key} value={d.key}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-slate-500">
+          หน่วย: {METRICS.find((m) => m.key === metric)?.label}
+        </span>
+      </div>
+      <div className="max-h-[22rem] overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-slate-900 text-xs text-slate-400">
+            <tr>
+              <th className="px-2 py-1 text-left">{DIM_LIST.find((d) => d.key === row)?.label}</th>
+              {colKeys.map((k) => (
+                <th key={k} className="px-2 py-1 text-right whitespace-nowrap">
+                  {colLabel.get(k)}
+                </th>
+              ))}
+              <th className="px-2 py-1 text-right font-semibold text-slate-200">รวม</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rowKeys.map((r) => (
+              <tr key={r} className="border-t border-slate-800">
+                <td className="px-2 py-1 text-slate-100">{rowLabel.get(r)}</td>
+                {colKeys.map((k) => {
+                  const v = cell.get(`${r}|${k}`) ?? 0;
+                  return (
+                    <td
+                      key={k}
+                      className="px-2 py-1 text-right tabular-nums"
+                      style={
+                        v > 0
+                          ? { background: `rgba(56,189,248,${0.08 + (v / max) * 0.35})`, color: "#e2e8f0" }
+                          : { color: "#475569" }
+                      }
+                    >
+                      {v > 0 ? fmtMetric(v, metric) : "—"}
+                    </td>
+                  );
+                })}
+                <td className="px-2 py-1 text-right font-semibold tabular-nums text-slate-100">
+                  {fmtMetric(rowTotal.get(r) ?? 0, metric)}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-slate-700">
+              <td className="px-2 py-1 font-semibold text-slate-200">รวม</td>
+              {colKeys.map((k) => (
+                <td key={k} className="px-2 py-1 text-right font-semibold tabular-nums text-slate-200">
+                  {fmtMetric(colTotal.get(k) ?? 0, metric)}
+                </td>
+              ))}
+              <td className="px-2 py-1 text-right font-bold tabular-nums text-sky-400">{fmtMetric(grand, metric)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

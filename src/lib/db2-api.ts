@@ -724,6 +724,13 @@ export type Db2HpContract = {
   lastPayAmt: number;
   group: string;
   groupName: string | null;
+  productGroup: string;
+  productGroupName: string | null;
+  brand: string;
+  model: string;
+  modelName: string | null;
+  /** N รถใหม่ · O รถเก่า */
+  carStat: string;
   salcod: string;
   salesman: string | null;
   billcoll: string;
@@ -737,7 +744,19 @@ export type Db2HpContract = {
   lastNote: Db2HpNote | null;
 };
 
-export type Db2HpDim = "branch" | "group" | "overdue" | "collector" | "salesman" | "contstat" | "follow";
+export type Db2HpDim =
+  | "branch"
+  /** กลุ่มสินค้าที่ปล่อยสินเชื่อ — รถจักรยานยนต์ · เงินกู้ที่ดิน · จำนำทะเบียน ฯลฯ */
+  | "productGroup"
+  | "group"
+  | "overdue"
+  | "collector"
+  | "salesman"
+  | "contstat"
+  | "follow"
+  | "brand"
+  | "model"
+  | "condition";
 
 export type Db2HpItem = {
   key: string;
