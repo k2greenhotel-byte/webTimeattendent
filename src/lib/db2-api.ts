@@ -593,6 +593,8 @@ export type Db2OpenJob = {
   status: string;
   finishDate: string | null;
   taxDate: string | null;
+  /** วันที่รับชำระ — ในฐานนี้ตรงกับวันที่ใบกำกับแทบทุกใบ */
+  payDate?: string | null;
   model: string;
   modelName: string | null;
   strno: string;
@@ -654,6 +656,11 @@ export type Db2Jobs = {
       billable: number;
     }[];
     byBucket: { key: Db2OpenBucket; jobs: number; billable: number; overYear: number }[];
+    /**
+     * ใบที่ไม่ถูกนับเป็นงานค้างแล้ว เพราะออกใบกำกับภาษีและรับเงินครบ
+     * (ผู้ใช้สั่งให้ตัดออก 2026-09-11) — เก็บจำนวนไว้แสดงเป็นหมายเหตุ ไม่ให้ดูเหมือนข้อมูลหาย
+     */
+    settledHidden?: number;
     byType: { key: string; label: string | null; jobs: number; overYear: number }[];
     listLimit: number;
     list: Db2OpenJob[];

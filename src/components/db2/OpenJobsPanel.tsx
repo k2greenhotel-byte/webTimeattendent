@@ -145,6 +145,15 @@ export default function OpenJobsPanel({
         <span className="text-xs text-slate-500">นับทั้งฐานข้อมูล ไม่ขึ้นกับช่วงวันที่ที่เลือกด้านบน</span>
       </div>
 
+      <div className="text-xs text-slate-500">
+        {(open.settledHidden ?? 0) > 0 && (
+          <>
+            ไม่รวมอีก <span className="font-semibold text-slate-600">{int(open.settledHidden!)}</span> ใบ
+            ที่ออกใบกำกับภาษีและรับเงินครบแล้ว (ไม่มีอะไรต้องตามอีก จึงตัดออกตั้งแต่ต้นทาง)
+          </>
+        )}
+      </div>
+
       {legacy && (
         <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-600">
           แอป Db2 ในบริษัทยังเป็นเวอร์ชันก่อนหน้า จึงยังไม่มีการแยกสาเหตุและยอดที่ต้องเก็บ —

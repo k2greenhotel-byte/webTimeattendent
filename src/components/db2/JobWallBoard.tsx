@@ -77,6 +77,7 @@ type Jobs = {
       billable: number;
     }[];
     byBucket: { key: Bucket; jobs: number; billable: number; overYear: number }[];
+    settledHidden?: number;
     byType: { key: string; label: string | null; jobs: number; overYear: number }[];
     listLimit: number;
     list: OpenJob[];
@@ -342,6 +343,11 @@ export default function JobWallBoard() {
                     </span>
                   </span>
                 </div>
+                {(data.open.settledHidden ?? 0) > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    ไม่รวมอีก {int(data.open.settledHidden!)} ใบที่ออกใบกำกับและรับเงินครบแล้ว
+                  </p>
+                )}
                 <p className="mt-1 text-xs text-slate-400">
                   นับทั้งฐาน ไม่ขึ้นกับช่วงวันที่ · ยอดที่ยังต้องเก็บจากลูกค้า{" "}
                   <span className="font-semibold text-rose-300">
