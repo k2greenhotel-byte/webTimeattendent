@@ -19,6 +19,7 @@ import {
   MAX_PHOTOS,
   MAX_TAGS_PER_PAYMENT,
   PAY_SOURCES,
+  type PaymentRow,
   type PaySourceSpec,
   type PaymentFile,
   type PaymentInput,
@@ -165,7 +166,11 @@ function readSource(form: FormData): PaySourceSpec {
  * ช่องบนหัวเอกสารจึงเป็นแค่ค่าสรุป ซึ่งคิดจากรายการฝั่ง server ไม่ได้อ่านจากฟอร์ม
  * จะได้ไม่มีทางที่ค่าสรุปกับรายการจริงไม่ตรงกัน
  */
-function readPaymentFields(form: FormData, items: PaymentItem[]) {
+function readPaymentFields(
+  form: FormData,
+  items: PaymentItem[],
+  keep?: Pick<PaymentRow, "payee_signature" | "payer_signature"> | null,
+) {
   const uniq = (values: (string | null | undefined)[]) =>
     [...new Set(values.map((v) => (v ?? "").trim()).filter(Boolean))].join(", ") || null;
 
@@ -181,8 +186,10 @@ function readPaymentFields(form: FormData, items: PaymentItem[]) {
     account_id: items.find((i) => i.account_id)?.account_id ?? null,
     payer_name: str(form, "payer_name") || null,
     approver_name: str(form, "approver_name") || null,
-    payee_signature: str(form, "payee_signature") || null,
-    payer_signature: str(form, "payer_signature") || null,
+    // ไม่มีช่องเซ็นบนหน้าจอแล้ว (เซ็นบนกระดาษที่พิมพ์ออกไปแทน)
+    // ใบเก่าที่เคยเซ็นไว้ต้องคงค่าเดิม ไม่ใช่ถูกล้างทิ้งตอนกดแก้ไข
+    payee_signature: keep?.payee_signature ?? null,
+    payer_signature: keep?.payer_signature ?? null,
     note: str(form, "note") || null,
     company_id: str(form, "company_id") || null,
     branch_id: str(form, "branch_id") || null,
@@ -273,7 +280,7 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
   }
 
   const items = readItems(form);
-  const input = readPaymentFields(form, items);
+  const input = readPaymentFields(form, items, current);
 
   const scopeProblem = await checkScope(user.id, input.company_id, input.branch_id);
   if (scopeProblem) back(path, scopeProblem, true);

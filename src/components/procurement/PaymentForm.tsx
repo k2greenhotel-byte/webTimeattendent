@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import FileUploader, { type UploadedFile } from "@/components/marketing/FileUploader";
 import PhotoUploader from "@/components/marketing/PhotoUploader";
 import ApprovalPicker from "@/components/procurement/ApprovalPicker";
-import SignaturePad from "@/components/procurement/SignaturePad";
 import TagInput from "@/components/procurement/TagInput";
 import type { Company } from "@/lib/core-types";
 import { formatThaiDate } from "@/lib/datetime";
@@ -254,7 +253,7 @@ export default function PaymentForm({
       <input type="hidden" name="pay_source" value={source} />
       {payment && <input type="hidden" name="id" value={payment.id} />}
 
-      <div className="space-y-3 rounded-2xl border border-slate-300 bg-slate-100 p-3 sm:p-4">
+      <div className="space-y-3 rounded-2xl border border-slate-400 bg-slate-200 p-3 sm:p-4">
         {/* ---------- หัวเอกสาร ---------- */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
           <div className="lg:col-span-3">
@@ -527,17 +526,16 @@ export default function PaymentForm({
                         placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด"
                       />
                     </div>
-                  </div>
-
-                  {/* ---------- ป้ายกำกับของรายการนี้ ---------- */}
-                  <div className="mt-2">
-                    <TagInput
-                      name="line_tags"
-                      label="ป้ายกำกับ"
-                      initialTags={line.tags}
-                      suggestions={tagSuggestions}
-                      compact
-                    />
+                    {/* ป้ายกำกับอยู่บรรทัดเดียวกับที่อยู่ จะได้ไม่กินความสูงเพิ่มอีกบรรทัด */}
+                    <div className="sm:col-span-2 lg:col-span-5">
+                      <TagInput
+                        name="line_tags"
+                        label="ป้ายกำกับ"
+                        initialTags={line.tags}
+                        suggestions={tagSuggestions}
+                        compact
+                      />
+                    </div>
                   </div>
 
                   {/* ---------- ใบเสร็จของรายการนี้ ---------- */}
@@ -589,7 +587,7 @@ export default function PaymentForm({
       )}
 
       {/* ---------- ท้ายเอกสาร ---------- */}
-      <div className="space-y-4 rounded-2xl border border-slate-300 bg-slate-100 p-3 sm:p-4">
+      <div className="space-y-4 rounded-2xl border border-slate-400 bg-slate-200 p-3 sm:p-4">
         {/* ---------- ยอดรวมทั้งใบ ---------- */}
         {/*
           ผู้รับเงิน เลขที่อ้างอิง ผังบัญชี ป้ายกำกับ และไฟล์แนบ ย้ายไปอยู่ที่รายการจ่ายแต่ละรายการแล้ว
@@ -615,7 +613,7 @@ export default function PaymentForm({
           </div>
         </div>
 
-        {/* ---------- ผู้บันทึก ผู้อนุมัติ และลายเซ็น ---------- */}
+        {/* ---------- ผู้บันทึกและผู้เกี่ยวข้อง ---------- */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label className="label" htmlFor="created_by_name">
@@ -655,24 +653,6 @@ export default function PaymentForm({
             <p className="mt-1 text-xs text-slate-400">
               ผู้อนุมัติเซ็นไว้ที่ใบอนุมัติแล้ว ใบเบิกจึงเก็บแค่ชื่อ
             </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 p-3">
-            <SignaturePad
-              name="payee_signature"
-              label="ลายเซ็นผู้รับเงิน"
-              hint="เซ็นด้วยนิ้วบนมือถือหรือเมาส์บน PC แล้วกดบันทึกลายเซ็น"
-              initialPath={payment?.payee_signature ?? null}
-            />
-          </div>
-          <div className="rounded-xl border border-slate-200 p-3">
-            <SignaturePad
-              name="payer_signature"
-              label="ลายเซ็นผู้ทำจ่าย"
-              initialPath={payment?.payer_signature ?? null}
-            />
           </div>
         </div>
 
