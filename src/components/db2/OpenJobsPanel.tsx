@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Db2Jobs, Db2OpenJob } from "@/lib/db2-api";
-import { OPEN_BUCKET, OPEN_BUCKET_ORDER, type Db2OpenBucket } from "@/lib/db2-jobs";
+import { OPEN_BUCKET, OPEN_BUCKET_ORDER, SW_STATUS_LABEL, type Db2OpenBucket } from "@/lib/db2-jobs";
 
 /**
  * กล่อง "งานซ่อมที่ค้างปิด job" — ให้หัวหน้าสาขาไล่เคลียร์ได้จริง
@@ -18,7 +18,6 @@ const TONE: Record<"bad" | "warn" | "info", { box: string; text: string; bar: st
   warn: { box: "border-amber-300 bg-amber-50", text: "text-amber-700", bar: "bg-amber-500" },
   info: { box: "border-slate-300 bg-slate-50", text: "text-slate-600", bar: "bg-slate-400" },
 };
-const SW_LABEL: Record<string, string> = { F: "ปิดงานแล้ว", R: "กำลังซ่อม", W: "รอ" };
 /**
  * วาดตารางสูงสุดกี่แถว — ทั้ง 1,229 ใบทำให้หน้าหนักเกิน 2 MB และเปิดช้าบนมือถือ
  * ข้อมูลยังอยู่ครบในหน่วยความจำ ปุ่มโหลดไฟล์จึงได้ครบทุกใบตามตัวกรองเสมอ
@@ -82,7 +81,7 @@ export default function OpenJobsPanel({
         String(j.ageDays),
         OPEN_BUCKET[j.bucket]?.label ?? j.bucket ?? "",
         j.reptypeName ?? j.reptype,
-        SW_LABEL[j.swstatus] ?? j.swstatus,
+        SW_STATUS_LABEL[j.swstatus] ?? j.swstatus,
         j.repName ?? j.repcod,
         j.recvName ?? j.recvcod,
         j.modelName ?? j.model,
@@ -126,7 +125,7 @@ export default function OpenJobsPanel({
       )}
 
       {/* แยกตามสิ่งที่ต้องลงมือทำ — กดเพื่อกรอง */}
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {OPEN_BUCKET_ORDER.map((k) => {
           const b = bucketOf.get(k);
           const meta = OPEN_BUCKET[k];
@@ -172,6 +171,7 @@ export default function OpenJobsPanel({
             <tr>
               <th className="py-1">สาขา</th>
               <th className="py-1 text-right">ใบค้างทั้งหมด</th>
+              <th className="py-1 text-right">ค้างซ่อม (W)</th>
               <th className="py-1 text-right">ไม่ใช่งานเคลม</th>
               <th className="py-1 text-right">มีเงินค้างเก็บ</th>
               <th className="py-1 text-right">ยอดต้องเก็บ</th>
@@ -186,6 +186,9 @@ export default function OpenJobsPanel({
                   {b.label ?? b.key} <span className="text-slate-400">({b.key})</span>
                 </td>
                 <td className="py-1 text-right tabular-nums">{int(b.jobs)}</td>
+                <td className={`py-1 text-right font-bold tabular-nums ${(b.waiting ?? 0) > 0 ? "text-rose-700" : "text-slate-400"}`}>
+                  {int(b.waiting ?? 0)}
+                </td>
                 <td className="py-1 text-right font-semibold tabular-nums">{int(b.nonClaim ?? 0)}</td>
                 <td className={`py-1 text-right tabular-nums ${(b.withMoney ?? 0) > 0 ? "text-rose-700" : "text-slate-400"}`}>
                   {int(b.withMoney ?? 0)}
@@ -197,7 +200,7 @@ export default function OpenJobsPanel({
             ))}
             {open.byBranch.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-3 text-center text-slate-500">
+                <td colSpan={8} className="py-3 text-center text-slate-500">
                   ไม่มีงานค้างปิด
                 </td>
               </tr>
@@ -241,6 +244,7 @@ export default function OpenJobsPanel({
               <th className="px-2 py-1">รับรถ</th>
               <th className="px-2 py-1 text-right">ค้าง (วัน)</th>
               <th className="px-2 py-1">กลุ่ม</th>
+              <th className="px-2 py-1">สถานะในโปรแกรม</th>
               <th className="px-2 py-1">ประเภทงาน</th>
               <th className="px-2 py-1">ช่าง</th>
               <th className="px-2 py-1">รถ / ทะเบียน</th>
@@ -255,7 +259,7 @@ export default function OpenJobsPanel({
             ))}
             {hidden > 0 && (
               <tr>
-                <td colSpan={11} className="bg-amber-50 px-2 py-2 text-center text-xs text-slate-600">
+                <td colSpan={12} className="bg-amber-50 px-2 py-2 text-center text-xs text-slate-600">
                   แสดง {int(MAX_ROWS)} ใบแรกจาก {int(allRows.length)} ใบ — กรองให้แคบลง
                   หรือกดโหลดเป็นไฟล์เพื่อดูครบทุกใบ (อีก {int(hidden)} ใบ)
                 </td>
@@ -263,7 +267,7 @@ export default function OpenJobsPanel({
             )}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={11} className="py-4 text-center text-slate-500">
+                <td colSpan={12} className="py-4 text-center text-slate-500">
                   ไม่มีใบงานที่ตรงเงื่อนไข
                 </td>
               </tr>
@@ -273,6 +277,7 @@ export default function OpenJobsPanel({
       </div>
 
       <p className="mt-2 text-xs text-slate-500">
+        &ldquo;ค้างซ่อม&rdquo; คือใบที่สถานะในโปรแกรมเดิมยังเป็น W · ใบสถานะ W ที่ถูกยกเลิกไปแล้วไม่ถูกนับ ·
         &ldquo;ยอดต้องเก็บ&rdquo; นับเฉพาะรายการที่เรียกเก็บจากลูกค้า (ไม่รวมของเคลมและประกัน ซึ่งเบิกจากค่ายรถ) ·
         ระบบนี้อ่านข้อมูลอย่างเดียว การกดปิด job ต้องทำในโปรแกรมขายเดิม
       </p>
@@ -297,6 +302,15 @@ function Row({ j }: { j: Db2OpenJob }) {
       <td className="px-2 py-1">
         {meta && (
           <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${t.box} ${t.text}`}>{meta.label}</span>
+        )}
+      </td>
+      <td className="px-2 py-1">
+        {j.swstatus ? (
+          <span className={`whitespace-nowrap font-medium ${j.swstatus === "W" ? "text-rose-700" : "text-slate-600"}`}>
+            {SW_STATUS_LABEL[j.swstatus] ?? j.swstatus} ({j.swstatus})
+          </span>
+        ) : (
+          <span className="text-slate-400">—</span>
         )}
       </td>
       <td className="px-2 py-1">{j.reptypeName ?? j.reptype}</td>

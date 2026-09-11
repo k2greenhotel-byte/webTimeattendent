@@ -648,6 +648,8 @@ export type Db2Jobs = {
       overYear: number;
       /** ตัวเลขที่สาขาต้องตามจริง — ตัดงานเคลมออกแล้ว */
       nonClaim: number;
+      /** ค้างซ่อมจริง (สถานะ W) — รถน่าจะยังอยู่ที่ร้าน */
+      waiting: number;
       withMoney: number;
       billable: number;
     }[];

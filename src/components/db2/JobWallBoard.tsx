@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { OPEN_BUCKET, OPEN_BUCKET_ORDER, type Db2OpenBucket } from "@/lib/db2-jobs";
+import { OPEN_BUCKET, OPEN_BUCKET_ORDER, SW_STATUS_LABEL, type Db2OpenBucket } from "@/lib/db2-jobs";
 
 /**
  * จอ War Room งานซ่อม — เปิดค้างบนจอมอนิเตอร์/ทีวี พื้นมืด ตัวเลขใหญ่ รีเฟรชเองทุก 60 วินาที
@@ -72,6 +72,7 @@ type Jobs = {
       oldest: string | null;
       overYear: number;
       nonClaim: number;
+      waiting: number;
       withMoney: number;
       billable: number;
     }[];
@@ -102,7 +103,6 @@ const METRICS: { key: Metric; label: string }[] = [
 const REFRESH_MS = 60_000;
 const TH_M = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const TH_MF = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-const SW_LABEL: Record<string, string> = { F: "ปิดแล้ว", R: "กำลังซ่อม", W: "รอ" };
 /** กลุ่มสาเหตุที่ใบยังไม่ปิด — ป้ายชุดเดียวกับหน้า dashboard (src/lib/db2-jobs.ts) */
 const BUCKETS = OPEN_BUCKET_ORDER.map((key) => ({ key, ...OPEN_BUCKET[key] }));
 
@@ -329,7 +329,11 @@ export default function JobWallBoard() {
                 <div className="flex items-baseline gap-3">
                   <span className="text-5xl font-bold tabular-nums text-amber-400">{int(data.open.totals.jobs)}</span>
                   <span className="text-sm text-slate-400">
-                    ไม่ใช่งานเคลม{" "}
+                    ค้างซ่อม (W){" "}
+                    <span className="text-lg font-semibold text-rose-400">
+                      {int(data.open.byBranch.reduce((s, b) => s + (b.waiting ?? 0), 0))}
+                    </span>{" "}
+                    ใบ · ไม่ใช่เคลม{" "}
                     <span className="text-lg font-semibold text-orange-300">
                       {int(data.open.byBranch.reduce((s, b) => s + (b.nonClaim ?? 0), 0))}
                     </span>{" "}
@@ -379,6 +383,9 @@ export default function JobWallBoard() {
                       <span className="truncate text-slate-200">{b.label ?? b.key}</span>
                       <span className="shrink-0 tabular-nums">
                         <span className="text-lg font-semibold text-amber-400">{int(b.jobs)}</span>
+                        {(b.waiting ?? 0) > 0 && (
+                          <span className="ml-2 text-xs font-semibold text-rose-400">ค้างซ่อม {int(b.waiting)}</span>
+                        )}
                         <span className="ml-2 text-xs text-orange-300">ไม่ใช่เคลม {int(b.nonClaim ?? 0)}</span>
                         <span className="ml-2 text-xs text-rose-400">เกิน 1 ปี {int(b.overYear)}</span>
                         <span className="ml-2 text-xs text-slate-500">เก่าสุด {thDate(b.oldest)}</span>
@@ -398,7 +405,7 @@ export default function JobWallBoard() {
                         <span className="font-mono text-xs text-slate-400">{j.jobno}</span>
                         <span className="ml-2 text-slate-200">{j.customer || j.regno || j.modelName || j.model || "—"}</span>
                         <span className="ml-2 text-xs text-slate-500">
-                          {j.branch ?? j.locat} · {j.repName ?? j.repcod} · {SW_LABEL[j.swstatus] ?? j.swstatus}
+                          {j.branch ?? j.locat} · {j.repName ?? j.repcod} · {SW_STATUS_LABEL[j.swstatus] ?? j.swstatus}
                         </span>
                         <span
                           className="ml-2 text-xs"
