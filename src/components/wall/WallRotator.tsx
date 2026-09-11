@@ -5,6 +5,7 @@ import ApprovalWallBoard from "@/components/approval/ApprovalWallBoard";
 import AttWallBoard from "@/components/att/AttWallBoard";
 import BookingWallBoard from "@/components/booking/BookingWallBoard";
 import ClaimWallBoard from "@/components/claim/ClaimWallBoard";
+import Db2HpDebtWallBoard from "@/components/db2/HpDebtWallBoard";
 import Db2JobWallBoard from "@/components/db2/JobWallBoard";
 import Db2WallBoard from "@/components/db2/WallBoard";
 import HotelWallBoard from "@/components/hotel/HotelWallBoard";
@@ -36,7 +37,8 @@ export type WallScreen = {
     | "inspection"
     | "hotel"
     | "db2"
-    | "db2jobs";
+    | "db2jobs"
+    | "db2hp";
   label: string;
 };
 
@@ -162,6 +164,7 @@ export default function WallRotator({
       )}
       {current.key === "db2" && <Db2WallBoard />}
       {current.key === "db2jobs" && <Db2JobWallBoard />}
+      {current.key === "db2hp" && <Db2HpDebtWallBoard />}
     </div>
   );
 }

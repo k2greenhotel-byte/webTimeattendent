@@ -687,3 +687,95 @@ export function db2Jobs(
     openLimit: f.openLimit === undefined ? undefined : String(f.openLimit),
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* ลูกหนี้เช่าซื้อคงเหลือ + การติดตาม (ARMAST / ARPAY / NOTEFOLLOW)              */
+/* -------------------------------------------------------------------------- */
+
+/** ผลการติดตามหนึ่งครั้งจากตาราง `NOTEFOLLOW` ของโปรแกรมเดิม */
+export type Db2HpNote = {
+  date: string | null;
+  /** วันที่ออกติดตาม — ตัดค่าที่ปีเพี้ยนออกแล้วจากฝั่งแอป Db2 */
+  followDate: string | null;
+  by: string;
+  byName: string | null;
+  memo: string;
+};
+
+export type Db2HpContract = {
+  locat: string;
+  contno: string;
+  cuscod: string;
+  customer: string;
+  mobile: string;
+  tel: string;
+  strno: string;
+  saleDate: string | null;
+  totalPrice: number;
+  due: number;
+  paid: number;
+  /** คงเหลือจริง = งวดทั้งหมด − ที่จ่ายแล้ว (ไม่ใช่ BALANC ในตาราง) */
+  balance: number;
+  overdueCount: number;
+  overdueAmt: number;
+  firstOverdue: string | null;
+  nextDue: string | null;
+  lastPayDate: string | null;
+  lastPayAmt: number;
+  group: string;
+  groupName: string | null;
+  salcod: string;
+  salesman: string | null;
+  billcoll: string;
+  collector: string | null;
+  /** รหัสดิบจาก CONTSTAT — ความหมายยังไม่ยืนยัน จึงไม่มี label */
+  contstat: string;
+  ystat: string;
+  noteCount: number;
+  lastNoteDate: string | null;
+  lastNoteDays: number | null;
+  lastNote: Db2HpNote | null;
+};
+
+export type Db2HpDim = "branch" | "group" | "overdue" | "collector" | "salesman" | "contstat" | "follow";
+
+export type Db2HpItem = {
+  key: string;
+  label: string | null;
+  contracts: number;
+  balance: number;
+  overdueAmt: number;
+  overdueContracts: number;
+};
+
+export type Db2HpDebt = {
+  generatedAt: string;
+  today: string;
+  locat: string | null;
+  truncated: boolean;
+  totals: {
+    contracts: number;
+    balance: number;
+    overdueAmt: number;
+    overdueContracts: number;
+    /** สัญญาที่ไม่เคยมีบันทึกติดตามเลย */
+    noNoteContracts: number;
+    avgBalance: number;
+  };
+  dims: Record<Db2HpDim, { title: string; items: Db2HpItem[] }>;
+  contracts: Db2HpContract[];
+  /** ฟีดผลการติดตามล่าสุดของทุกสัญญาที่ยังค้าง เรียงใหม่สุดก่อน */
+  notes: (Db2HpNote & { locat: string; contno: string; customer: string; balance: number })[];
+  noteLimit: number;
+  monthly: { year: number; month: number; payments: number; amount: number }[];
+  groups: { key: string; label: string }[];
+  branches: string[];
+};
+
+/**
+ * ลูกหนี้เช่าซื้อที่ยังมียอดคงเหลือ พร้อมผลการติดตาม — ต้องมี `/api/hpdebt` ในแอป Db2
+ * ถ้าเซิร์ฟเวอร์ยังไม่ได้ build เวอร์ชันที่มีเอนด์พอยต์นี้จะได้ Db2ApiError สถานะ 404
+ */
+export function db2HpDebt(f: { locat?: string } = {}) {
+  return call<Db2HpDebt>("/api/hpdebt", { locat: f.locat });
+}
