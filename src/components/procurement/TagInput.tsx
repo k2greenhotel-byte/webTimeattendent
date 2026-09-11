@@ -17,6 +17,7 @@ export default function TagInput({
   hint,
   initialTags = [],
   suggestions = [],
+  compact = false,
 }: {
   name: string;
   label: string;
@@ -24,6 +25,8 @@ export default function TagInput({
   initialTags?: { name: string }[];
   /** ป้ายที่เคยใช้แล้วในระบบ เรียงตามที่ใช้บ่อย */
   suggestions?: PrTagRow[];
+  /** แบบย่อ — ใช้ตอนที่มีหลายช่องซ้อนกันในหน้าเดียว จะได้ไม่ยาวจนอ่านยาก */
+  compact?: boolean;
 }) {
   const [tags, setTags] = useState<string[]>(() => initialTags.map((t) => t.name));
   const [draft, setDraft] = useState("");
@@ -41,7 +44,7 @@ export default function TagInput({
   const remove = (value: string) => setTags((prev) => prev.filter((t) => t !== value));
 
   /** ป้ายที่เคยใช้ แต่ยังไม่ได้ติดบนใบนี้ — แสดงไว้ให้กดเลือก 12 อันแรก */
-  const available = suggestions.filter((s) => !slugs.has(s.slug)).slice(0, 12);
+  const available = suggestions.filter((s) => !slugs.has(s.slug)).slice(0, compact ? 6 : 12);
 
   return (
     <div>
@@ -60,7 +63,9 @@ export default function TagInput({
           {tags.map((tag) => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-1 text-sm text-brand-700"
+              className={`inline-flex items-center gap-1 rounded-full bg-brand-100 text-brand-700 ${
+                compact ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-sm"
+              }`}
             >
               #{tag}
               <button
@@ -110,8 +115,9 @@ export default function TagInput({
       />
 
       {available.length > 0 && (
-        <div className="mt-2">
-          <p className="mb-1 text-xs text-slate-400">ป้ายที่เคยใช้ — กดเพื่อติด</p>
+        <div className={compact ? "mt-1" : "mt-2"}>
+          {/* แบบย่อไม่ต้องมีหัวข้อ ชิปมันบอกตัวเองอยู่แล้วว่ากดได้ */}
+          {!compact && <p className="mb-1 text-xs text-slate-400">ป้ายที่เคยใช้ — กดเพื่อติด</p>}
           <div className="flex flex-wrap gap-1.5">
             {available.map((s) => (
               <button
@@ -119,7 +125,9 @@ export default function TagInput({
                 type="button"
                 onClick={() => add(s.name)}
                 disabled={full}
-                className="rounded-full border border-slate-300 px-2.5 py-1 text-sm text-slate-600 hover:border-brand-400 hover:text-brand-700 disabled:opacity-40"
+                className={`rounded-full border border-slate-300 text-slate-600 hover:border-brand-400 hover:text-brand-700 disabled:opacity-40 ${
+                  compact ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-sm"
+                }`}
               >
                 #{s.name}
                 {s.use_count > 0 && <span className="ml-1 text-xs text-slate-400">{s.use_count}</span>}

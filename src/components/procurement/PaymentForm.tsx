@@ -254,76 +254,78 @@ export default function PaymentForm({
       <input type="hidden" name="pay_source" value={source} />
       {payment && <input type="hidden" name="id" value={payment.id} />}
 
-      {/* ---------- หัวเอกสาร ---------- */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <label className="label">เลขที่เอกสาร</label>
-          <input
-            value={payment?.doc_no ?? ""}
-            readOnly
-            disabled
-            className="input bg-slate-50 font-medium text-slate-600"
-            placeholder="ระบบออกให้ตามบริษัท/สาขา"
-          />
+      <div className="space-y-3 rounded-2xl border border-slate-300 bg-slate-100 p-3 sm:p-4">
+        {/* ---------- หัวเอกสาร ---------- */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
+          <div className="lg:col-span-3">
+            <label className="label">เลขที่เอกสาร</label>
+            <input
+              value={payment?.doc_no ?? ""}
+              readOnly
+              disabled
+              className="input bg-slate-50 font-medium text-slate-600"
+              placeholder="ระบบออกให้ตามบริษัท/สาขา"
+            />
+          </div>
+          <div className="lg:col-span-2">
+            <label className="label" htmlFor="pay_date">
+              วันที่ทำจ่าย *
+            </label>
+            <input
+              id="pay_date"
+              name="pay_date"
+              type="date"
+              defaultValue={payment?.pay_date ?? today}
+              className="input"
+              required
+            />
+          </div>
+          <div className="lg:col-span-4">
+            <label className="label" htmlFor="company_id">
+              บริษัทที่ทำจ่าย *
+            </label>
+            <select
+              id="company_id"
+              name="company_id"
+              value={companyId}
+              onChange={(e) => setCompanyId(e.target.value)}
+              className="input"
+              required
+            >
+              <option value="">— เลือกบริษัท —</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="lg:col-span-3">
+            <label className="label" htmlFor="branch_id">
+              สาขาที่ทำจ่าย *
+            </label>
+            <select
+              id="branch_id"
+              name="branch_id"
+              defaultValue={payment?.branch_id ?? defaultBranchId ?? ""}
+              className="input"
+              required
+            >
+              <option value="">— เลือกสาขา —</option>
+              {branchOptions.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="label" htmlFor="pay_date">
-            วันที่ทำจ่าย *
-          </label>
-          <input
-            id="pay_date"
-            name="pay_date"
-            type="date"
-            defaultValue={payment?.pay_date ?? today}
-            className="input"
-            required
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="company_id">
-            บริษัทที่ทำจ่าย *
-          </label>
-          <select
-            id="company_id"
-            name="company_id"
-            value={companyId}
-            onChange={(e) => setCompanyId(e.target.value)}
-            className="input"
-            required
-          >
-            <option value="">— เลือกบริษัท —</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="branch_id">
-            สาขาที่ทำจ่าย *
-          </label>
-          <select
-            id="branch_id"
-            name="branch_id"
-            defaultValue={payment?.branch_id ?? defaultBranchId ?? ""}
-            className="input"
-            required
-          >
-            <option value="">— เลือกสาขา —</option>
-            {branchOptions.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
 
-      <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
-        เลขที่{PAY_SOURCES[source].docLabel}รันแยกตามบริษัทและสาขา (เช่น {PAY_SOURCES[source].prefix}-HQ-BKK-2569-0001) ·
-        รายชื่อบริษัทและสาขาที่เลือกได้เป็นไปตามสิทธิ์ของบัญชีที่ล็อกอินอยู่
-      </p>
+        <p className="rounded-xl bg-white px-4 py-3 text-xs text-slate-600">
+          เลขที่{PAY_SOURCES[source].docLabel}รันแยกตามบริษัทและสาขา (เช่น {PAY_SOURCES[source].prefix}-HQ-BKK-2569-0001) ·
+          รายชื่อบริษัทและสาขาที่เลือกได้เป็นไปตามสิทธิ์ของบัญชีที่ล็อกอินอยู่
+        </p>
+      </div>
 
       {/* ---------- รายการค่าใช้จ่ายในใบเบิก (หลายรายการต่อหนึ่งใบ) ---------- */}
       <section className="space-y-2">
@@ -399,8 +401,8 @@ export default function PaymentForm({
                     </button>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="sm:col-span-2">
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-12">
+                    <div className="sm:col-span-2 lg:col-span-6">
                       <label className="label" htmlFor={`line_detail_${line.key}`}>
                         รายการค่าใช้จ่าย *
                       </label>
@@ -414,7 +416,7 @@ export default function PaymentForm({
                         required
                       />
                     </div>
-                    <div>
+                    <div className="lg:col-span-4">
                       <label className="label" htmlFor={`line_account_${line.key}`}>
                         ประเภทค่าใช้จ่าย
                       </label>
@@ -433,7 +435,7 @@ export default function PaymentForm({
                         ))}
                       </select>
                     </div>
-                    <div>
+                    <div className="lg:col-span-2">
                       <label className="label" htmlFor={`line_amount_${line.key}`}>
                         จำนวนเงิน *
                       </label>
@@ -442,7 +444,7 @@ export default function PaymentForm({
                         name="line_amount"
                         value={line.amount}
                         onChange={(e) => patchLine(line.key, { amount: e.target.value })}
-                        className="input"
+                        className="input text-right"
                         inputMode="decimal"
                         placeholder="0.00"
                         required
@@ -451,8 +453,8 @@ export default function PaymentForm({
                   </div>
 
                   {/* ---------- ผู้รับเงินของรายการนี้ ---------- */}
-                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-12">
+                    <div className="lg:col-span-3">
                       <label className="label" htmlFor={`line_ref_${line.key}`}>
                         เลขที่อ้างอิง (เลขที่อนุมัติ)
                       </label>
@@ -465,7 +467,7 @@ export default function PaymentForm({
                         placeholder="เว้นว่างได้ถ้าไม่ผ่านอนุมัติ"
                       />
                     </div>
-                    <div>
+                    <div className="lg:col-span-3">
                       <label className="label" htmlFor={`line_vendor_${line.key}`}>
                         เจ้าหนี้ / ผู้ขายประจำ
                       </label>
@@ -484,7 +486,7 @@ export default function PaymentForm({
                         ))}
                       </select>
                     </div>
-                    <div>
+                    <div className="lg:col-span-4">
                       <label className="label" htmlFor={`line_payee_${line.key}`}>
                         ชื่อผู้ขายหรือผู้รับเงิน *
                       </label>
@@ -498,7 +500,7 @@ export default function PaymentForm({
                         required
                       />
                     </div>
-                    <div>
+                    <div className="lg:col-span-2">
                       <label className="label" htmlFor={`line_phone_${line.key}`}>
                         เบอร์โทร
                       </label>
@@ -512,17 +514,17 @@ export default function PaymentForm({
                         placeholder="0812345678"
                       />
                     </div>
-                    <div className="sm:col-span-2 lg:col-span-4">
+                    <div className="sm:col-span-2 lg:col-span-7">
                       <label className="label" htmlFor={`line_address_${line.key}`}>
                         ที่อยู่ผู้รับเงิน
                       </label>
-                      <textarea
+                      <input
                         id={`line_address_${line.key}`}
                         name="line_address"
                         value={line.payeeAddress}
                         onChange={(e) => patchLine(line.key, { payeeAddress: e.target.value })}
-                        className="input min-h-16"
-                        rows={2}
+                        className="input"
+                        placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด"
                       />
                     </div>
                   </div>
@@ -531,31 +533,31 @@ export default function PaymentForm({
                   <div className="mt-2">
                     <TagInput
                       name="line_tags"
-                      label="ป้ายกำกับ (แฮชแท็ก)"
-                      hint="ใช้จัดกลุ่มค่าใช้จ่ายเพื่อดูรายงานสรุปตามป้าย · ติดแยกได้รายรายการ"
+                      label="ป้ายกำกับ"
                       initialTags={line.tags}
                       suggestions={tagSuggestions}
+                      compact
                     />
                   </div>
 
                   {/* ---------- ใบเสร็จของรายการนี้ ---------- */}
-                  <div className="mt-2 grid gap-3 lg:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200 p-3">
+                  <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 p-2">
                       <PhotoUploader
                         name={`line_photo_${index}`}
-                        label="รูปถ่ายแนบประกอบ"
-                        hint={`แนบได้สูงสุด ${MAX_PHOTOS} รูป`}
+                        label="รูปถ่าย"
+                        hint={`สูงสุด ${MAX_PHOTOS} รูป`}
                         max={MAX_PHOTOS}
                         initialPaths={line.photos}
                         prefix="payment"
                         endpoint="/api/procurement/photo"
                       />
                     </div>
-                    <div className="rounded-xl border border-slate-200 p-3">
+                    <div className="rounded-xl border border-slate-200 p-2">
                       <FileUploader
                         name={`line_file_${index}`}
-                        label="เอกสารแนบ (ใบเสร็จ / ใบรับสินค้า)"
-                        hint={`แนบได้สูงสุด ${MAX_PAYMENT_DOCS} ไฟล์ · รองรับรูปและ PDF`}
+                        label="ใบเสร็จ / เอกสารแนบ"
+                        hint={`สูงสุด ${MAX_PAYMENT_DOCS} ไฟล์ · รูปและ PDF`}
                         max={MAX_PAYMENT_DOCS}
                         endpoint="/api/procurement/file"
                         accept={PR_FILE_ACCEPT}
@@ -586,106 +588,109 @@ export default function PaymentForm({
         />
       )}
 
-      {/* ---------- ยอดรวมทั้งใบ ---------- */}
-      {/*
-        ผู้รับเงิน เลขที่อ้างอิง ผังบัญชี ป้ายกำกับ และไฟล์แนบ ย้ายไปอยู่ที่รายการจ่ายแต่ละรายการแล้ว
-        หัวเอกสารเหลือเฉพาะสิ่งที่เป็นของทั้งใบจริง ๆ ส่วนช่องสรุปบน pr_payments
-        ฝั่ง server คิดจากรายการให้เอง จะได้ไม่มีทางที่ค่าสรุปกับรายการไม่ตรงกัน
-      */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <label className="label" htmlFor="paid_amount">
-            จำนวนเงินรวมทั้งใบ
-          </label>
-          <input
-            id="paid_amount"
-            name="paid_amount"
-            value={total ? String(total) : ""}
-            readOnly
-            className="input bg-slate-50 font-medium text-slate-700"
-            placeholder="0.00"
-          />
-          <p className="mt-1 text-xs text-slate-400">
-            บวกจากทุกรายการจ่ายด้านบนให้อัตโนมัติ — แก้ที่รายการ
-          </p>
+      {/* ---------- ท้ายเอกสาร ---------- */}
+      <div className="space-y-4 rounded-2xl border border-slate-300 bg-slate-100 p-3 sm:p-4">
+        {/* ---------- ยอดรวมทั้งใบ ---------- */}
+        {/*
+          ผู้รับเงิน เลขที่อ้างอิง ผังบัญชี ป้ายกำกับ และไฟล์แนบ ย้ายไปอยู่ที่รายการจ่ายแต่ละรายการแล้ว
+          หัวเอกสารเหลือเฉพาะสิ่งที่เป็นของทั้งใบจริง ๆ ส่วนช่องสรุปบน pr_payments
+          ฝั่ง server คิดจากรายการให้เอง จะได้ไม่มีทางที่ค่าสรุปกับรายการไม่ตรงกัน
+        */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
+          <div className="lg:col-span-3">
+            <label className="label" htmlFor="paid_amount">
+              จำนวนเงินรวมทั้งใบ
+            </label>
+            <input
+              id="paid_amount"
+              name="paid_amount"
+              value={total ? String(total) : ""}
+              readOnly
+              className="input bg-white text-right font-medium text-slate-700"
+              placeholder="0.00"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              บวกจากทุกรายการจ่ายด้านบนให้อัตโนมัติ — แก้ที่รายการ
+            </p>
+          </div>
         </div>
-      </div>
 
-      {/* ---------- ผู้บันทึก ผู้อนุมัติ และลายเซ็น ---------- */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="label" htmlFor="created_by_name">
-            ชื่อผู้บันทึก
-          </label>
-          <input
-            id="created_by_name"
-            name="created_by_name"
-            defaultValue={payment?.created_by_name ?? defaultRecorderName ?? ""}
-            className="input"
-          />
+        {/* ---------- ผู้บันทึก ผู้อนุมัติ และลายเซ็น ---------- */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label className="label" htmlFor="created_by_name">
+              ชื่อผู้บันทึก
+            </label>
+            <input
+              id="created_by_name"
+              name="created_by_name"
+              defaultValue={payment?.created_by_name ?? defaultRecorderName ?? ""}
+              className="input"
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="payer_name">
+              ชื่อผู้ทำจ่าย
+            </label>
+            <input
+              id="payer_name"
+              name="payer_name"
+              defaultValue={payment?.payer_name ?? defaultRecorderName ?? ""}
+              className="input"
+              placeholder="คนที่จ่ายเงินสดย่อยออกไป"
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="approver_name">
+              ชื่อผู้อนุมัติ
+            </label>
+            <input
+              id="approver_name"
+              name="approver_name"
+              value={approverName}
+              onChange={(e) => setApproverName(e.target.value)}
+              className="input"
+              placeholder="ดึงมาจากใบอนุมัติที่อ้างถึง"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              ผู้อนุมัติเซ็นไว้ที่ใบอนุมัติแล้ว ใบเบิกจึงเก็บแค่ชื่อ
+            </p>
+          </div>
         </div>
-        <div>
-          <label className="label" htmlFor="payer_name">
-            ชื่อผู้ทำจ่าย
-          </label>
-          <input
-            id="payer_name"
-            name="payer_name"
-            defaultValue={payment?.payer_name ?? defaultRecorderName ?? ""}
-            className="input"
-            placeholder="คนที่จ่ายเงินสดย่อยออกไป"
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="approver_name">
-            ชื่อผู้อนุมัติ
-          </label>
-          <input
-            id="approver_name"
-            name="approver_name"
-            value={approverName}
-            onChange={(e) => setApproverName(e.target.value)}
-            className="input"
-            placeholder="ดึงมาจากใบอนุมัติที่อ้างถึง"
-          />
-          <p className="mt-1 text-xs text-slate-400">
-            ผู้อนุมัติเซ็นไว้ที่ใบอนุมัติแล้ว ใบเบิกจึงเก็บแค่ชื่อ
-          </p>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 p-3">
-          <SignaturePad
-            name="payee_signature"
-            label="ลายเซ็นผู้รับเงิน"
-            hint="เซ็นด้วยนิ้วบนมือถือหรือเมาส์บน PC แล้วกดบันทึกลายเซ็น"
-            initialPath={payment?.payee_signature ?? null}
-          />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 p-3">
+            <SignaturePad
+              name="payee_signature"
+              label="ลายเซ็นผู้รับเงิน"
+              hint="เซ็นด้วยนิ้วบนมือถือหรือเมาส์บน PC แล้วกดบันทึกลายเซ็น"
+              initialPath={payment?.payee_signature ?? null}
+            />
+          </div>
+          <div className="rounded-xl border border-slate-200 p-3">
+            <SignaturePad
+              name="payer_signature"
+              label="ลายเซ็นผู้ทำจ่าย"
+              initialPath={payment?.payer_signature ?? null}
+            />
+          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 p-3">
-          <SignaturePad
-            name="payer_signature"
-            label="ลายเซ็นผู้ทำจ่าย"
-            initialPath={payment?.payer_signature ?? null}
-          />
+
+        <div className="lg:max-w-3xl">
+          <label className="label" htmlFor="note">
+            หมายเหตุ
+          </label>
+          <input id="note" name="note" defaultValue={payment?.note ?? ""} className="input" />
         </div>
-      </div>
 
-      <div>
-        <label className="label" htmlFor="note">
-          หมายเหตุ
-        </label>
-        <input id="note" name="note" defaultValue={payment?.note ?? ""} className="input" />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" className="btn-primary w-full sm:w-auto">
-          {submitLabel}
-        </button>
-        <Link href="/procurement/payments" className="btn-secondary w-full sm:w-auto">
-          ยกเลิก
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="submit" className="btn-primary w-full sm:w-auto">
+            {submitLabel}
+          </button>
+          <Link href="/procurement/payments" className="btn-secondary w-full sm:w-auto">
+            ยกเลิก
+          </Link>
+        </div>
       </div>
     </form>
   );
