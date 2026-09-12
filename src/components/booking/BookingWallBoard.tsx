@@ -2,16 +2,33 @@
 
 import { useState } from "react";
 import WallShell from "@/components/wall/WallShell";
-import { AlertList, Panel, RankBars, shortBaht, StatTile } from "@/components/wall/WallParts";
+import { AlertList, intTH, Panel, RankBars, shortBaht, StatTile } from "@/components/wall/WallParts";
 import {
   useWallPeriod,
   WallPeriodPicker,
   WallSelect,
   type Option,
 } from "@/components/wall/WallFilters";
-import { BOOK_SLOW_DAYS, type BookingWall } from "@/lib/wall-types";
+import WallPivot, { type PivotDim, type PivotMetric } from "@/components/wall/WallPivot";
+import { BOOK_SLOW_DAYS, type BookingPivotCell, type BookingWall } from "@/lib/wall-types";
 
 const REFRESH_MS = 2 * 60_000;
+
+const PIVOT_DIMS: PivotDim<BookingPivotCell>[] = [
+  { key: "branch", label: "สาขา", of: (c) => ({ key: c.branch }) },
+  { key: "staff", label: "พนักงานขาย", of: (c) => ({ key: c.staff }) },
+  { key: "brand", label: "ยี่ห้อ", of: (c) => ({ key: c.brand }) },
+  { key: "model", label: "รุ่น", of: (c) => ({ key: c.model }) },
+  { key: "purchase", label: "ประเภทการซื้อ", of: (c) => ({ key: c.purchase }) },
+  { key: "vehicle", label: "สถานะรถ", of: (c) => ({ key: c.vehicle }) },
+  { key: "booking", label: "สถานะการจอง", of: (c) => ({ key: c.booking }) },
+  { key: "contract", label: "สถานะสัญญา", of: (c) => ({ key: c.contract }) },
+];
+
+const PIVOT_METRICS: PivotMetric<BookingPivotCell>[] = [
+  { key: "bookings", label: "จำนวนใบจอง", of: (c) => c.bookings, fmt: intTH },
+  { key: "deposit", label: "เงินมัดจำ", of: (c) => c.deposit, fmt: shortBaht },
+];
 
 export default function BookingWallBoard({ branches }: { branches: Option[] }) {
   const [branch, setBranch] = useState("");
@@ -92,6 +109,15 @@ export default function BookingWallBoard({ branches }: { branches: Option[] }) {
               <RankBars rows={d.byModel} unit="ใบ" tone="amber" />
             </Panel>
           </div>
+
+          <WallPivot
+            rows={d.pivot}
+            dims={PIVOT_DIMS}
+            metrics={PIVOT_METRICS}
+            initialRow="model"
+            initialCol="branch"
+            note={`ใบจองที่รับใน ${d.period.label}`}
+          />
         </div>
       )}
     </WallShell>

@@ -10,10 +10,25 @@ import {
   WallSelect,
   type Option,
 } from "@/components/wall/WallFilters";
-import type { SaleWorkWall } from "@/lib/wall-types";
+import WallPivot, { type PivotDim, type PivotMetric } from "@/components/wall/WallPivot";
+import { formatThaiDate } from "@/lib/datetime";
+import type { SaleWorkPivotCell, SaleWorkWall } from "@/lib/wall-types";
 
 /** งานประจำวันเปลี่ยนถี่กว่าจออื่น จึงรีเฟรชทุกนาที */
 const REFRESH_MS = 60_000;
+
+const PIVOT_DIMS: PivotDim<SaleWorkPivotCell>[] = [
+  { key: "task", label: "ประเภทงาน", of: (c) => ({ key: c.task }) },
+  { key: "staff", label: "พนักงาน", of: (c) => ({ key: c.staff }) },
+  { key: "branch", label: "สาขา", of: (c) => ({ key: c.branch }) },
+  { key: "date", label: "วันที่", of: (c) => ({ key: c.date, label: formatThaiDate(c.date) }) },
+];
+
+const PIVOT_METRICS: PivotMetric<SaleWorkPivotCell>[] = [
+  { key: "done", label: "งานที่ทำ", of: (c) => c.done, fmt: intTH },
+  { key: "items", label: "งานในใบ", of: (c) => c.items, fmt: intTH },
+  { key: "qty", label: "ปริมาณ", of: (c) => c.qty, fmt: intTH },
+];
 
 /**
  * แถวของแผง "ประเภทงานที่ทำ" — เรียงจากน้อยไปมากมาจาก server แล้ว
@@ -134,6 +149,15 @@ export default function SaleWorkWallBoard({ branches }: { branches: Option[] }) 
                 <RankBars rows={taskRows(d, pick)} unit="งาน" tone="sky" />
               </Panel>
             </div>
+
+            <WallPivot
+              rows={d.pivot}
+              dims={PIVOT_DIMS}
+              metrics={PIVOT_METRICS}
+              initialRow="task"
+              initialCol="staff"
+              note={d.period.label}
+            />
           </div>
         );
       }}

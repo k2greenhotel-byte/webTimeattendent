@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OPEN_BUCKET, OPEN_BUCKET_ORDER, OPEN_STATUS, SW_STATUS_LABEL, type Db2OpenBucket } from "@/lib/db2-jobs";
+import WallPivot, { type PivotDim, type PivotMetric } from "@/components/wall/WallPivot";
 
 /**
  * จอ War Room งานซ่อม — เปิดค้างบนจอมอนิเตอร์/ทีวี พื้นมืด ตัวเลขใหญ่ รีเฟรชเองทุก 60 วินาที
@@ -124,6 +125,34 @@ const endOfMonth = (ym: string) => {
 const metricValue = (a: Agg, m: Metric) => a[m];
 const fmtMetric = (v: number, m: Metric) => (m === "jobs" ? int(v) : compact(v));
 
+/** ช่วงอายุงานค้าง — ตัวเลขวันดิบไขว้ไม่ได้ ต้องจัดเป็นช่วงก่อน */
+function ageBucket(days: number): { key: string; label: string } {
+  if (days <= 7) return { key: "1", label: "ไม่เกิน 7 วัน" };
+  if (days <= 30) return { key: "2", label: "8–30 วัน" };
+  if (days <= 90) return { key: "3", label: "1–3 เดือน" };
+  if (days <= 365) return { key: "4", label: "3–12 เดือน" };
+  return { key: "5", label: "เกิน 1 ปี" };
+}
+
+const PIVOT_DIMS: PivotDim<OpenJob>[] = [
+  { key: "bucket", label: "สาเหตุที่ยังไม่ปิด", of: (j) => ({ key: j.bucket, label: OPEN_BUCKET[j.bucket].label }) },
+  { key: "branch", label: "สาขา", of: (j) => ({ key: j.locat, label: j.branch ?? j.locat }) },
+  { key: "tech", label: "ช่างซ่อม", of: (j) => ({ key: j.repcod, label: j.repName ?? j.repcod }) },
+  { key: "reptype", label: "ประเภทงานซ่อม", of: (j) => ({ key: j.reptype, label: j.reptypeName ?? j.reptype }) },
+  { key: "model", label: "รุ่นรถ", of: (j) => ({ key: j.model, label: j.modelName ?? j.model }) },
+  { key: "age", label: "ช่วงอายุงานค้าง", of: (j) => ageBucket(j.ageDays) },
+  {
+    key: "swstatus",
+    label: "สถานะในโปรแกรมเดิม",
+    of: (j) => ({ key: j.swstatus || "-", label: SW_STATUS_LABEL[j.swstatus] ?? "ไม่ระบุ" }),
+  },
+];
+
+const PIVOT_METRICS: PivotMetric<OpenJob>[] = [
+  { key: "jobs", label: "จำนวนใบ", of: () => 1, fmt: int },
+  { key: "billable", label: "เงินค้างเก็บ", of: (j) => j.billable, fmt: compact },
+];
+
 export default function JobWallBoard() {
   const today = todayTH();
   const [preset, setPreset] = useState<Preset>("mtd");
@@ -136,6 +165,15 @@ export default function JobWallBoard() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const timer = useRef<number | null>(null);
+
+  /**
+   * ตารางไขว้ใช้ใบงานค้างทั้งชุด (พันกว่าใบ) ซึ่งหนักเกินกว่าจะดึงทุกนาที
+   * จึงแยกโหลดต่างหากเฉพาะตอนกางตาราง และไม่เข้ารอบรีเฟรช 60 วินาที
+   */
+  const [pivotOpen, setPivotOpen] = useState(false);
+  const [pivotRows, setPivotRows] = useState<OpenJob[] | null>(null);
+  const [pivotBusy, setPivotBusy] = useState(false);
+  const [pivotError, setPivotError] = useState<string | null>(null);
 
   const range = useMemo(() => {
     if (preset === "today") return { from: today, to: today };
@@ -179,6 +217,35 @@ export default function JobWallBoard() {
     const t = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(t);
   }, []);
+
+  // โหลดชุดเต็มของงานค้างเมื่อกางตาราง และโหลดใหม่เมื่อเปลี่ยนช่วง/สาขา
+  useEffect(() => {
+    if (!pivotOpen) return;
+    let cancelled = false;
+
+    (async () => {
+      setPivotBusy(true);
+      setPivotError(null);
+      try {
+        const qs = new URLSearchParams(range);
+        if (locat) qs.set("locat", locat);
+        // 3000 = เพดานที่ฝั่ง Db2 ยอมรับ (ตรวจด้วย regex 4 หลัก) งานค้างจริงพันกว่าใบจึงครบ
+        qs.set("openLimit", "3000");
+        const res = await fetch(`/api/db2/jobs?${qs}`, { cache: "no-store" });
+        const body = await res.json();
+        if (!res.ok || body.ok === false) throw new Error(body.error ?? `HTTP ${res.status}`);
+        if (!cancelled) setPivotRows(body.open?.list ?? []);
+      } catch (e) {
+        if (!cancelled) setPivotError((e as Error).message);
+      } finally {
+        if (!cancelled) setPivotBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pivotOpen, range, locat]);
 
   function fullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -445,6 +512,36 @@ export default function JobWallBoard() {
                 onChangeDim={(d) => setPanels((p) => p.map((x, j) => (j === i ? d : x)))}
               />
             ))}
+          </div>
+
+          {/* ตารางไขว้งานค้างปิด job — กางเองเพราะต้องดึงใบงานค้างทั้งชุด (พันกว่าใบ) */}
+          <div className="mb-4">
+            {!pivotOpen ? (
+              <button
+                onClick={() => setPivotOpen(true)}
+                className="w-full rounded-2xl border border-dashed border-slate-700 py-3 text-sm text-slate-300 hover:border-sky-600 hover:text-sky-300"
+              >
+                ▤ กางตารางไขว้ งานค้างปิด job (ดึงใบงานค้างทั้งชุด)
+              </button>
+            ) : pivotError ? (
+              <p className="rounded-2xl border border-rose-800 bg-rose-950 px-4 py-3 text-sm text-rose-200">
+                โหลดตารางไขว้ไม่สำเร็จ — {pivotError}
+              </p>
+            ) : pivotBusy && !pivotRows ? (
+              <p className="rounded-2xl bg-slate-900 px-4 py-6 text-center text-sm text-slate-400">
+                กำลังดึงใบงานค้างทั้งชุด…
+              </p>
+            ) : (
+              <WallPivot
+                rows={pivotRows ?? []}
+                dims={PIVOT_DIMS}
+                metrics={PIVOT_METRICS}
+                initialRow="bucket"
+                initialCol="branch"
+                title="ตารางไขว้ งานค้างปิด job"
+                note={`${int((pivotRows ?? []).length)} ใบ · สถานะปัจจุบัน ไม่ขึ้นกับช่วงที่เลือก`}
+              />
+            )}
           </div>
 
           <div className="mb-4 grid gap-4 lg:grid-cols-2">

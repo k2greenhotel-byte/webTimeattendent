@@ -47,6 +47,25 @@ export type MarketingWall = {
 
 // ---------- จองรถ ----------
 
+/**
+ * หนึ่งชุดของตารางไขว้จอจองรถ — ใบจองที่มีแกนเหมือนกันทั้งหมดถูกรวมมาแล้ว
+ * ส่งมาแบบยุบแล้วเพื่อให้หน้าเว็บสลับแกนเองได้โดยไม่ต้องขนใบจองดิบข้ามเน็ต
+ */
+export type BookingPivotCell = {
+  branch: string;
+  staff: string;
+  brand: string;
+  model: string;
+  purchase: string;
+  vehicle: string;
+  booking: string;
+  contract: string;
+  /** จำนวนใบจองในชุดนี้ */
+  bookings: number;
+  /** เงินมัดจำรวม */
+  deposit: number;
+};
+
 export type BookingWall = {
   generatedAt: string;
   today: string;
@@ -65,6 +84,8 @@ export type BookingWall = {
   byBranch: WallRank[];
   byStaff: WallRank[];
   byModel: WallRank[];
+  /** ข้อมูลตารางไขว้ของใบจองที่รับในช่วงที่เลือก */
+  pivot: BookingPivotCell[];
 };
 
 /** รอส่งมอบเกินกี่วันถือว่าช้า */
@@ -155,6 +176,20 @@ export type ClaimWall = {
 
 // ---------- งานประจำวันพนักงานขาย ----------
 
+/** หนึ่งชุดของตารางไขว้จองานประจำวัน — รายการที่มีแกนเหมือนกันทั้งหมดถูกรวมมาแล้ว */
+export type SaleWorkPivotCell = {
+  task: string;
+  staff: string;
+  branch: string;
+  date: string;
+  /** จำนวนรายการงานในชุดนี้ */
+  items: number;
+  /** จำนวนที่ทำเสร็จแล้ว */
+  done: number;
+  /** ปริมาณรวมที่บันทึกไว้ (บางงานนับเป็นชิ้น/ราย) */
+  qty: number;
+};
+
 export type SaleWorkWall = {
   generatedAt: string;
   today: string;
@@ -176,6 +211,12 @@ export type SaleWorkWall = {
   byStaff: WallRank[];
   /** พนักงานที่มีข้อมูลในช่วง — ใช้เป็นตัวเลือกกรองแผงประเภทงาน */
   staffOptions: { id: string; name: string }[];
+  /**
+   * ข้อมูลสำหรับตารางไขว้ — ยุบรายการดิบเป็นชุดที่ซ้ำกันแล้ว (ประเภทงาน × คน × สาขา × วัน)
+   * ส่งมาแบบนี้เพื่อให้หน้าเว็บสลับแกนเองได้ทันทีโดยไม่ต้องยิง API ใหม่
+   * และไม่ต้องขนรายการดิบหลักหมื่นแถวข้ามเน็ต
+   */
+  pivot: SaleWorkPivotCell[];
   /**
    * งานรายประเภทแยกตามคน เรียงจากน้อยไปมาก
    * ส่งทั้งตารางมาให้จอ เพื่อสลับดูรวม/รายคน และคิด % เทียบยอดรวมได้เองโดยไม่ต้องยิง API ใหม่

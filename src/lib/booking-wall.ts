@@ -9,10 +9,22 @@ import {
   staffNameOf,
 } from "./booking";
 import { listBookings } from "./booking-db";
-import { CONTRACT_STATUS_LABEL, type BookingRow } from "./booking-types";
+import {
+  BOOKING_STATUS_LABEL,
+  CONTRACT_STATUS_LABEL,
+  PURCHASE_TYPE_LABEL,
+  VEHICLE_STATUS_LABEL,
+  type BookingRow,
+} from "./booking-types";
 import { workDateOf } from "./datetime";
 import { inPeriod, type WallPeriod } from "./wall-period";
-import { BOOK_SLOW_DAYS, type BookingWall, type WallRank, type WallRow } from "./wall-types";
+import {
+  BOOK_SLOW_DAYS,
+  type BookingPivotCell,
+  type BookingWall,
+  type WallRank,
+  type WallRow,
+} from "./wall-types";
 
 /**
  * ข้อมูลจอ War Room ของระบบจองรถ
@@ -51,6 +63,40 @@ function rankBy(rows: BookingRow[], labelOf: (r: BookingRow) => string | null): 
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => b.value - a.value)
     .slice(0, TOP_N);
+}
+
+/**
+ * ยุบใบจองเป็นชุดสำหรับตารางไขว้
+ *
+ * แกนที่ไขว้ได้มี 8 อย่าง ใบที่ทุกแกนตรงกันยุบรวมกันได้โดยยอดไม่เพี้ยน
+ * ส่งแบบยุบแล้วแทนใบดิบ เพราะใบจองสะสมหลายพันใบ ขนข้ามเน็ตทั้งหมดไม่ไหว
+ */
+function buildPivot(rows: BookingRow[]): BookingPivotCell[] {
+  const acc = new Map<string, BookingPivotCell>();
+
+  for (const r of rows) {
+    const cell: Omit<BookingPivotCell, "bookings" | "deposit"> = {
+      branch: r.branch_name ?? "ไม่ระบุสาขา",
+      staff: staffNameOf(r),
+      brand: r.brand_name ?? r.db2_brand_name ?? "ไม่ระบุยี่ห้อ",
+      model: r.model_name ?? r.db2_model_name ?? "ไม่ระบุรุ่น",
+      purchase: PURCHASE_TYPE_LABEL[r.purchase_type],
+      vehicle: VEHICLE_STATUS_LABEL[r.vehicle_status],
+      booking: BOOKING_STATUS_LABEL[r.booking_status],
+      contract: CONTRACT_STATUS_LABEL[r.contract_status],
+    };
+    const at = Object.values(cell).join("|");
+
+    let found = acc.get(at);
+    if (!found) {
+      found = { ...cell, bookings: 0, deposit: 0 };
+      acc.set(at, found);
+    }
+    found.bookings += 1;
+    found.deposit += r.deposit_amount ?? 0;
+  }
+
+  return [...acc.values()];
 }
 
 export async function buildBookingWall(input: {
@@ -113,6 +159,7 @@ export async function buildBookingWall(input: {
           sub: "รถยังไม่มีในสต็อก",
         }))
       : rankings.topModels.map((m) => ({ label: m.label, value: m.count })),
+    pivot: buildPivot(inRange),
   };
 }
 

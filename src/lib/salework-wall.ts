@@ -2,8 +2,9 @@ import "server-only";
 import { workDateOf } from "./datetime";
 import { buildStaffSummaries, buildTaskMatrix, daysElapsed, perDay } from "./salework";
 import { listItemStats, listWorkOwners } from "./salework-db";
+import type { ItemStatRow } from "./salework-types";
 import type { WallPeriod } from "./wall-period";
-import type { SaleWorkWall, WallRow } from "./wall-types";
+import type { SaleWorkPivotCell, SaleWorkWall, WallRow } from "./wall-types";
 
 /**
  * ข้อมูลจอ War Room ของบันทึกงานประจำวันพนักงานขาย
@@ -26,6 +27,34 @@ const TOP_N = 12;
 const STAFF_N = 20;
 
 export type { SaleWorkWall };
+
+/**
+ * ยุบรายการดิบเป็นชุดสำหรับตารางไขว้
+ *
+ * รายการดิบช่วงเดือนมีได้เป็นหมื่นแถว ส่งข้ามเน็ตทั้งหมดไม่ไหว แต่แกนที่ใช้ไขว้
+ * มีแค่ 4 อย่าง รายการที่มีแกนเหมือนกันจึงยุบรวมกันได้โดยตัวเลขไม่เพี้ยน
+ * หน้าเว็บเอาชุดพวกนี้ไปไขว้แกนไหนก็ได้เองโดยไม่ต้องยิง API ใหม่
+ */
+function buildPivot(rows: ItemStatRow[]): SaleWorkPivotCell[] {
+  const acc = new Map<string, SaleWorkPivotCell>();
+
+  for (const r of rows) {
+    const staff = r.owner_full_name ?? r.owner_name;
+    const branch = r.branch_name ?? "ไม่ระบุสาขา";
+    const at = `${r.task_code}|${staff}|${branch}|${r.work_date}`;
+
+    let cell = acc.get(at);
+    if (!cell) {
+      cell = { task: r.task_name, staff, branch, date: r.work_date, items: 0, done: 0, qty: 0 };
+      acc.set(at, cell);
+    }
+    cell.items += 1;
+    if (r.done) cell.done += 1;
+    cell.qty += r.qty ?? 0;
+  }
+
+  return [...acc.values()];
+}
 
 export async function buildSaleWorkWall(input: {
   branchId?: string | null;
@@ -89,5 +118,6 @@ export async function buildSaleWorkWall(input: {
     byTask: taskMatrix
       .slice(0, TOP_N)
       .map((t) => ({ label: t.task_name, total: t.total, byStaff: t.byStaff })),
+    pivot: buildPivot(rows),
   };
 }
