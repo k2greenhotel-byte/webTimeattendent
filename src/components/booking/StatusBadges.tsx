@@ -1,3 +1,4 @@
+import { boothTag } from "@/lib/booking";
 import {
   BOOKING_STATUS_CLASS,
   BOOKING_STATUS_LABEL,
@@ -7,6 +8,7 @@ import {
   DOC_STATUS_LABEL,
   VEHICLE_STATUS_CLASS,
   VEHICLE_STATUS_LABEL,
+  type BookingRow,
   type BookingStatus,
   type ContractStatus,
   type DocStatus,
@@ -44,5 +46,17 @@ export function DocStatusBadge({ status }: { status: DocStatus }) {
     <span className={`badge whitespace-nowrap ${DOC_STATUS_CLASS[status]}`}>
       {DOC_STATUS_LABEL[status]}
     </span>
+  );
+}
+
+/**
+ * ป้ายบูธที่รับจอง เช่น #บูธบิ๊กซีกาญ
+ * ใบที่รับที่สาขาตามปกติไม่แสดงอะไรเลย จะได้เห็นชัดว่าใบไหนมาจากการออกบูธ
+ */
+export function BoothTag({ row }: { row: Pick<BookingRow, "booth_name"> }) {
+  const tag = boothTag(row);
+  if (!tag) return null;
+  return (
+    <span className="badge whitespace-nowrap bg-violet-100 text-violet-700">{tag}</span>
   );
 }

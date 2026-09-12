@@ -120,6 +120,8 @@ function readBooking(
 
   return {
     branch_id: optText(form, "branch_id"),
+    // บูธที่รับจอง — ว่าง = รับที่สาขาตามปกติ
+    booth_site_id: optText(form, "booth_site_id"),
     ref_no: optText(form, "ref_no"),
     booking_date: str(form, "booking_date"),
     // ทะเบียนลูกค้าเดิมไม่ใช้กับใบใหม่แล้ว — ใบเก่ายังอ่านค่าเดิมได้

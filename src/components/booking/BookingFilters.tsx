@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BOOTH_ANY, BOOTH_ANY_LABEL, BOOTH_NONE, BOOTH_NONE_LABEL } from "@/lib/booking";
 import {
   BOOKING_STATUS_LABEL,
   BOOKING_STATUS_ORDER,
@@ -91,6 +92,7 @@ export default function BookingFilters({
   variants,
   colors,
   staffNames = [],
+  booths = [],
   resetHref,
   extraHiddenFields = {},
 }: {
@@ -102,6 +104,8 @@ export default function BookingFilters({
   colors: MotoOption[];
   /** ชื่อพนักงานที่รับจองที่มีอยู่จริงในใบจอง */
   staffNames?: string[];
+  /** บูธที่เคยมีใบจองจริง */
+  booths?: { id: string; name: string }[];
   resetHref: string;
   /** ค่าที่ต้องติดไปกับฟอร์มด้วย เช่นเดือนที่กำลังดูบน dashboard */
   extraHiddenFields?: Record<string, string>;
@@ -139,6 +143,22 @@ export default function BookingFilters({
             {staffNames.map((name) => (
               <option key={name} value={name}>
                 {name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="booth">
+            บูธที่รับจอง
+          </label>
+          <select id="booth" name="booth" defaultValue={params.booth ?? ""} className="input">
+            <option value="">ทั้งหมด</option>
+            <option value={BOOTH_ANY}>{BOOTH_ANY_LABEL}</option>
+            <option value={BOOTH_NONE}>{BOOTH_NONE_LABEL}</option>
+            {booths.map((b) => (
+              <option key={b.id} value={b.id}>
+                #{b.name}
               </option>
             ))}
           </select>

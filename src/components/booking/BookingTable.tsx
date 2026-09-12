@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   BookingStatusBadge,
+  BoothTag,
   ContractStatusBadge,
   DocStatusBadge,
   VehicleStatusBadge,
@@ -42,6 +43,7 @@ export default function BookingTable({
                 <p className="truncate text-sm text-slate-700">
                   {row.customer_name ?? "— ไม่ระบุลูกค้า —"}
                 </p>
+                <BoothTag row={row} />
               </div>
               <DocStatusBadge status={row.doc_status} />
             </div>
@@ -121,6 +123,11 @@ export default function BookingTable({
                   </Link>
                   {row.ref_no && (
                     <div className="text-[11px] text-slate-400">อ้างอิง {row.ref_no}</div>
+                  )}
+                  {row.booth_site_id && (
+                    <div className="mt-0.5">
+                      <BoothTag row={row} />
+                    </div>
                   )}
                 </td>
                 <td className="text-xs">{formatThaiDate(row.booking_date)}</td>

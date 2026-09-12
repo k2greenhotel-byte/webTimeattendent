@@ -599,6 +599,53 @@ export function monthlyTrend(
   return points;
 }
 
+// ---------- บูธที่รับจอง ----------
+
+/** ค่าพิเศษของตัวกรองบูธ — ใช้ใน query string จึงต้องไม่ชนกับ uuid ของ work_sites */
+export const BOOTH_ANY = "__booth__";
+export const BOOTH_NONE = "__branch__";
+
+export const BOOTH_ANY_LABEL = "เฉพาะที่รับจากบูธ";
+export const BOOTH_NONE_LABEL = "เฉพาะที่รับที่สาขา";
+
+/** ป้ายบูธของใบจอง เช่น "#บูธบิ๊กซีกาญ" — ใบที่รับที่สาขาคืน null */
+export function boothTag(row: Pick<BookingRow, "booth_name">): string | null {
+  const name = (row.booth_name ?? "").trim();
+  return name ? `#${name}` : null;
+}
+
+/** ใบนี้รับจองจากบูธหรือไม่ */
+export function isBoothBooking(row: Pick<BookingRow, "booth_site_id">): boolean {
+  return Boolean(row.booth_site_id);
+}
+
+/** ชื่อกลุ่มที่ใช้จัดอันดับ/ไขว้ตาราง — ใบที่ไม่ได้มาจากบูธรวมเป็นกลุ่มเดียว */
+export const NO_BOOTH = "รับที่สาขา";
+
+export function boothNameOf(row: Pick<BookingRow, "booth_name">): string {
+  return (row.booth_name ?? "").trim() || NO_BOOTH;
+}
+
+/** ยอดจองแยกตามบูธ เรียงจากมากไปน้อย (กลุ่ม "รับที่สาขา" ไว้ท้ายเสมอ เพราะไม่ใช่ผลงานบูธ) */
+export function summarizeByBooth(rows: BookingRow[]): { label: string; count: number; deposit: number }[] {
+  const tally = new Map<string, { count: number; deposit: number }>();
+  for (const row of rows) {
+    const key = boothNameOf(row);
+    const entry = tally.get(key) ?? { count: 0, deposit: 0 };
+    entry.count += 1;
+    entry.deposit += Number(row.deposit_amount ?? 0);
+    tally.set(key, entry);
+  }
+
+  return [...tally.entries()]
+    .map(([label, v]) => ({ label, ...v }))
+    .sort((a, b) => {
+      if (a.label === NO_BOOTH) return 1;
+      if (b.label === NO_BOOTH) return -1;
+      return b.count - a.count || a.label.localeCompare(b.label, "th");
+    });
+}
+
 // ---------- แยกตามพนักงานขาย ----------
 
 export const NO_STAFF = "— ไม่ระบุพนักงาน —";
@@ -780,6 +827,7 @@ export function queryFromParams(params: BookingSearchParams): BookingQuery {
     booking_status: one(params.status, BOOKING_STATUS_ORDER),
     cancel_reason: one(params.cancel, CANCEL_REASON_ORDER),
     staff: (params.staff ?? "").trim() || null,
+    booth: (params.booth ?? "").trim() || null,
     from: params.from || null,
     to: params.to || null,
     pickup_from: params.pickup_from || null,

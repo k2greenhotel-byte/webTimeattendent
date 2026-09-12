@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import BookingForm from "@/components/booking/BookingForm";
-import { DocStatusBadge } from "@/components/booking/StatusBadges";
+import { BoothTag, DocStatusBadge } from "@/components/booking/StatusBadges";
 import UpdateList, { UpdateFileLinks } from "@/components/booking/UpdateList";
 import { formatBaht } from "@/lib/booking";
 import { getBooking, listBookingFiles, listUpdateFiles, listUpdates } from "@/lib/booking-db";
 import { formatThaiDate } from "@/lib/datetime";
-import { listBranches } from "@/lib/db";
+import { listBranches, listSites } from "@/lib/db";
 import { checkPermission, requirePermission } from "@/lib/session";
 import { deleteBookingForm, deleteUpdateForm, updateBookingForm } from "../../actions";
 
@@ -31,6 +31,7 @@ export default async function BookingDetailPage({
     files,
     updates,
     branches,
+    booths,
     canEdit,
     canDelete,
     canUpdate,
@@ -39,6 +40,7 @@ export default async function BookingDetailPage({
     listBookingFiles(id),
     listUpdates({ booking_id: id }),
     listBranches(true),
+    listSites(user.company_id ?? null, true),
     checkPermission("BOOK_ENTRY", "edit"),
     checkPermission("BOOK_ENTRY", "delete"),
     checkPermission("BOOK_UPDATE", "write"),
@@ -53,6 +55,7 @@ export default async function BookingDetailPage({
         <div className="min-w-0">
           <h1 className="flex flex-wrap items-center gap-2 text-lg font-bold text-slate-800 sm:text-xl">
             ใบจองเลขที่ {booking.doc_no} <DocStatusBadge status={booking.doc_status} />
+            <BoothTag row={booking} />
           </h1>
           <p className="text-sm text-slate-500">
             จองวันที่ {formatThaiDate(booking.booking_date)} · มัดจำ {formatBaht(booking.deposit_amount)}
@@ -81,6 +84,7 @@ export default async function BookingDetailPage({
           booking={booking}
           files={files}
           branches={branches}
+          booths={booths}
           defaultStaffName={user.full_name}
           action={updateBookingForm}
           submitLabel="บันทึกการแก้ไข"

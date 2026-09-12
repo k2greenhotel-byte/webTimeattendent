@@ -53,6 +53,8 @@ export type MarketingWall = {
  */
 export type BookingPivotCell = {
   branch: string;
+  /** บูธที่รับจอง — ใบที่ไม่ได้ออกบูธรวมเป็นกลุ่ม "รับที่สาขา" */
+  booth: string;
   staff: string;
   brand: string;
   model: string;
@@ -77,11 +79,15 @@ export type BookingWall = {
     awaitingDelivery: number;
     outOfStock: number;
     docPending: number;
+    /** ใบที่รับจองจากบูธในช่วงที่เลือก */
+    fromBooth: number;
   };
   money: { total: number; inPeriod: number };
   waitingLong: WallRow[];
   docPending: WallRow[];
   byBranch: WallRank[];
+  /** ยอดจองแยกตามบูธ (เฉพาะใบที่มาจากบูธ — ไม่รวมใบที่รับที่สาขา) */
+  byBooth: WallRank[];
   byStaff: WallRank[];
   byModel: WallRank[];
   /** ข้อมูลตารางไขว้ของใบจองที่รับในช่วงที่เลือก */

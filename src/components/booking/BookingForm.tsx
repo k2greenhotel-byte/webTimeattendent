@@ -24,7 +24,7 @@ import {
   type BookingFileKind,
   type BookingRow,
 } from "@/lib/booking-types";
-import type { Branch } from "@/lib/types";
+import type { Branch, WorkSite } from "@/lib/types";
 
 const UPLOAD_ENDPOINT = "/api/booking/file";
 
@@ -45,6 +45,7 @@ export default function BookingForm({
   booking,
   files = [],
   branches,
+  booths = [],
   defaultBranchId,
   defaultStaffName,
   action,
@@ -53,6 +54,8 @@ export default function BookingForm({
   booking?: BookingRow | null;
   files?: BookingFile[];
   branches: Branch[];
+  /** บูธที่เปิดใช้งาน (ทะเบียนเดียวกับตารางบูธของระบบลงเวลา) */
+  booths?: WorkSite[];
   defaultBranchId?: string | null;
   /** ชื่อพนักงานที่รับจอง — ดึงจากบัญชีที่ล็อกอินอยู่ ใช้เป็นค่าตั้งต้นของใบใหม่ */
   defaultStaffName?: string;
@@ -97,6 +100,27 @@ export default function BookingForm({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="booth_site_id">
+            รับจองจากบูธ
+          </label>
+          <select
+            id="booth_site_id"
+            name="booth_site_id"
+            defaultValue={booking?.booth_site_id ?? ""}
+            className="input"
+          >
+            <option value="">— รับที่สาขา (ไม่ได้ออกบูธ) —</option>
+            {booths.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-400">
+            เลือกเฉพาะกรณีไปออกบูธนอกสถานที่ · ใบจองจะติดแท็ก #ชื่อบูธ ให้กรองยอดได้
+          </p>
         </div>
         <div>
           <label className="label" htmlFor="taken_by_name">

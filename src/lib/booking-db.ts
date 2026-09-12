@@ -1,5 +1,5 @@
 import "server-only";
-import { applyUpdate, staffNameOf } from "./booking";
+import { BOOTH_ANY, BOOTH_NONE, applyUpdate, staffNameOf } from "./booking";
 import type {
   Booking,
   BookingFile,
@@ -55,6 +55,11 @@ export async function listBookings(query: BookingQuery = {}): Promise<BookingRow
   for (const [column, value] of Object.entries(eq)) {
     if (value) q = q.eq(column, value);
   }
+
+  // บูธ: เลือกบูธใดบูธหนึ่ง หรือกรองรวมว่า "มาจากบูธ" / "รับที่สาขา"
+  if (query.booth === BOOTH_ANY) q = q.not("booth_site_id", "is", null);
+  else if (query.booth === BOOTH_NONE) q = q.is("booth_site_id", null);
+  else if (query.booth) q = q.eq("booth_site_id", query.booth);
 
   if (query.from) q = q.gte("booking_date", query.from);
   if (query.to) q = q.lte("booking_date", query.to);
@@ -187,6 +192,27 @@ export async function listBookingStaffNames(): Promise<string[]> {
     names.add(staffNameOf(row as { taken_by_name?: string | null; taken_by_full_name?: string | null }));
   }
   return [...names].sort((a, b) => a.localeCompare(b, "th"));
+}
+
+/**
+ * บูธที่เคยมีใบจองจริง — ใช้เป็นตัวเลือกของช่องกรองในหน้าสอบถาม/dashboard
+ * (ไม่ได้ไล่จากทะเบียนบูธทั้งหมด เพราะบูธที่ยังไม่เคยมีใบจองไม่มีประโยชน์ให้กรอง)
+ */
+export async function listBookingBooths(): Promise<{ id: string; name: string }[]> {
+  const { data, error } = await getSupabase()
+    .from("v_bk_bookings")
+    .select("booth_site_id, booth_name")
+    .not("booth_site_id", "is", null)
+    .limit(5000);
+  if (error) throw new Error(`อ่านรายชื่อบูธไม่สำเร็จ: ${error.message}`);
+
+  const seen = new Map<string, string>();
+  for (const row of (data ?? []) as { booth_site_id: string; booth_name: string | null }[]) {
+    if (!seen.has(row.booth_site_id)) seen.set(row.booth_site_id, row.booth_name ?? "ไม่ระบุชื่อบูธ");
+  }
+  return [...seen.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "th"));
 }
 
 /** จำนวนใบ update ที่ผูกกับใบจองนี้ — ใช้เตือนก่อนลบ */

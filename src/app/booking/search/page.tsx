@@ -1,8 +1,9 @@
 import BookingFilters from "@/components/booking/BookingFilters";
 import BookingTable from "@/components/booking/BookingTable";
+import BoothSummaryPanel from "@/components/booking/BoothSummaryPanel";
 import StaffSummaryTable from "@/components/booking/StaffSummaryTable";
 import { formatBaht, queryFromParams, summarize, summarizeByStaff } from "@/lib/booking";
-import { listBookings, listBookingStaffNames } from "@/lib/booking-db";
+import { listBookingBooths, listBookings, listBookingStaffNames } from "@/lib/booking-db";
 import {
   BOOKING_STATUS_LABEL,
   BOOKING_STATUS_ORDER,
@@ -24,7 +25,7 @@ export default async function BookingSearchPage({
   await requirePermission("BOOK_SEARCH", "read");
   const params = await searchParams;
 
-  const [rows, branches, brands, models, variants, colors, staffNames] = await Promise.all([
+  const [rows, branches, brands, models, variants, colors, staffNames, booths] = await Promise.all([
     listBookings(queryFromParams(params)),
     listBranches(),
     listMaster("brand", { includeInactive: true }),
@@ -32,6 +33,7 @@ export default async function BookingSearchPage({
     listMaster("variant", { includeInactive: true }),
     listMaster("color", { includeInactive: true }),
     listBookingStaffNames(),
+    listBookingBooths(),
   ]);
 
   const summary = summarize(rows);
@@ -55,6 +57,7 @@ export default async function BookingSearchPage({
           variants={variants}
           colors={colors}
           staffNames={staffNames}
+          booths={booths}
           resetHref="/booking/search"
         />
       </div>
@@ -92,6 +95,12 @@ export default async function BookingSearchPage({
           </p>
         </div>
         <StaffSummaryTable rows={byStaff} emptyText="ไม่พบใบจองที่ตรงกับเงื่อนไขที่เลือก" />
+      </section>
+
+      {/* ---------- ยอดจองแยกตามบูธที่ออก ---------- */}
+      <section className="card space-y-3">
+        <h2 className="font-semibold text-slate-800">ยอดจองแยกตามบูธที่ออก</h2>
+        <BoothSummaryPanel rows={rows} emptyText="ไม่พบใบจองที่ตรงกับเงื่อนไขที่เลือก" />
       </section>
     </main>
   );

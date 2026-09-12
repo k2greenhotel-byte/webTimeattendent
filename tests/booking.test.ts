@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOOTH_ANY,
+  BOOTH_NONE,
+  NO_BOOTH,
   NO_BRANCH,
   NO_MODEL,
   NO_STAFF,
@@ -8,6 +11,8 @@ import {
   buildOverview,
   buildRankings,
   bookingOptionLabel,
+  boothNameOf,
+  boothTag,
   buildCalendar,
   countByBrandModel,
   countByKey,
@@ -19,6 +24,7 @@ import {
   groupByDate,
   isAwaitingDelivery,
   isOpenBooking,
+  isBoothBooking,
   isOutOfStock,
   monthlyTrend,
   parseAmount,
@@ -27,6 +33,7 @@ import {
   shiftMonth,
   staffNameOf,
   summarize,
+  summarizeByBooth,
   summarizeByStaff,
   validateBooking,
   validateUpdate,
@@ -79,6 +86,8 @@ function booking(over: Partial<BookingRow> = {}): BookingRow {
     customer_code: "C000001",
     customer_name: "นายสมชาย ใจดี",
     branch_name: "สาขาหลัก",
+    booth_site_id: null,
+    booth_name: null,
     brand_name: "Honda",
     model_name: "Wave 110i",
     variant_name: null,
@@ -778,5 +787,57 @@ describe("ปฏิทิน (1.4.1)", () => {
     expect(shiftMonth(2026, 12, 1)).toEqual({ year: 2027, month: 1 });
     expect(shiftMonth(2026, 1, -1)).toEqual({ year: 2025, month: 12 });
     expect(shiftMonth(2026, 9, 0)).toEqual({ year: 2026, month: 9 });
+  });
+});
+
+describe("บูธที่รับจอง", () => {
+  it("ใบที่มาจากบูธติดแท็ก #ชื่อบูธ ใบที่รับที่สาขาไม่มีแท็ก", () => {
+    expect(boothTag(booking({ booth_name: "บูธบิ๊กซีกาญ" }))).toBe("#บูธบิ๊กซีกาญ");
+    expect(boothTag(booking())).toBeNull();
+  });
+
+  it("ชื่อบูธที่เป็นช่องว่างล้วน ถือว่าไม่ได้มาจากบูธ", () => {
+    expect(boothTag(booking({ booth_name: "   " }))).toBeNull();
+    expect(boothNameOf(booking({ booth_name: "   " }))).toBe(NO_BOOTH);
+  });
+
+  it("isBoothBooking ดูจากรหัสบูธ ไม่ใช่ชื่อ — ใบที่บูธถูกลบชื่อไปแล้วยังนับเป็นใบจากบูธ", () => {
+    expect(isBoothBooking(booking({ booth_site_id: "ws1" }))).toBe(true);
+    expect(isBoothBooking(booking())).toBe(false);
+  });
+
+  it("สรุปยอดแยกตามบูธ เรียงมากไปน้อย และดัน 'รับที่สาขา' ไว้ท้ายเสมอ", () => {
+    const rows = [
+      booking({ id: "1", booth_name: "บูธโลตัสอู่ทอง", deposit_amount: 1000 }),
+      booking({ id: "2", booth_name: "บูธบิ๊กซีกาญ", deposit_amount: 2000 }),
+      booking({ id: "3", booth_name: "บูธบิ๊กซีกาญ", deposit_amount: 3000 }),
+      booking({ id: "4", deposit_amount: 5000 }),
+      booking({ id: "5", deposit_amount: 5000 }),
+      booking({ id: "6", deposit_amount: 5000 }),
+    ];
+
+    const summary = summarizeByBooth(rows);
+    expect(summary.map((s) => s.label)).toEqual(["บูธบิ๊กซีกาญ", "บูธโลตัสอู่ทอง", NO_BOOTH]);
+    expect(summary[0]).toEqual({ label: "บูธบิ๊กซีกาญ", count: 2, deposit: 5000 });
+    expect(summary[2].count).toBe(3);
+  });
+
+  it("ไม่มีใบจองเลย คืนอาร์เรย์ว่าง", () => {
+    expect(summarizeByBooth([])).toEqual([]);
+  });
+
+  it("กรองบูธจาก query string ได้ ทั้งบูธเจาะจงและค่าพิเศษ", () => {
+    expect(queryFromParams({ booth: "ws-1" }).booth).toBe("ws-1");
+    expect(queryFromParams({ booth: BOOTH_ANY }).booth).toBe(BOOTH_ANY);
+    expect(queryFromParams({ booth: BOOTH_NONE }).booth).toBe(BOOTH_NONE);
+    expect(queryFromParams({ booth: "  " }).booth).toBeNull();
+    expect(queryFromParams({}).booth).toBeNull();
+  });
+
+  it("ค่าพิเศษของตัวกรองไม่ชนกับ uuid ของ work_sites", () => {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+    expect(uuid.test(BOOTH_ANY)).toBe(false);
+    expect(uuid.test(BOOTH_NONE)).toBe(false);
+    expect(BOOTH_ANY).not.toBe(BOOTH_NONE);
   });
 });

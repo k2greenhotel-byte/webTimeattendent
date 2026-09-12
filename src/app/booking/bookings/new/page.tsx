@@ -1,5 +1,5 @@
 import BookingForm from "@/components/booking/BookingForm";
-import { listBranches } from "@/lib/db";
+import { listBranches, listSites } from "@/lib/db";
 import { requirePermission } from "@/lib/session";
 import { createBookingForm } from "../../actions";
 
@@ -14,7 +14,10 @@ export default async function NewBookingPage({
   const user = await requirePermission("BOOK_ENTRY", "write");
   const params = await searchParams;
 
-  const branches = await listBranches(true);
+  const [branches, booths] = await Promise.all([
+    listBranches(true),
+    listSites(user.company_id ?? null, true),
+  ]);
 
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-3 sm:p-4">
@@ -31,6 +34,7 @@ export default async function NewBookingPage({
 
       <BookingForm
         branches={branches}
+        booths={booths}
         defaultBranchId={user.branch_id ?? null}
         defaultStaffName={user.full_name}
         action={createBookingForm}

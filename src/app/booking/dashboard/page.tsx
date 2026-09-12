@@ -4,6 +4,7 @@ import BookingFilters from "@/components/booking/BookingFilters";
 import DeliveryPipelinePanel from "@/components/booking/DeliveryPipelinePanel";
 import OverviewPanel from "@/components/booking/OverviewPanel";
 import RankingPanel from "@/components/booking/RankingPanel";
+import BoothSummaryPanel from "@/components/booking/BoothSummaryPanel";
 import StaffSummaryTable from "@/components/booking/StaffSummaryTable";
 import { GroupedBarChart, HorizontalBarChart } from "@/components/marketing/Charts";
 import {
@@ -20,7 +21,7 @@ import {
   summarize,
   summarizeByStaff,
 } from "@/lib/booking";
-import { listBookings, listBookingStaffNames } from "@/lib/booking-db";
+import { listBookingBooths, listBookings, listBookingStaffNames } from "@/lib/booking-db";
 import {
   BOOKING_STATUS_LABEL,
   BOOKING_STATUS_ORDER,
@@ -88,7 +89,7 @@ export default async function BookingDashboardPage({
       ? { ...base, pickup_from: from, pickup_to: to, from: null, to: null }
       : { ...base, from, to, pickup_from: null, pickup_to: null };
 
-  const [allRows, rows, branches, brands, models, variants, colors, staffNames] = await Promise.all([
+  const [allRows, rows, branches, brands, models, variants, colors, staffNames, booths] = await Promise.all([
     listBookings(allTimeQuery),
     listBookings(monthQuery),
     listBranches(),
@@ -97,6 +98,7 @@ export default async function BookingDashboardPage({
     listMaster("variant", { includeInactive: true }),
     listMaster("color", { includeInactive: true }),
     listBookingStaffNames(),
+    listBookingBooths(),
   ]);
 
   const overview = buildOverview(allRows, today);
@@ -165,6 +167,7 @@ export default async function BookingDashboardPage({
           variants={variants}
           colors={colors}
           staffNames={staffNames}
+          booths={booths}
           resetHref={`/booking/dashboard?year=${year}&month=${month}&by=${field}`}
           extraHiddenFields={{ year: String(year), month: String(month), by: field }}
         />
@@ -296,6 +299,12 @@ export default async function BookingDashboardPage({
           </div>
           <StaffSummaryTable rows={byStaff} emptyText="ยังไม่มีใบจองในเดือนนี้" />
         </div>
+      </section>
+
+      {/* ---------- ยอดจองแยกตามบูธที่ออก ---------- */}
+      <section className="card min-w-0 space-y-2">
+        <h2 className="font-semibold text-slate-800">ยอดจองแยกตามบูธที่ออก</h2>
+        <BoothSummaryPanel rows={rows} emptyText="ยังไม่มีใบจองในเดือนนี้" />
       </section>
 
       {/* ---------- 1.4.2 แยกตามยี่ห้อ / รุ่นรถ ---------- */}

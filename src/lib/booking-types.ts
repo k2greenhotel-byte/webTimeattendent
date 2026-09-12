@@ -159,6 +159,11 @@ export type Booking = {
   sale_contract_no: string | null;
   sale_date: string | null;
   refunded: boolean;
+  /**
+   * บูธที่รับจอง (อ้าง work_sites — ทะเบียนเดียวกับตารางบูธของระบบลงเวลา)
+   * null = รับจองที่สาขาตามปกติ ไม่ได้มาจากการออกบูธ
+   */
+  booth_site_id: string | null;
   /** ลูกค้าจากทะเบียนของระบบขาย (Db2 CUSTMAST) — เก็บทั้งรหัสและชื่อ ณ ตอนบันทึก */
   db2_cuscod: string | null;
   db2_customer_name: string | null;
@@ -188,6 +193,8 @@ export type BookingRow = Booking & {
   customer_code: string | null;
   customer_name: string | null;
   branch_name: string | null;
+  /** ชื่อบูธที่รับจอง (null = รับที่สาขา) */
+  booth_name: string | null;
   brand_name: string | null;
   model_name: string | null;
   variant_name: string | null;
@@ -249,6 +256,12 @@ export type BookingQuery = {
   cancel_reason?: CancelReason | null;
   /** ชื่อพนักงานที่รับจองตามที่แสดงบนใบ (ตรงตัว) */
   staff?: string | null;
+  /**
+   * บูธที่รับจอง — id ของ work_sites หรือค่าพิเศษ
+   *   BOOTH_ANY  = เฉพาะใบที่มาจากบูธ (บูธไหนก็ได้)
+   *   BOOTH_NONE = เฉพาะใบที่รับที่สาขา
+   */
+  booth?: string | null;
   /** ช่วงวันที่จอง */
   from?: string | null;
   to?: string | null;

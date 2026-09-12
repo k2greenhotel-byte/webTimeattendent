@@ -16,6 +16,7 @@ const REFRESH_MS = 2 * 60_000;
 
 const PIVOT_DIMS: PivotDim<BookingPivotCell>[] = [
   { key: "branch", label: "สาขา", of: (c) => ({ key: c.branch }) },
+  { key: "booth", label: "บูธที่รับจอง", of: (c) => ({ key: c.booth }) },
   { key: "staff", label: "พนักงานขาย", of: (c) => ({ key: c.staff }) },
   { key: "brand", label: "ยี่ห้อ", of: (c) => ({ key: c.brand }) },
   { key: "model", label: "รุ่น", of: (c) => ({ key: c.model }) },
@@ -98,12 +99,15 @@ export default function BookingWallBoard({ branches }: { branches: Option[] }) {
             </Panel>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Panel title="รับจองรายสาขา" hint={d.period.label}>
               <RankBars rows={d.byBranch} unit="ใบ" tone="sky" />
             </Panel>
             <Panel title="พนักงานขายที่รับจองสูงสุด" hint={d.period.label}>
               <RankBars rows={d.byStaff} unit="ใบ" tone="emerald" />
+            </Panel>
+            <Panel title="รับจองจากบูธ" count={d.counts.fromBooth} hint={d.period.label}>
+              <RankBars rows={d.byBooth} unit="ใบ" tone="violet" />
             </Panel>
             <Panel title="รุ่นรถที่ต้องเร่งสั่ง">
               <RankBars rows={d.byModel} unit="ใบ" tone="amber" />

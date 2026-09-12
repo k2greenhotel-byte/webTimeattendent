@@ -1,10 +1,12 @@
 import "server-only";
 import {
+  boothNameOf,
   buildOverview,
   buildRankings,
   daysWaiting,
   deliveryPipeline,
   describeVehicle,
+  isBoothBooking,
   isOutOfStock,
   staffNameOf,
 } from "./booking";
@@ -68,7 +70,7 @@ function rankBy(rows: BookingRow[], labelOf: (r: BookingRow) => string | null): 
 /**
  * ยุบใบจองเป็นชุดสำหรับตารางไขว้
  *
- * แกนที่ไขว้ได้มี 8 อย่าง ใบที่ทุกแกนตรงกันยุบรวมกันได้โดยยอดไม่เพี้ยน
+ * แกนที่ไขว้ได้มี 9 อย่าง ใบที่ทุกแกนตรงกันยุบรวมกันได้โดยยอดไม่เพี้ยน
  * ส่งแบบยุบแล้วแทนใบดิบ เพราะใบจองสะสมหลายพันใบ ขนข้ามเน็ตทั้งหมดไม่ไหว
  */
 function buildPivot(rows: BookingRow[]): BookingPivotCell[] {
@@ -77,6 +79,7 @@ function buildPivot(rows: BookingRow[]): BookingPivotCell[] {
   for (const r of rows) {
     const cell: Omit<BookingPivotCell, "bookings" | "deposit"> = {
       branch: r.branch_name ?? "ไม่ระบุสาขา",
+      booth: boothNameOf(r),
       staff: staffNameOf(r),
       brand: r.brand_name ?? r.db2_brand_name ?? "ไม่ระบุยี่ห้อ",
       model: r.model_name ?? r.db2_model_name ?? "ไม่ระบุรุ่น",
@@ -146,11 +149,14 @@ export async function buildBookingWall(input: {
       awaitingDelivery: pipeline.total,
       outOfStock: overview.needOrder,
       docPending: docPendingRows.length,
+      fromBooth: inRange.filter(isBoothBooking).length,
     },
     money: { total: Math.round(overview.depositOpen), inPeriod: Math.round(depositInPeriod) },
     waitingLong,
     docPending,
     byBranch: rankBy(inRange, (r) => r.branch_name),
+    // เฉพาะใบที่มาจากบูธ — ใบที่รับที่สาขาไม่ใช่ผลงานบูธ ใส่รวมแล้วจะกลบอันดับจนดูไม่ออก
+    byBooth: rankBy(inRange.filter(isBoothBooking), boothNameOf),
     byStaff: rankBy(inRange, staffNameOf),
     byModel: rankings.topModelsOutOfStock.length
       ? rankings.topModelsOutOfStock.map((m) => ({
