@@ -13,6 +13,7 @@ const MENUS: { code: string; href: string; label: string }[] = [
   { code: "DB2_CUSTOMER", href: "/db2/customers", label: "ค้นลูกค้า / สัญญา" },
   { code: "DB2_WALL", href: "/db2/wall", label: "จอ War Room" },
   { code: "DB2_PIVOT", href: "/db2/stock/pivot", label: "สต็อก Cross Tab" },
+  { code: "DB2_STOCK_WALL", href: "/db2/stock/wall", label: "War Room สต็อกรถ" },
   { code: "DB2_JOBS", href: "/db2/jobs", label: "Dashboard งานซ่อม" },
   { code: "DB2_JOB_WALL", href: "/db2/jobs/wall", label: "War Room งานซ่อม" },
   { code: "DB2_HP_WALL", href: "/db2/hpdebt/wall", label: "War Room ลูกหนี้เช่าซื้อ" },

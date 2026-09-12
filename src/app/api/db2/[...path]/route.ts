@@ -12,10 +12,12 @@ export const dynamic = "force-dynamic";
  *
  * เปิดเฉพาะ path ที่กำหนด และตรวจสิทธิ์รายเมนูของผู้ใช้ที่ล็อกอินอยู่
  */
-const ALLOWED: Record<string, string> = {
+// ค่าเป็น string หรือ array — array = มีสิทธิ์เมนูใดเมนูหนึ่งก็ผ่าน (จอ War Room สต็อกใช้ endpoint ร่วมกับหน้าสต็อก)
+const ALLOWED: Record<string, string | string[]> = {
   wall: "DB2_WALL",
+  "wall/pivot": "DB2_WALL", // ตารางไขว้ยอดขาย — ส่วนล่างของจอ war room ยอดขาย
   receivables: "DB2_WALL", // ลูกหนี้ไฟแนนซ์/ขายเครดิต — ส่วนล่างของจอ war room
-  "stock/pivot": "DB2_PIVOT",
+  "stock/pivot": ["DB2_PIVOT", "DB2_STOCK_WALL"],
   "stock/list": "BOOK_STOCK",
   masters: "BOOK_ENTRY",
   // ค้นรถของลูกค้าจากเลขตัวถัง (INVTRAN + SALEALL + CUSTMAST) — popup ของใบขอเคลม
@@ -24,7 +26,7 @@ const ALLOWED: Record<string, string> = {
   hpdebt: "DB2_HP_WALL", // ลูกหนี้เช่าซื้อ + การติดตาม — จอ War Room เรียกเอง
   jobs: "DB2_JOB_WALL", // งานซ่อม — จอ War Room เรียกเอง (หน้า dashboard ดึงฝั่ง server)
   dashboard: "DB2_DASH",
-  stock: "DB2_STOCK",
+  stock: ["DB2_STOCK", "DB2_STOCK_WALL"],
 };
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
@@ -37,7 +39,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   if (!(await getSessionUser())) {
     return NextResponse.json({ ok: false, error: "ต้องเข้าสู่ระบบก่อน" }, { status: 401 });
   }
-  if (!(await checkPermission(menuCode))) {
+  const codes = Array.isArray(menuCode) ? menuCode : [menuCode];
+  let permitted = false;
+  for (const c of codes) {
+    if (await checkPermission(c)) {
+      permitted = true;
+      break;
+    }
+  }
+  if (!permitted) {
     return NextResponse.json({ ok: false, error: "ไม่มีสิทธิ์ดูข้อมูลนี้" }, { status: 403 });
   }
 

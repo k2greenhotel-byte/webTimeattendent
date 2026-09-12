@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReceivablesPanel from "./ReceivablesPanel";
+import SalesPivot from "./SalesPivot";
 
 /**
  * จอ War Room ยอดขาย — เปิดค้างบนจอมอนิเตอร์/ทีวี พื้นมืด ตัวเลขใหญ่ รีเฟรชเองทุก 60 วินาที
@@ -282,6 +283,11 @@ export default function WallBoard() {
                 highlightLast
               />
             </div>
+          </div>
+
+          {/* ตารางไขว้ — ช่วงเวลา/สาขา/หน่วยเดียวกับด้านบน เลือกแกนตั้ง/แกนนอนได้เอง */}
+          <div className="mb-4">
+            <SalesPivot from={data.range.from} to={data.range.to} locat={locat} metric={metric} refreshKey={data.generatedAt} />
           </div>
         </>
       )}
