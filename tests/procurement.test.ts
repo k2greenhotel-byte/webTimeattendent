@@ -18,6 +18,9 @@ import {
   validateAccount,
   validateApproval,
   validateCancel,
+  validateFund,
+  validateFundMove,
+  validateFundPayment,
   validatePayment,
   validatePrType,
   validatePurchase,
@@ -832,5 +835,90 @@ describe("validateRestore", () => {
       "ผู้มีอำนาจอนุมัติ",
     );
     expect(validateRestore(cancelled({ approve_status: "approved" }), approver)).toBeNull();
+  });
+});
+
+describe("วงเงินสำรองจ่าย", () => {
+  const fund = (over: Record<string, unknown> = {}) => ({
+    limit_amount: 10000,
+    balance: 4000,
+    is_active: true,
+    holder_name: "สมชาย ใจดี",
+    ...over,
+  });
+
+  describe("validateFund", () => {
+    const base = {
+      holder_id: "e1",
+      company_id: "co1",
+      branch_id: "br1",
+      limit_amount: 10000,
+      note: null,
+      is_active: true,
+    };
+
+    it("ผ่านเมื่อกรอกครบ", () => {
+      expect(validateFund(base)).toBeNull();
+    });
+
+    it("ต้องเลือกผู้ถือเงิน", () => {
+      expect(validateFund({ ...base, holder_id: "" })).toContain("ผู้ถือเงิน");
+    });
+
+    it("วงเงินต้องมากกว่า 0", () => {
+      expect(validateFund({ ...base, limit_amount: 0 })).toContain("มากกว่า 0");
+    });
+  });
+
+  describe("validateFundMove", () => {
+    const topup = { move_date: "2026-09-12", kind: "topup" as const, amount: 5000 };
+
+    it("เติมได้เมื่อยังไม่เต็มวงเงิน", () => {
+      // วงเงิน 10,000 ถืออยู่ 4,000 เติมได้อีก 6,000
+      expect(validateFundMove(topup, fund())).toBeNull();
+    });
+
+    it("เติมจนเต็มวงเงินพอดีได้", () => {
+      expect(validateFundMove({ ...topup, amount: 6000 }, fund())).toBeNull();
+    });
+
+    it("เติมเกินวงเงินไม่ได้ และบอกว่าเติมได้อีกเท่าไหร่", () => {
+      const problem = validateFundMove({ ...topup, amount: 6001 }, fund());
+      expect(problem).toContain("6,000");
+    });
+
+    it("คืนเงินเกินที่ถืออยู่ไม่ได้", () => {
+      const back = { move_date: "2026-09-12", kind: "return" as const, amount: 4001 };
+      expect(validateFundMove(back, fund())).toContain("คงเหลือ");
+      expect(validateFundMove({ ...back, amount: 4000 }, fund())).toBeNull();
+    });
+
+    it("กองที่ปิดใช้งานแล้ว เติมไม่ได้", () => {
+      expect(validateFundMove(topup, fund({ is_active: false }))).toContain("ปิดใช้งาน");
+    });
+
+    it("จำนวนเงินต้องมากกว่า 0", () => {
+      expect(validateFundMove({ ...topup, amount: 0 }, fund())).toContain("มากกว่า 0");
+    });
+  });
+
+  describe("validateFundPayment", () => {
+    it("จ่ายได้เมื่อเงินในกองพอ", () => {
+      expect(validateFundPayment(4000, fund())).toBeNull();
+    });
+
+    it("จ่ายเกินยอดคงเหลือไม่ได้", () => {
+      expect(validateFundPayment(4001, fund())).toContain("ไม่พอ");
+    });
+
+    it("แก้ใบเดิม ยอดที่ใบนั้นเคยตัดไปต้องบวกกลับก่อนเทียบ", () => {
+      // กองเหลือ 4,000 ใบนี้เคยจ่ายไป 3,000 จึงแก้เป็น 7,000 ได้พอดี
+      expect(validateFundPayment(7000, fund(), 3000)).toBeNull();
+      expect(validateFundPayment(7001, fund(), 3000)).toContain("ไม่พอ");
+    });
+
+    it("ต้องเลือกกองก่อน", () => {
+      expect(validateFundPayment(100, null)).toContain("กองเงินสำรอง");
+    });
   });
 });

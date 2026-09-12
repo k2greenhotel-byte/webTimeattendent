@@ -368,8 +368,10 @@ export type Payment = {
   /** ลายเซ็นดิจิทัล เก็บเป็นเส้นทางไฟล์ PNG ในถังเดียวกับรูปแนบ */
   payee_signature: string | null;
   payer_signature: string | null;
-  /** จ่ายจากเงินสดย่อยหรือจากส่วนกลาง */
+  /** จ่ายจากเงินสดย่อย จากส่วนกลาง หรือจากวงเงินสำรอง */
   pay_source: PaySource;
+  /** กองเงินสำรองที่ใบนี้ตัดยอดออก (มีเฉพาะ pay_source = 'fund') */
+  fund_id: string | null;
   note: string | null;
   company_id: string | null;
   branch_id: string | null;
@@ -585,9 +587,9 @@ export type PaymentQuery = {
  * ใบเบิกจ่ายมีสองแหล่ง ใช้ตารางและหน้าจอชุดเดียวกันทั้งหมด
  * ต่างกันแค่ชุดเลขที่เอกสาร เมนู/สิทธิ์ และชื่อที่แสดง
  */
-export type PaySource = "petty" | "central";
+export type PaySource = "petty" | "central" | "fund";
 
-export const PAY_SOURCE_ORDER: PaySource[] = ["petty", "central"];
+export const PAY_SOURCE_ORDER: PaySource[] = ["petty", "central", "fund"];
 
 /** นิยามของแต่ละแหล่งจ่าย — เพิ่มแหล่งใหม่ = เพิ่มหนึ่งรายการที่นี่ + หนึ่งชุดหน้าจอบาง ๆ */
 export type PaySourceSpec = {
@@ -624,16 +626,27 @@ export const PAY_SOURCES: Record<PaySource, PaySourceSpec> = {
     docLabel: "ใบเบิกจ่ายส่วนกลาง",
     description: "จ่ายจากส่วนกลาง ใช้ชุดเลขที่เอกสารแยกจากเงินสดย่อย",
   },
+  fund: {
+    source: "fund",
+    menuCode: "PR_FUND_PAY",
+    basePath: "/procurement/fund-payments",
+    prefix: "FV",
+    title: "จ่ายเงินจากเงินสำรอง",
+    docLabel: "ใบจ่ายเงินสำรอง",
+    description: "จ่ายออกจากวงเงินสำรองที่ผู้ถือเงินถือไว้ ระบบตัดยอดคงเหลือของกองให้อัตโนมัติ",
+  },
 };
 
 export const PAY_SOURCE_LABEL: Record<PaySource, string> = {
   petty: "เงินสดย่อย",
   central: "ส่วนกลาง",
+  fund: "เงินสำรองจ่าย",
 };
 
 export const PAY_SOURCE_CLASS: Record<PaySource, string> = {
   petty: "bg-amber-100 text-amber-700",
   central: "bg-indigo-100 text-indigo-700",
+  fund: "bg-teal-100 text-teal-700",
 };
 
 // ---------- ป้ายกำกับ (แฮชแท็ก) ของใบเบิกจ่าย ----------
@@ -715,4 +728,69 @@ export type PrVendorInput = {
   note: string | null;
   sort_order: number;
   is_active: boolean;
+};
+
+// ---------- วงเงินสำรองจ่าย ----------
+
+/** ทิศทางการเคลื่อนไหวของกองเงิน */
+export type FundMoveKind = "topup" | "return";
+
+export const FUND_MOVE_ORDER: FundMoveKind[] = ["topup", "return"];
+
+export const FUND_MOVE_LABEL: Record<FundMoveKind, string> = {
+  topup: "เติมเงินเข้ากอง",
+  return: "คืนเงินกลับบริษัท",
+};
+
+export const FUND_MOVE_CLASS: Record<FundMoveKind, string> = {
+  topup: "bg-emerald-100 text-emerald-700",
+  return: "bg-slate-200 text-slate-700",
+};
+
+/** กองเงินสำรองหนึ่งกอง = ผู้ถือเงินหนึ่งคน */
+export type PrFundInput = {
+  holder_id: string;
+  company_id: string | null;
+  branch_id: string | null;
+  /** เพดานเงินที่ถือได้ตามที่อนุมัติไว้ */
+  limit_amount: number;
+  note: string | null;
+  is_active: boolean;
+};
+
+export type PrFundRow = PrFundInput & {
+  id: string;
+  holder_code: string | null;
+  holder_name: string | null;
+  company_name: string | null;
+  branch_name: string | null;
+  topup_total: number;
+  return_total: number;
+  paid_total: number;
+  /** เติมเข้า − คืนคืน − จ่ายออก */
+  balance: number;
+  /** เติมได้อีกเท่าไหร่ถึงจะเต็มวงเงิน */
+  topup_room: number;
+  created_at: string;
+};
+
+export type FundMoveInput = {
+  fund_id: string;
+  move_date: string;
+  kind: FundMoveKind;
+  amount: number;
+  ref_no: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+};
+
+export type FundMoveRow = FundMoveInput & {
+  id: string;
+  doc_no: string;
+  holder_id: string | null;
+  holder_name: string | null;
+  company_id: string | null;
+  branch_id: string | null;
+  created_at: string;
 };

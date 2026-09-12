@@ -1,7 +1,7 @@
 import PaymentForm from "@/components/procurement/PaymentForm";
 import { getSelectableContext } from "@/lib/core-db";
 import { remainingToPay } from "@/lib/procurement";
-import { listAccounts, listDocs, listTags, listVendors } from "@/lib/procurement-db";
+import { listAccounts, listDocs, listFunds, listTags, listVendors } from "@/lib/procurement-db";
 import { requirePermission } from "@/lib/session";
 import { PAY_SOURCES, type PaySource } from "@/lib/procurement-types";
 import { createPaymentForm } from "@/app/procurement/payments/actions";
@@ -22,12 +22,14 @@ export default async function PaymentNewView({
   const spec = PAY_SOURCES[source];
   const user = await requirePermission(spec.menuCode, "write");
 
-  const [all, accounts, tagSuggestions, vendors, context] = await Promise.all([
+  const [all, accounts, tagSuggestions, vendors, context, funds] = await Promise.all([
     listDocs({ doc_status: "active" }),
     listAccounts(),
     listTags(),
     listVendors(),
     getSelectableContext(user.id),
+    // กองเงินสำรองใช้เฉพาะหน้าจ่ายจากเงินสำรอง หน้าอื่นไม่ต้องดึงมาให้เปลือง
+    source === "fund" ? listFunds() : Promise.resolve([]),
   ]);
 
   // ส่งใบที่อนุมัติแล้วไปทั้งหมด รวมใบที่จ่ายครบแล้วด้วย
@@ -56,6 +58,7 @@ export default async function PaymentNewView({
         accounts={accounts}
         tagSuggestions={tagSuggestions}
         vendors={vendors}
+        funds={funds}
         companies={context.companies}
         branches={context.branches}
         defaultCompanyId={user.company_id ?? null}

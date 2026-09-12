@@ -8,7 +8,9 @@ const NAV = [
   { href: "/procurement/approvals", label: "3.1 อนุมัติ", menuCode: "PR_APPROVE" },
   { href: "/procurement/payments", label: "4.1 จ่ายเงินสดย่อย", menuCode: "PR_PAYMENT" },
   { href: "/procurement/central-payments", label: "4.2 จ่ายจากส่วนกลาง", menuCode: "PR_CENTRAL_PAY" },
-  { href: "/procurement/tag-report", label: "4.3 รายงานป้ายกำกับ", menuCode: "PR_TAG_REPORT" },
+  { href: "/procurement/tag-report", label: "4.3 รายงานป้ายกำกับ", menuCode: "PR_TAG_REPORT" },
+  { href: "/procurement/fund-payments", label: "4.4 จ่ายจากเงินสำรอง", menuCode: "PR_FUND_PAY" },
+  { href: "/procurement/fund-topups", label: "4.5 เติมเงินสำรอง", menuCode: "PR_FUND_TOPUP" },
   { href: "/procurement/search", label: "5. สอบถาม", menuCode: "PR_SEARCH" },
   { href: "/procurement/dashboard", label: "6. Dashboard", menuCode: "PR_DASH" },
   { href: "/procurement/wall", label: "จอ War Room", menuCode: "PR_WALL" },
@@ -26,7 +28,8 @@ export default function ProcurementHeader({
     readableMenuCodes.includes("PR_ASSET_TYPE") ||
     readableMenuCodes.includes("PR_MATERIAL_TYPE") ||
     readableMenuCodes.includes("PR_ACCOUNT") ||
-    readableMenuCodes.includes("PR_VENDOR");
+    readableMenuCodes.includes("PR_VENDOR") ||
+    readableMenuCodes.includes("PR_FUND");
 
   return (
     <ModuleNav

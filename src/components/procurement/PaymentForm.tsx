@@ -20,6 +20,7 @@ import {
   type PrAccountRow,
   type PrTag,
   type PrTagRow,
+  type PrFundRow,
   type PrVendorRow,
   type PaySource,
   type PrDocRow,
@@ -84,6 +85,7 @@ export default function PaymentForm({
   docs,
   accounts,
   vendors = [],
+  funds = [],
   tagSuggestions = [],
   companies,
   branches,
@@ -102,6 +104,8 @@ export default function PaymentForm({
   accounts: PrAccountRow[];
   /** ทะเบียนเจ้าหนี้/ผู้ขายที่จ่ายเป็นประจำ */
   vendors?: PrVendorRow[];
+  /** กองเงินสำรองที่เลือกจ่ายออกได้ (มีเฉพาะหน้าจ่ายจากเงินสำรอง) */
+  funds?: PrFundRow[];
   /** ป้ายที่เคยใช้ในระบบ ไว้ให้กดเลือก */
   tagSuggestions?: PrTagRow[];
   companies: Company[];
@@ -142,6 +146,8 @@ export default function PaymentForm({
       : [],
   );
   const [pickerOpen, setPickerOpen] = useState(false);
+  // กองเดียวก็เลือกให้เลย ไม่ต้องให้กดซ้ำ
+  const [fundId, setFundId] = useState(payment?.fund_id ?? (funds.length === 1 ? funds[0].id : ""));
   const [approverName, setApproverName] = useState(payment?.approver_name ?? "");
 
   const docById = useMemo(() => new Map(docs.map((d) => [d.id, d])), [docs]);
@@ -152,6 +158,15 @@ export default function PaymentForm({
 
   /** ยอดรวมทั้งใบ = ผลรวมของทุกบรรทัด ไม่ต้องคีย์ซ้ำและไม่มีทางไม่ตรงกัน */
   const total = round2(lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0));
+
+  /*
+   * ยอดคงเหลือของกองที่เลือก — เตือนตั้งแต่ตอนกรอกว่าเงินในกองพอไหม
+   * ตอนแก้ใบเดิม ยอดที่ใบนี้เคยตัดไปแล้วถูกนับรวมอยู่ในยอดคงเหลือ จึงบวกกลับก่อนเทียบ
+   * (กฎจริงบังคับอีกครั้งที่ server ด้วย validateFundPayment)
+   */
+  const selectedFund = funds.find((f) => f.id === fundId) ?? null;
+  const spentHere = payment?.fund_id === fundId ? payment.paid_amount : 0;
+  const enoughInFund = !selectedFund || total <= round2(selectedFund.balance + spentHere);
 
   /**
    * ชื่อผู้อนุมัติยังเป็นของทั้งใบ จึงสรุปจากใบอนุมัติที่ทุกบรรทัดอ้างถึง
@@ -319,6 +334,53 @@ export default function PaymentForm({
             </select>
           </div>
         </div>
+
+        {/* ---------- กองเงินสำรองที่จ่ายออก (มีเฉพาะหน้าจ่ายจากเงินสำรอง) ---------- */}
+        {source === "fund" && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
+            <div className="lg:col-span-5">
+              <label className="label" htmlFor="fund_id">
+                จ่ายออกจากกองเงินสำรอง *
+              </label>
+              <select
+                id="fund_id"
+                name="fund_id"
+                value={fundId}
+                onChange={(e) => setFundId(e.target.value)}
+                className="input"
+                required
+              >
+                <option value="">— เลือกกองเงินสำรอง —</option>
+                {funds.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.holder_name} ({f.holder_code})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="lg:col-span-7">
+              <span className="label">ยอดคงเหลือในกอง</span>
+              {selectedFund ? (
+                <p
+                  className={`rounded-xl px-4 py-2.5 text-sm ${
+                    enoughInFund
+                      ? "bg-emerald-50 text-emerald-800"
+                      : "bg-rose-50 font-medium text-rose-700"
+                  }`}
+                >
+                  คงเหลือ {formatBaht(selectedFund.balance)} จากวงเงิน{" "}
+                  {formatBaht(selectedFund.limit_amount)}
+                  {total > 0 ? ` · ใบนี้จ่าย ${formatBaht(total)}` : ""}
+                  {enoughInFund ? "" : " — เงินในกองไม่พอ ต้องเติมเงินก่อน"}
+                </p>
+              ) : (
+                <p className="rounded-xl bg-white px-4 py-2.5 text-sm text-slate-500">
+                  เลือกกองก่อน แล้วระบบจะแสดงยอดคงเหลือให้
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         <p className="rounded-xl bg-white px-4 py-3 text-xs text-slate-600">
           เลขที่{PAY_SOURCES[source].docLabel}รันแยกตามบริษัทและสาขา (เช่น {PAY_SOURCES[source].prefix}-HQ-BKK-2569-0001) ·

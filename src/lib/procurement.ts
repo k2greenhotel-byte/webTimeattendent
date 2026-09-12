@@ -28,6 +28,9 @@ import {
   type RepairInput,
   type RepairUpdateInput,
   type Urgency,
+  type FundMoveInput,
+  type PrFundInput,
+  type PrFundRow,
 } from "./procurement-types";
 
 export { countByKey, formatBaht, parseAmount, shiftMonth } from "./booking";
@@ -731,5 +734,71 @@ export function validateVendor(input: PrVendorInput): string | null {
   if (!input.name.trim()) return "กรุณากรอกชื่อเจ้าหนี้หรือผู้ขาย";
   if (input.name.length > 200) return "ชื่อเจ้าหนี้ยาวเกินไป (ไม่เกิน 200 ตัวอักษร)";
   if ((input.address ?? "").length > 500) return "ที่อยู่ยาวเกินไป (ไม่เกิน 500 ตัวอักษร)";
+  return null;
+}
+
+// ---------- วงเงินสำรองจ่าย ----------
+
+/** ตรวจค่าของกองเงินสำรองก่อนบันทึก */
+export function validateFund(input: PrFundInput): string | null {
+  if (!input.holder_id) return "กรุณาเลือกผู้ถือเงินสำรอง";
+
+  const problem = checkAmount("วงเงินสำรองจ่าย", input.limit_amount);
+  if (problem) return problem;
+  if (input.limit_amount <= 0) return "วงเงินสำรองจ่ายต้องมากกว่า 0";
+
+  return null;
+}
+
+/**
+ * ตรวจการเติมเงิน/คืนเงินของกอง
+ *
+ * เติมแล้วยอดคงเหลือต้องไม่เกินวงเงินที่อนุมัติไว้ — นั่นคือความหมายของการตั้งวงเงิน
+ * ส่วนการคืนเงินกลับบริษัท คืนได้ไม่เกินที่ถืออยู่จริง
+ */
+export function validateFundMove(
+  input: Pick<FundMoveInput, "move_date" | "kind" | "amount">,
+  fund: Pick<PrFundRow, "limit_amount" | "balance" | "is_active"> | null,
+): string | null {
+  if (!fund) return "ไม่พบกองเงินสำรองที่เลือก";
+  if (!fund.is_active) return "กองเงินสำรองนี้ถูกปิดใช้งานแล้ว";
+  if (!input.move_date) return "กรุณาเลือกวันที่";
+
+  const problem = checkAmount("จำนวนเงิน", input.amount);
+  if (problem) return problem;
+  if (input.amount <= 0) return "จำนวนเงินต้องมากกว่า 0";
+
+  if (input.kind === "topup") {
+    const room = round2(fund.limit_amount - fund.balance);
+    if (input.amount > room) {
+      return `เติมได้อีกไม่เกิน ${room.toLocaleString("th-TH")} บาท (วงเงิน ${fund.limit_amount.toLocaleString("th-TH")} บาท · ถืออยู่ ${fund.balance.toLocaleString("th-TH")} บาท)`;
+    }
+    return null;
+  }
+
+  if (input.amount > fund.balance) {
+    return `คืนเงินเกินยอดที่ถืออยู่ไม่ได้ (คงเหลือ ${fund.balance.toLocaleString("th-TH")} บาท)`;
+  }
+  return null;
+}
+
+/**
+ * ตรวจว่าจ่ายออกจากกองได้ไหม — จ่ายเกินยอดคงเหลือไม่ได้ เพราะเงินไม่มีอยู่จริงในมือ
+ *
+ * ตอนแก้ใบเดิม ยอดที่ใบนั้นเคยตัดไปแล้วต้องบวกกลับเข้ายอดคงเหลือก่อนเทียบ
+ * ไม่งั้นแค่เปิดเข้าไปกดบันทึกซ้ำก็จะฟ้องว่าเงินไม่พอ
+ */
+export function validateFundPayment(
+  amount: number,
+  fund: Pick<PrFundRow, "balance" | "is_active" | "holder_name"> | null,
+  alreadyOnThisPayment = 0,
+): string | null {
+  if (!fund) return "กรุณาเลือกกองเงินสำรองที่จะจ่ายออก";
+  if (!fund.is_active) return "กองเงินสำรองนี้ถูกปิดใช้งานแล้ว";
+
+  const available = round2(fund.balance + alreadyOnThisPayment);
+  if (amount > available) {
+    return `ยอดคงเหลือในกองไม่พอ — คงเหลือ ${available.toLocaleString("th-TH")} บาท แต่ใบนี้จ่าย ${amount.toLocaleString("th-TH")} บาท`;
+  }
   return null;
 }

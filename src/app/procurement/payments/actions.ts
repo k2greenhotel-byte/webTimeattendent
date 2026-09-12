@@ -5,11 +5,18 @@ import { redirect } from "next/navigation";
 import { getSelectableContext } from "@/lib/core-db";
 import { logAudit } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
-import { parseAmount, parseTags, round2, validatePayment } from "@/lib/procurement";
+import {
+  parseAmount,
+  parseTags,
+  round2,
+  validateFundPayment,
+  validatePayment,
+} from "@/lib/procurement";
 import {
   createPayment,
   deletePayment,
   getDocsByIds,
+  getFund,
   getPayment,
   listPaymentItems,
   updatePayment,
@@ -18,8 +25,10 @@ import {
   MAX_PAYMENT_DOCS,
   MAX_PHOTOS,
   MAX_TAGS_PER_PAYMENT,
+  PAY_SOURCE_ORDER,
   PAY_SOURCES,
   type PaymentRow,
+  type PaySource,
   type PaySourceSpec,
   type PaymentFile,
   type PaymentInput,
@@ -156,7 +165,10 @@ function readDocumentFiles(form: FormData, field = "file_document"): PaymentFile
  */
 function readSource(form: FormData): PaySourceSpec {
   const value = str(form, "pay_source");
-  return PAY_SOURCES[value === "central" ? "central" : "petty"];
+  // เทียบกับรายการแหล่งจ่ายจริง ไม่ไล่เช็กทีละค่า — เพิ่มแหล่งใหม่แล้วจะได้ไม่ตกหล่น
+  return PAY_SOURCES[
+    (PAY_SOURCE_ORDER as string[]).includes(value) ? (value as PaySource) : "petty"
+  ];
 }
 
 /**
@@ -193,7 +205,25 @@ function readPaymentFields(
     note: str(form, "note") || null,
     company_id: str(form, "company_id") || null,
     branch_id: str(form, "branch_id") || null,
+    fund_id: str(form, "fund_id") || null,
   };
+}
+
+/**
+ * ตรวจกองเงินสำรอง — เฉพาะหน้าจ่ายจากเงินสำรองเท่านั้นที่ต้องเลือกกองและตัดยอด
+ * หน้าเงินสดย่อยกับส่วนกลางไม่เกี่ยวกับกอง จึงไม่ต้องตรวจ
+ */
+async function checkFund(
+  spec: PaySourceSpec,
+  fundId: string | null,
+  amount: number,
+  alreadyOnThisPayment = 0,
+): Promise<string | null> {
+  if (spec.source !== "fund") return null;
+  if (!fundId) return "กรุณาเลือกกองเงินสำรองที่จะจ่ายออก";
+
+  const fund = await getFund(fundId);
+  return validateFundPayment(amount, fund, alreadyOnThisPayment);
 }
 
 /** ตรวจรายการที่เลือกกับสถานะจริงของเอกสารต้นทาง ณ ตอนบันทึก */
@@ -233,6 +263,9 @@ export async function createPaymentForm(form: FormData): Promise<void> {
 
   const problem = await checkItems(input, items);
   if (problem) back(path, problem, true);
+
+  const fundProblem = await checkFund(spec, input.fund_id, input.paid_amount);
+  if (fundProblem) back(path, fundProblem, true);
 
   const row: PaymentInput = {
     ...input,
@@ -287,6 +320,15 @@ export async function updatePaymentForm(form: FormData): Promise<void> {
 
   const problem = await checkItems(input, items, previous);
   if (problem) back(path, problem, true);
+
+  // ยอดที่ใบนี้เคยตัดจากกองไปแล้ว ต้องบวกกลับก่อนเทียบ ไม่งั้นกดบันทึกซ้ำจะฟ้องว่าเงินไม่พอ
+  const fundProblem = await checkFund(
+    spec,
+    input.fund_id,
+    input.paid_amount,
+    current.fund_id === input.fund_id ? current.paid_amount : 0,
+  );
+  if (fundProblem) back(path, fundProblem, true);
 
   try {
     await updatePayment(id, { ...input, created_by_name: str(form, "created_by_name") || null }, items);

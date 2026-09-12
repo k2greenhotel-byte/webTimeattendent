@@ -7,6 +7,7 @@ import {
   getDocsByIds,
   getPayment,
   listAccounts,
+  listFunds,
   listDocs,
   listPaymentItemRows,
   listTags,
@@ -35,7 +36,7 @@ export default async function PaymentDetailView({
   if (!payment) notFound();
 
   // อ่านรายการพร้อมป้ายกำกับและไฟล์แนบของแต่ละรายการมาในชุดเดียว
-  const [items, approved, accounts, tagSuggestions, vendors, context, canEdit, canDelete] = await Promise.all([
+  const [items, approved, accounts, tagSuggestions, vendors, context, canEdit, canDelete, funds] = await Promise.all([
     listPaymentItemRows(id),
     listDocs({ doc_status: "active" }),
     listAccounts(),
@@ -44,6 +45,7 @@ export default async function PaymentDetailView({
     getSelectableContext(user.id),
     checkPermission(spec.menuCode, "edit"),
     checkPermission(spec.menuCode, "delete"),
+    source === "fund" ? listFunds({ includeInactive: true }) : Promise.resolve([]),
   ]);
 
   // เอกสารที่ใบนี้เคยเลือกไว้แล้ว ต้องบวกยอดของใบนี้กลับเข้าไปในยอดที่ยังเบิกได้
@@ -122,6 +124,7 @@ export default async function PaymentDetailView({
           accounts={accounts}
           tagSuggestions={tagSuggestions}
           vendors={vendors}
+          funds={funds}
           companies={context.companies}
           branches={context.branches}
           picked={picked}

@@ -41,6 +41,10 @@ import type {
   RepairRow,
   RepairUpdateInput,
   RepairUpdateRow,
+  FundMoveInput,
+  FundMoveRow,
+  PrFundInput,
+  PrFundRow,
 } from "./procurement-types";
 import { PAY_SOURCES } from "./procurement-types";
 import { getSupabase, MEMO_BUCKET } from "./supabase-server";
@@ -1364,4 +1368,108 @@ export async function updateVendor(id: string, patch: Partial<PrVendorInput>): P
 export async function deleteVendor(id: string): Promise<void> {
   const { error } = await getSupabase().from("pr_vendors").delete().eq("id", id);
   if (error) throw new Error(`ลบเจ้าหนี้ไม่สำเร็จ: ${error.message}`);
+}
+
+// ---------- วงเงินสำรองจ่าย ----------
+
+/** กองเงินสำรองทั้งหมดพร้อมยอดคงเหลือ (ยอดคิดสดจาก view ทุกครั้งที่อ่าน) */
+export async function listFunds(options: { includeInactive?: boolean; holderId?: string } = {}): Promise<PrFundRow[]> {
+  let q = getSupabase().from("v_pr_funds").select("*");
+  if (!options.includeInactive) q = q.eq("is_active", true);
+  if (options.holderId) q = q.eq("holder_id", options.holderId);
+
+  const { data, error } = await q.order("holder_name");
+  if (error) throw new Error(`อ่านวงเงินสำรองจ่ายไม่สำเร็จ: ${error.message}`);
+
+  return (data ?? []).map(toFundRow);
+}
+
+export async function getFund(id: string): Promise<PrFundRow | null> {
+  const { data, error } = await getSupabase()
+    .from("v_pr_funds")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`อ่านวงเงินสำรองจ่ายไม่สำเร็จ: ${error.message}`);
+  return data ? toFundRow(data as Record<string, unknown>) : null;
+}
+
+function toFundRow(raw: unknown): PrFundRow {
+  const r = raw as Record<string, unknown>;
+  return {
+    ...(raw as PrFundRow),
+    limit_amount: num(r.limit_amount),
+    topup_total: num(r.topup_total),
+    return_total: num(r.return_total),
+    paid_total: num(r.paid_total),
+    balance: num(r.balance),
+    topup_room: num(r.topup_room),
+  };
+}
+
+export async function createFund(input: PrFundInput): Promise<void> {
+  const { error } = await getSupabase().from("pr_funds").insert(input);
+  if (error) {
+    // หนึ่งคนหนึ่งกอง ถ้าซ้ำให้บอกตรง ๆ ว่าไปแก้ของเดิมแทน
+    if (error.code === "23505") throw new Error("ผู้ถือเงินคนนี้มีวงเงินสำรองอยู่แล้ว กรุณาแก้ไขรายการเดิมแทน");
+    throw new Error(`บันทึกวงเงินสำรองจ่ายไม่สำเร็จ: ${error.message}`);
+  }
+}
+
+export async function updateFund(id: string, input: Partial<PrFundInput>): Promise<void> {
+  const { error } = await getSupabase().from("pr_funds").update(input).eq("id", id);
+  if (error) throw new Error(`บันทึกวงเงินสำรองจ่ายไม่สำเร็จ: ${error.message}`);
+}
+
+/** ลบกองได้เฉพาะกองที่ยังไม่มีความเคลื่อนไหว — ไม่งั้นประวัติเงินจะขาดหาย */
+export async function fundUsage(id: string): Promise<{ moves: number; payments: number }> {
+  const supabase = getSupabase();
+  const [moves, payments] = await Promise.all([
+    supabase.from("pr_fund_moves").select("id", { count: "exact", head: true }).eq("fund_id", id),
+    supabase.from("pr_payments").select("id", { count: "exact", head: true }).eq("fund_id", id),
+  ]);
+  return { moves: moves.count ?? 0, payments: payments.count ?? 0 };
+}
+
+export async function deleteFund(id: string): Promise<void> {
+  const { error } = await getSupabase().from("pr_funds").delete().eq("id", id);
+  if (error) throw new Error(`ลบวงเงินสำรองจ่ายไม่สำเร็จ: ${error.message}`);
+}
+
+/** ความเคลื่อนไหวของกอง (เติมเข้า/คืนคืน) */
+export async function listFundMoves(query: { fund_id?: string | null; from?: string | null; to?: string | null } = {}): Promise<FundMoveRow[]> {
+  let q = getSupabase().from("v_pr_fund_moves").select("*");
+  if (query.fund_id) q = q.eq("fund_id", query.fund_id);
+  if (query.from) q = q.gte("move_date", query.from);
+  if (query.to) q = q.lte("move_date", query.to);
+
+  const { data, error } = await q
+    .order("move_date", { ascending: false })
+    .order("doc_no", { ascending: false })
+    .limit(500);
+  if (error) throw new Error(`อ่านความเคลื่อนไหวของเงินสำรองไม่สำเร็จ: ${error.message}`);
+
+  return (data ?? []).map((r) => ({
+    ...(r as unknown as FundMoveRow),
+    amount: num((r as Record<string, unknown>).amount),
+  }));
+}
+
+export async function createFundMove(input: FundMoveInput): Promise<string> {
+  // เลขที่เอกสารแยกชุดของตัวเอง: FT = เติมเข้า · FR = คืนคืน
+  const doc_no = await nextDocNo(
+    input.kind === "topup" ? "FT" : "FR",
+    input.move_date,
+    input.kind === "topup" ? "ใบเติมเงินสำรอง" : "ใบคืนเงินสำรอง",
+  );
+
+  const { error } = await getSupabase().from("pr_fund_moves").insert({ ...input, doc_no });
+  if (error) throw new Error(`บันทึกการเคลื่อนไหวของเงินสำรองไม่สำเร็จ: ${error.message}`);
+
+  return doc_no;
+}
+
+export async function deleteFundMove(id: string): Promise<void> {
+  const { error } = await getSupabase().from("pr_fund_moves").delete().eq("id", id);
+  if (error) throw new Error(`ลบรายการเคลื่อนไหวไม่สำเร็จ: ${error.message}`);
 }
