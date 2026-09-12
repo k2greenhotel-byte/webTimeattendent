@@ -70,11 +70,22 @@ export default async function PunchPage({
   // ปุ่ม "ออกไปทำธุระ" ใช้ได้เฉพาะตอนที่กดได้จริง (เข้างานแล้ว ยังไม่เลิกงาน ไม่ได้พักเที่ยงอยู่)
   const errandGate = canErrand("out", done, errandRounds.some((r) => r.isOpen));
 
-  const standardTime: Record<PunchType, string> = {
-    check_in: settings.is_open_time ? "ไม่กำหนดเวลาตายตัว" : settings.work_start,
-    break_out: settings.break_start,
-    break_in: settings.break_end,
-    check_out: settings.is_open_time ? "ไม่กำหนดเวลาตายตัว" : settings.work_end,
+  // เวลาพัก (break_policy: actual) ไม่ตายตัวตามเวลาที่ตั้งไว้ — พนักงานพักตอนไหนก็ได้ระหว่างกะ
+  // ขอแค่ไม่เกินโควตา เวลาที่ตั้งในกะเป็นแค่ช่วงโดยประมาณให้พนักงานดูเป็นแนวทาง
+  const flexibleBreak = settings.break_policy === "actual";
+  const timeLabel: Record<PunchType, string> = {
+    check_in: settings.is_open_time
+      ? "เวลามาตรฐาน: ไม่กำหนดเวลาตายตัว"
+      : `เวลามาตรฐาน ${settings.work_start}`,
+    break_out: flexibleBreak
+      ? `พักได้ไม่เกิน ${settings.break_allow_minutes} นาที ไม่ตายตัว (ปกติราวช่วง ${settings.break_start} น.)`
+      : `เวลามาตรฐาน ${settings.break_start}`,
+    break_in: flexibleBreak
+      ? `กลับเข้างานเมื่อพร้อม (พักรวมไม่เกิน ${settings.break_allow_minutes} นาที)`
+      : `เวลามาตรฐาน ${settings.break_end}`,
+    check_out: settings.is_open_time
+      ? "เวลามาตรฐาน: ไม่กำหนดเวลาตายตัว"
+      : `เวลามาตรฐาน ${settings.work_end}`,
   };
 
   return (
@@ -171,7 +182,7 @@ export default async function PunchPage({
                 <div className="mr-auto">
                   <p className="font-semibold text-slate-800">{PUNCH_LABEL[type]}</p>
                   <p className="text-xs text-slate-500">
-                    เวลามาตรฐาน {standardTime[type]}
+                    {timeLabel[type]}
                     {record ? ` · ลงเวลาแล้ว ${formatTime(record.punched_at)} น.` : ""}
                   </p>
                 </div>
